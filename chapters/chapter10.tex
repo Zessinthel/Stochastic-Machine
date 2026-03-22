@@ -1,0 +1,1348 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{Cálculo de Itô: integración estocástica y ecuaciones diferenciales
+estocásticas}
+\label{ch:cap10}
+%═══════════════════════════════════════════════════════════════════════════════
+
+El Capítulo~\ref{ch:cap5} introdujo el cálculo estocástico con urgencia pragmática: la
+tabla $(dW_t)^2 = dt$, la fórmula de Itô enunciada, la SDE de Langevin del
+SGD usada para derivar la distribución de Gibbs. Fue suficiente para el
+propósito de ese capítulo. Pero dejó deudas técnicas precisas que este capítulo
+salda.
+
+¿Por qué $(dW_t)^2 = dt$ y no cero? Porque el movimiento browniano tiene
+variación cuadrática no trivial, y ese es un resultado que se puede demostrar
+con rigor. ¿Por qué la fórmula de Itô tiene el término de corrección de segundo
+orden $\frac{\sigma^2}{2}\partial_{xx}f$ que no existe en el cálculo ordinario?
+Porque la regla de Taylor estocástica retiene el término de segundo orden en el
+incremento $dW$, que contribuye al primer orden en $dt$ precisamente por la
+variación cuadrática. ¿Bajo qué condiciones tiene solución una SDE? Bajo
+condiciones de Lipschitz y crecimiento lineal, por el argumento de punto fijo
+de Picard adaptado al caso estocástico.
+
+La conexión con la física matemática del estudiante es más profunda de lo que
+aparenta. El generador infinitesimal de un proceso de difusión es el operador
+diferencial de la ecuación de Fokker-Planck; para difusión pura sin deriva, ese
+operador es el laplaciano de la ecuación de calor. Las soluciones de las EDPs
+parabólicas son densidades de transición de procesos estocásticos, y viceversa.
+El cálculo de Itô y las EDPs parabólicas son la misma matemática en dos idiomas
+distintos.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El movimiento browniano: construcción y propiedades}
+\label{sec:browniano}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Límite de caminatas aleatorias}
+\label{subsec:caminata}
+
+Sea $\xi_1, \xi_2, \ldots$ una sucesión de variables aleatorias i.i.d.\ con
+$\mathbb{E}[\xi_k] = 0$ y $\mathrm{Var}[\xi_k] = 1$. La caminata aleatoria
+es $S_n = \sum_{k=1}^n \xi_k$. Por el teorema central del límite, $S_n/\sqrt{n}
+\to \mathcal{N}(0,1)$ en distribución. El proceso en tiempo continuo
+$W^{(n)}(t) = S_{\lfloor nt \rfloor}/\sqrt{n}$ interpola la caminata a
+escala temporal $1/n$ y espacial $1/\sqrt{n}$.
+
+El \textbf{teorema de Donsker} (invarianza del principio de invarianza,
+enunciado sin demostración) establece que $W^{(n)} \to W$ en el espacio
+$C([0,T])$ de funciones continuas con la métrica del supremo, donde $W$ es
+el movimiento browniano estándar. La convergencia es en distribución como
+proceso: no solo las distribuciones marginales convergen, sino la ley completa
+del proceso.
+
+Para el SGD: los incrementos del gradiente estocástico en cada mini-lote son
+sumas de términos i.i.d.\ (las contribuciones de las muestras del lote). En el
+régimen de muchas iteraciones con lotes pequeños, el proceso acumulado de
+iteraciones converge al movimiento browniano escalado. La SDE de Langevin del
+Capítulo~\ref{ch:cap5} es exactamente ese límite.
+
+\subsection{Definición axiomática del movimiento browniano}
+\label{subsec:browniano_def}
+
+\begin{definicion}{Movimiento browniano estándar}
+\label{def:browniano}
+Un proceso estocástico $W: [0,\infty) \times \Omega \to \mathbb{R}$ definido
+sobre un espacio de probabilidad $(\Omega, \mathcal{F}, \mathbb{P})$ es un
+\textbf{movimiento browniano estándar} si satisface:
+\begin{enumerate}
+  \item $W(0) = 0$ casi seguramente (c.s.).
+  \item \textbf{Incrementos independientes:} para $0 \leq t_0 < t_1 < \cdots
+        < t_n$, las variables $W(t_1)-W(t_0), W(t_2)-W(t_1),\ldots,
+        W(t_n)-W(t_{n-1})$ son independientes.
+  \item \textbf{Incrementos estacionarios gaussianos:}
+        $W(t)-W(s) \sim \mathcal{N}(0,t-s)$ para $0 \leq s < t$.
+  \item \textbf{Continuidad de trayectorias:} las trayectorias $t \mapsto W(t,\omega)$
+        son casi seguramente continuas.
+\end{enumerate}
+\end{definicion}
+
+Las propiedades 1--3 determinan completamente la distribución finito-dimensional
+del proceso. La existencia de una versión con trayectorias continuas (propiedad 4)
+es el contenido no trivial del \textbf{teorema de Kolmogorov-Chentsov}: si un
+proceso satisface $\mathbb{E}[|W(t)-W(s)|^\alpha] \leq C|t-s|^{1+\beta}$ para
+constantes $\alpha, \beta, C > 0$, entonces admite una versión con trayectorias
+Hölder-continuas de exponente $\gamma < \beta/\alpha$. Para el movimiento
+browniano: $\mathbb{E}[|W(t)-W(s)|^4] = 3(t-s)^2$, con $\alpha = 4$ y $\beta = 1$,
+lo que garantiza trayectorias Hölder con exponente $\gamma < 1/4$. (De hecho,
+las trayectorias son Hölder con exponente $\gamma < 1/2$, pero esto requiere
+un argumento más cuidadoso.)
+
+\subsection{No diferenciabilidad y variación cuadrática}
+\label{subsec:variacion_cuadratica}
+
+\begin{proposicion}{No diferenciabilidad del movimiento browniano}
+\label{prop:no_diff}
+Las trayectorias del movimiento browniano no son diferenciables en ningún punto,
+casi seguramente.
+\end{proposicion}
+
+\begin{proof}
+Supóngase que $W(\cdot,\omega)$ es diferenciable en $t$. Entonces $W'(t,\omega) =
+\lim_{h\to 0}(W(t+h,\omega)-W(t,\omega))/h$ existe y es finito. Para cualquier
+$h > 0$ fijo, $(W(t+h)-W(t))/h \sim \mathcal{N}(0, 1/h)$: tiene varianza $1/h$,
+que diverge cuando $h \to 0$. Ninguna sucesión de variables con varianza
+divergente puede converger casi seguramente a un límite finito. Más precisamente,
+usando el criterio de Cauchy: para que el límite exista es necesario que para
+cualquier $\varepsilon > 0$, $\mathbb{P}(|(W(t+h)-W(t))/h - (W(t+h')-W(t))/h'|
+\geq \varepsilon) \to 0$ para $h, h' \to 0$. El cálculo de esta probabilidad
+usando la distribución gaussiana da un valor que no tiende a cero uniformemente
+en $t$: para casi todo $\omega$, hay puntos $t$ donde la diferencia permanece
+grande. $\square$
+\end{proof}
+
+La consecuencia es que el cálculo ordinario, que requiere diferenciabilidad de
+primer orden, no puede aplicarse al movimiento browniano. La noción que lo
+reemplaza es la variación cuadrática.
+
+\begin{definicion}{Variación cuadrática}
+\label{def:vc}
+Para una partición $\Pi = \{0 = t_0 < t_1 < \cdots < t_n = T\}$ con malla
+$\|\Pi\| = \max_i(t_{i+1}-t_i)$, la \textbf{variación cuadrática} del
+movimiento browniano en $[0,T]$ es el límite de:
+\[
+  V_T^{(2)}(\Pi) = \sum_{i=0}^{n-1}(W(t_{i+1})-W(t_i))^2.
+\]
+\end{definicion}
+
+\begin{teorema}{Variación cuadrática del movimiento browniano}
+\label{thm:vc}
+Para cualquier sucesión de particiones $\{\Pi_n\}$ con $\|\Pi_n\| \to 0$:
+\[
+  V_T^{(2)}(\Pi_n) \xrightarrow{c.s.} T.
+\]
+\end{teorema}
+
+\begin{proof}
+Sean $\Delta W_i = W(t_{i+1})-W(t_i)$ y $\Delta t_i = t_{i+1}-t_i$.
+Como $\Delta W_i \sim \mathcal{N}(0,\Delta t_i)$, se tienen:
+\[
+  \mathbb{E}[(\Delta W_i)^2] = \Delta t_i,
+  \qquad
+  \mathrm{Var}[(\Delta W_i)^2] = 2(\Delta t_i)^2.
+\]
+La suma es $V_T^{(2)} = \sum_i (\Delta W_i)^2$, con:
+\[
+  \mathbb{E}[V_T^{(2)}] = \sum_i \Delta t_i = T,
+\]
+\[
+  \mathrm{Var}[V_T^{(2)}]
+  = \sum_i \mathrm{Var}[(\Delta W_i)^2]
+  = 2\sum_i(\Delta t_i)^2
+  \leq 2\|\Pi\|\sum_i \Delta t_i = 2\|\Pi\|T \to 0.
+\]
+Esto establece convergencia en $L^2$: $V_T^{(2)} \to T$ en $L^2(\mathbb{P})$.
+
+Para la convergencia \textbf{casi segura}, se aplica el segundo lema de
+Borel-Cantelli. Sea $Z_n = V_T^{(2)}(\Pi_n) - T$. De la estimación anterior,
+$\mathrm{Var}[Z_n] \leq 2\|\Pi_n\|T$. Para particiones diádicas con $n$
+subintervalos de longitud $\Delta t = T/n$:
+$\mathrm{Var}[Z_n] = 2T^2/n$.
+Por la desigualdad de Markov y Chebyshev:
+\[
+  \mathbb{P}(|Z_n| \geq \varepsilon)
+  \leq \frac{\mathrm{Var}[Z_n]}{\varepsilon^2}
+  = \frac{2T^2}{n\varepsilon^2}.
+\]
+Esta cota es summable: $\sum_{n=1}^\infty \mathbb{P}(|Z_n| \geq \varepsilon) \leq
+\frac{2T^2}{\varepsilon^2}\sum_{n=1}^\infty \frac{1}{n} = \infty$: no sumable.
+Para obtener convergencia c.s.\ es necesario acotar más finamente.
+
+Se toma en cambio la subsucesión $n_k = k^2$ (partición en $k^2$ intervalos):
+\[
+  \mathbb{P}(|Z_{n_k}| \geq \varepsilon)
+  \leq \frac{2T^2}{k^2\varepsilon^2},
+\]
+cuya suma $\sum_{k=1}^\infty \frac{1}{k^2} < \infty$ es convergente. Por el
+segundo lema de Borel-Cantelli:
+$\mathbb{P}(|Z_{n_k}| \geq \varepsilon \text{ i.o.}) = 0$,
+es decir, $Z_{n_k} \to 0$ c.s.\ a lo largo de la subsucesión $\{n_k\}$.
+
+Para pasar de la subsucesión a la sucesión completa: para $n_k \leq n \leq
+n_{k+1}$, los términos adicionales en $V^{(2)}(\Pi_n) - V^{(2)}(\Pi_{n_k})$
+se controlan acotando el oscilación máxima del browniano en subintervalos
+de tamaño $O(1/n)$. Usando la continuidad uniforme de las trayectorias
+(el browniano es uniformemente continuo en $[0,T]$ c.s.) y el hecho de que
+hay $O(k^2)$ subintervalos adicionales de tamaño $O(1/k^2)$, la diferencia
+es $O(1/k)$ c.s., lo que completa el argumento. $\square$
+\end{proof}
+
+\begin{observacion}{La notación $(dW_t)^2 = dt$}
+El Teorema~\ref{thm:vc} es la justificación precisa de la regla mnemotécnica
+$(dW_t)^2 = dt$ usada en el Capítulo~\ref{ch:cap5}. No es una regla de álgebra: es el
+enunciado de que la variación cuadrática del movimiento browniano en $[0,t]$
+es exactamente $t$. En el lenguaje diferencial, incrementar el browniano en
+$dW_t$ produce una contribución $dW_t \cdot dW_t = dt$ al segundo orden que,
+a diferencia del cálculo ordinario, no es $o(dt)$ sino exactamente $dt$.
+Esta es la razón fundamental por la que el cálculo estocástico difiere del
+cálculo ordinario.
+\end{observacion}
+
+\begin{fisicaconexion}{Movimiento browniano y difusión en física}
+El movimiento browniano como objeto físico fue observado por Robert Brown en
+1827 (polen en agua) y explicado teóricamente por Einstein en 1905 y Smoluchowski
+en 1906. Einstein derivó que el desplazamiento cuadrático medio de una partícula
+difusiva satisface $\langle x^2(t)\rangle = 2Dt$, donde $D = k_BT/(6\pi\eta r)$
+es el coeficiente de difusión (relación de Einstein-Stokes): $k_B$ la constante
+de Boltzmann, $T$ la temperatura, $\eta$ la viscosidad y $r$ el radio de la
+partícula. Esto es exactamente el Teorema~\ref{thm:vc}: la variación cuadrática
+$\langle(W(t))^2\rangle = t$ con el coeficiente de difusión absorbido en la
+escala de $W$.
+
+La construcción del Teorema~\ref{thm:vc} tiene una consecuencia directa para
+la medición experimental. La variación cuadrática $V_T^{(2)}(\Pi) = \sum_i(\Delta
+x_i)^2$ es un estimador consistente del coeficiente de difusión: observar una
+trayectoria discreta con resolución temporal $\Delta t$ permite estimar $D$
+por $\hat{D} = V_T^{(2)}/(2T)$. En espectroscopía de correlación de fluorescencia
+(FCS) y seguimiento de partícula única (SPT), este principio se usa para medir
+la difusión de proteínas en membranas celulares a escala nanométrica. La
+Proposición~\ref{prop:no_diff} —no diferenciabilidad casi segura— implica que
+la \emph{velocidad instantánea} de la partícula browniana no existe: solo
+tiene sentido el desplazamiento cuadrático medio, no la velocidad. Este es el
+límite de sobreenfriamiento viscoso de la ecuación de Langevin completa
+$m\ddot{x} = -\gamma\dot{x} + F_{\mathrm{ruido}}$: cuando $m/\gamma \to 0$,
+la inercia desaparece y la velocidad se vuelve singular.
+\end{fisicaconexion}
+\label{subsec:martingala}
+
+\begin{definicion}{Filtración y adaptabilidad}
+\label{def:filtracion}
+La \textbf{filtración natural} del movimiento browniano es la familia creciente
+de $\sigma$-álgebras $\{\mathcal{F}_t\}_{t \geq 0}$ con
+$\mathcal{F}_t = \sigma(W(s): 0 \leq s \leq t)$: la información acumulada
+hasta el tiempo $t$. Un proceso estocástico $X_t$ es \textbf{adaptado} a
+$\{\mathcal{F}_t\}$ si $X_t$ es $\mathcal{F}_t$-medible para todo $t$: el
+valor de $X_t$ es determinado por la trayectoria de $W$ hasta $t$, sin
+información del futuro.
+\end{definicion}
+
+\begin{definicion}{Martingala}
+\label{def:martingala}
+Un proceso adaptado $M_t$ con $\mathbb{E}[|M_t|] < \infty$ es una
+\textbf{martingala} respecto a $\{\mathcal{F}_t\}$ si:
+\[
+  \mathbb{E}[M_t | \mathcal{F}_s] = M_s \quad \text{para todo } s \leq t.
+\]
+\end{definicion}
+
+Tres martingalas fundamentales del movimiento browniano (verificación en
+el Ejercicio~\ref{ej:martingalas}):
+\begin{align}
+  M_t^{(1)} &= W_t, \label{eq:mart1}\\
+  M_t^{(2)} &= W_t^2 - t, \label{eq:mart2}\\
+  M_t^{(3)} &= e^{\theta W_t - \theta^2 t/2}
+  \quad (\text{para cualquier } \theta \in \mathbb{R}).
+  \label{eq:mart3}
+\end{align}
+$M_t^{(1)}$ dice que el mejor predictor del valor futuro del browniano es su
+valor presente. $M_t^{(2)}$ dice que el cuadrado del browniano crece en
+promedio exactamente como $t$: el drift del cuadrado es la variación cuadrática.
+$M_t^{(3)}$ (la exponencial de Wick) es la función generatriz de momentos del
+browniano y será el bloque con el que se construye el cambio de medida en la
+derivación del proceso inverso de la difusión.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La integral de Itô}
+\label{sec:integral_ito}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Por qué la integral de Riemann-Stieltjes falla}
+\label{subsec:fallo_rs}
+
+La integral de Riemann-Stieltjes $\int_0^T f(t)\,dg(t)$ existe cuando
+$g$ tiene variación total finita $\sum_i |g(t_{i+1})-g(t_i)| < \infty$.
+
+\begin{proposicion}{El browniano tiene variación total infinita c.s.}
+\label{prop:var_total}
+Para cualquier $T > 0$, la variación total del movimiento browniano en $[0,T]$
+satisface $\sum_i|W(t_{i+1})-W(t_i)| \to \infty$ c.s.\ cuando $\|\Pi\| \to 0$.
+\end{proposicion}
+
+\begin{proof}
+Sea $V_T^{(1)}(\Pi) = \sum_i |\Delta W_i|$ la variación total y $V_T^{(2)}(\Pi)
+= \sum_i (\Delta W_i)^2$ la variación cuadrática. Se tiene:
+\[
+  V_T^{(2)}(\Pi)
+  = \sum_i (\Delta W_i)^2
+  \leq \max_i|\Delta W_i| \cdot V_T^{(1)}(\Pi).
+\]
+Por la continuidad uniforme de las trayectorias, $\max_i|\Delta W_i| \to 0$ c.s.\
+cuando $\|\Pi\| \to 0$. Como $V_T^{(2)}(\Pi) \to T > 0$ c.s., se necesita
+$V_T^{(1)}(\Pi) \to \infty$ c.s.\ para compensar el factor que tiende a cero.
+$\square$
+\end{proof}
+
+La integral de Riemann-Stieltjes no puede definirse para el movimiento browniano.
+Necesitamos una nueva definición de integral que maneje integradores con variación
+cuadrática no trivial.
+
+\subsection{Construcción de la integral de Itô}
+\label{subsec:construccion}
+
+La integral de Itô $\int_0^T f(t)\,dW_t$ se construye en tres pasos.
+
+\medskip
+\noindent\textbf{Paso 1: procesos simples (escalonados).}
+
+Un proceso $f$ es \textbf{simple} si $f(t) = \sum_{i=0}^{n-1} f_i
+\mathbf{1}_{[t_i,t_{i+1})}(t)$ donde $f_i$ es $\mathcal{F}_{t_i}$-medible
+(adaptado, usando información hasta el inicio del intervalo). Para $f$ simple:
+\begin{equation}
+  \int_0^T f(t)\,dW_t = \sum_{i=0}^{n-1} f_i(W(t_{i+1})-W(t_i)).
+  \label{eq:ito_simple}
+\end{equation}
+El requisito de que $f_i$ sea $\mathcal{F}_{t_i}$-medible (no $\mathcal{F}_{t_{i+1}}$)
+es la diferencia crucial respecto a la integral de Stratonovich y es la fuente
+del término de corrección en la fórmula de Itô.
+
+\medskip
+\noindent\textbf{Paso 2: la isometría de Itô para procesos simples.}
+
+\begin{teorema}{Isometría de Itô}
+\label{thm:isometria}
+Para $f$ simple y adaptado:
+\begin{equation}
+  \mathbb{E}\!\left[\left(\int_0^T f(t)\,dW_t\right)^2\right]
+  = \int_0^T \mathbb{E}[f(t)^2]\,dt.
+  \label{eq:isometria}
+\end{equation}
+\end{teorema}
+
+\begin{proof}
+Expandiendo el cuadrado de~\eqref{eq:ito_simple}:
+\[
+  \left(\sum_i f_i\Delta W_i\right)^2
+  = \sum_i f_i^2 (\Delta W_i)^2
+  + 2\sum_{i < j} f_i f_j \Delta W_i \Delta W_j.
+\]
+Tomando la esperanza. Para los términos diagonales: $\mathbb{E}[f_i^2(\Delta W_i)^2]
+= \mathbb{E}[f_i^2]\,\Delta t_i$ porque $f_i$ es $\mathcal{F}_{t_i}$-medible
+e independiente de $\Delta W_i \sim \mathcal{N}(0,\Delta t_i)$.
+
+Para los términos cruzados con $i < j$: $f_j$ es $\mathcal{F}_{t_j}$-medible,
+$f_i$ es $\mathcal{F}_{t_i}$-medible, y $\Delta W_j = W(t_{j+1})-W(t_j)$ es
+independiente de $\mathcal{F}_{t_j}$ (incremento futuro). Por tanto:
+$\mathbb{E}[f_i f_j \Delta W_i \Delta W_j] = \mathbb{E}[f_i f_j \Delta W_i]
+\cdot \mathbb{E}[\Delta W_j] = 0$ (ya que $\mathbb{E}[\Delta W_j] = 0$).
+
+Sumando: $\mathbb{E}[(\int_0^T f\,dW)^2] = \sum_i \mathbb{E}[f_i^2]\,\Delta t_i
+= \int_0^T \mathbb{E}[f(t)^2]\,dt$. $\square$
+\end{proof}
+
+La isometría de Itô establece que la integral es una isometría entre el espacio
+$L^2(\Omega \times [0,T])$ de procesos adaptados de cuadrado integrable y
+$L^2(\Omega)$. Esto permite extender la integral por completitud.
+
+\medskip
+\noindent\textbf{Paso 3: extensión por densidad.}
+
+Sea $\mathcal{L}^2 = \{f: [0,T]\times\Omega \to \mathbb{R}$ adaptado$\,:\,
+\int_0^T \mathbb{E}[f(t)^2]\,dt < \infty\}$.
+Los procesos simples son densos en $\mathcal{L}^2$. Para cualquier $f \in
+\mathcal{L}^2$, existe una sucesión de procesos simples $f^{(n)} \to f$ en
+$\mathcal{L}^2$. Por la isometría, $\int_0^T f^{(n)}\,dW$ es una sucesión de
+Cauchy en $L^2(\Omega)$:
+\[
+  \mathbb{E}\!\left[\left(\int_0^T (f^{(n)}-f^{(m)})\,dW\right)^2\right]
+  = \int_0^T \mathbb{E}[(f^{(n)}_t-f^{(m)}_t)^2]\,dt \to 0.
+\]
+El límite en $L^2(\Omega)$ es la \textbf{integral de Itô} $\int_0^T f\,dW$.
+La construcción es independiente de la elección de aproximación por procesos
+simples.
+
+\subsection{Propiedades fundamentales}
+\label{subsec:propiedades_ito}
+
+\begin{proposicion}{Propiedades de la integral de Itô}
+\label{prop:ito_propiedades}
+Sea $M_t = \int_0^t f(s)\,dW_s$ con $f \in \mathcal{L}^2$. Entonces:
+\begin{enumerate}
+  \item \textbf{Linealidad:} $\int_0^T(\alpha f+\beta g)\,dW
+        = \alpha\int_0^T f\,dW + \beta\int_0^T g\,dW$.
+  \item \textbf{Martingala:} $M_t$ es una martingala con $\mathbb{E}[M_t] = 0$.
+  \item \textbf{Isometría:} $\mathbb{E}[M_T^2] = \int_0^T\mathbb{E}[f(t)^2]\,dt$.
+  \item \textbf{Variación cuadrática:} $[M,M]_t = \int_0^t f(s)^2\,ds$.
+\end{enumerate}
+\end{proposicion}
+
+\begin{proof}
+(2) Para $s < t$, usando la descomposición $M_t = M_s + \int_s^t f(u)\,dW_u$:
+\[
+  \mathbb{E}[M_t|\mathcal{F}_s]
+  = M_s + \mathbb{E}\!\left[\int_s^t f(u)\,dW_u \Big|\mathcal{F}_s\right].
+\]
+El último término es cero: para el proceso simple, $\mathbb{E}[f_j\Delta W_j|
+\mathcal{F}_s] = f_j\mathbb{E}[\Delta W_j|\mathcal{F}_{t_j}] = 0$ porque
+$\Delta W_j$ es independiente de $\mathcal{F}_{t_j}$ para $t_j \geq s$. Por
+continuidad en $L^2$, el resultado se extiende a $f \in \mathcal{L}^2$.
+
+(4) Para procesos simples: $[M,M]_T = \lim_{\|\Pi\|\to 0} \sum_i(M_{t_{i+1}}
+-M_{t_i})^2 = \lim_{\|\Pi\|\to 0}\sum_i f_i^2(\Delta W_i)^2$. Por la
+ley de los grandes números para variables independientes con media $f_i^2\Delta t_i$,
+la suma converge a $\sum_i f_i^2\Delta t_i = \int_0^T f(t)^2\,dt$. $\square$
+\end{proof}
+
+\subsection{La integral de Stratonovich y la diferencia con Itô}
+\label{subsec:stratonovich}
+
+La \textbf{integral de Stratonovich} usa el punto medio del intervalo:
+\begin{equation}
+  \int_0^T f(t) \circ dW_t
+  = \lim_{\|\Pi\|\to 0}\sum_i
+  \frac{f(t_i)+f(t_{i+1})}{2}(W(t_{i+1})-W(t_i)).
+  \label{eq:stratonovich}
+\end{equation}
+Para $f$ suficientemente regular (por ejemplo, $f = h(W_t)$ para $h \in C^1$),
+la diferencia entre las dos integrales es:
+\begin{equation}
+  \int_0^T f(t) \circ dW_t
+  = \int_0^T f(t)\,dW_t + \frac{1}{2}\int_0^T \frac{\partial f}{\partial W}\,dt.
+  \label{eq:ito_strat}
+\end{equation}
+La integral de Stratonovich satisface la regla de la cadena ordinaria $d(g(W_t))
+= g'(W_t) \circ dW_t$, sin término de corrección. La integral de Itô satisface
+$d(g(W_t)) = g'(W_t)\,dW_t + \frac{1}{2}g''(W_t)\,dt$ (fórmula de Itô).
+
+La elección entre Itô y Stratonovich tiene consecuencias físicas. En sistemas
+con ruido multiplicativo (donde el coeficiente de difusión depende del estado),
+la interpretación física correcta depende de si el ruido es blanco (límite de
+Itô) o de color (límite de Stratonovich). Para los modelos de difusión del
+Capítulo~\ref{ch:cap12} se usará la formulación de Itô, que tiene la propiedad de martingala
+y es la más natural para el análisis de la distribución estacionaria.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La fórmula de Itô}
+\label{sec:formula_ito}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{La regla de la cadena estocástica}
+\label{subsec:cadena_estocastica}
+
+En cálculo ordinario, si $X(t)$ es diferenciable y $f$ es de clase $C^1$,
+entonces $\frac{d}{dt}f(X(t)) = f'(X(t))X'(t)$, o en notación diferencial:
+$df(X) = f'(X)dX$. Esta regla depende de que $(dX)^2 = O((dt)^2)$ sea
+despreciable. Para el movimiento browniano, $(dW_t)^2 = dt$ no es despreciable:
+el término de segundo orden de la expansión de Taylor contribuye al primer orden.
+
+\subsection{La fórmula de Itô escalar: demostración completa}
+\label{subsec:ito_escalar}
+
+\begin{definicion}{Proceso de Itô}
+\label{def:ito_proceso}
+Un \textbf{proceso de Itô} es un proceso de la forma:
+\[
+  X_t = X_0 + \int_0^t \mu_s\,ds + \int_0^t \sigma_s\,dW_s,
+\]
+con $\mu, \sigma \in \mathcal{L}^2$, escrito en forma diferencial como
+$dX_t = \mu_t\,dt + \sigma_t\,dW_t$.
+\end{definicion}
+
+\begin{teorema}{Fórmula de Itô (caso escalar)}
+\label{thm:ito_formula}
+Sea $X_t$ un proceso de Itô con $dX_t = \mu_t\,dt + \sigma_t\,dW_t$ y
+$f(t,x) \in C^{1,2}([0,T]\times\mathbb{R})$ (una vez diferenciable en $t$,
+dos veces en $x$). Entonces $f(t,X_t)$ es también un proceso de Itô y:
+\begin{equation}
+  df(t,X_t)
+  = \left(\frac{\partial f}{\partial t}
+    + \mu_t\frac{\partial f}{\partial x}
+    + \frac{\sigma_t^2}{2}\frac{\partial^2 f}{\partial x^2}\right)dt
+    + \sigma_t\frac{\partial f}{\partial x}\,dW_t.
+  \label{eq:ito_formula}
+\end{equation}
+\end{teorema}
+
+\begin{proof}
+Se aplica la expansión de Taylor de orden 2 a $f(t,X_t)$ en el intervalo
+$[t_i, t_{i+1}]$ de una partición:
+\begin{align*}
+  \Delta f_i
+  &= f(t_{i+1},X_{t_{i+1}}) - f(t_i,X_{t_i}) \\
+  &= \partial_t f\,\Delta t_i
+   + \partial_x f\,\Delta X_i
+   + \frac{1}{2}\partial_{xx}f\,(\Delta X_i)^2
+   + \frac{1}{2}\partial_{tt}f\,(\Delta t_i)^2
+   + \partial_{tx}f\,\Delta t_i\,\Delta X_i
+   + O(|\Delta|^3),
+\end{align*}
+donde las derivadas se evalúan en $(t_i, X_{t_i})$ y $\Delta X_i =
+X_{t_{i+1}}-X_{t_i} = \mu_{t_i}\Delta t_i + \sigma_{t_i}\Delta W_i$.
+
+Expandiendo $(\Delta X_i)^2$:
+\[
+  (\Delta X_i)^2
+  = \mu_{t_i}^2(\Delta t_i)^2
+  + 2\mu_{t_i}\sigma_{t_i}\Delta t_i\,\Delta W_i
+  + \sigma_{t_i}^2(\Delta W_i)^2.
+\]
+Usando la tabla de multiplicación de diferenciales estocásticas:
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+$\times$ & $dt$ & $dW_t$ \\
+\midrule
+$dt$ & $0$ & $0$ \\
+$dW_t$ & $0$ & $dt$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+En el límite $\|\Pi\| \to 0$:
+\begin{itemize}
+  \item $\sum_i (\Delta t_i)^2 \leq \|\Pi\|\sum_i\Delta t_i = \|\Pi\|T \to 0$,
+  \item $\sum_i \Delta t_i\,\Delta W_i \to 0$ en $L^2$ (covariación de $t$ y $W$),
+  \item $\sum_i (\Delta W_i)^2 \to T$ c.s.\ (Teorema~\ref{thm:vc}).
+\end{itemize}
+
+Por tanto, sumando sobre la partición:
+\begin{align*}
+  f(T,X_T) - f(0,X_0)
+  &= \int_0^T \partial_t f\,dt
+   + \int_0^T \partial_x f\,\mu_t\,dt
+   + \int_0^T \partial_x f\,\sigma_t\,dW_t \\
+  &\quad + \frac{1}{2}\int_0^T \partial_{xx}f\,\sigma_t^2\,dt
+   + 0 + 0 + O(\|\Pi\|),
+\end{align*}
+que en el límite da la fórmula~\eqref{eq:ito_formula}. La convergencia es
+rigurosa en $L^2$ usando la isometría de Itô para el término estocástico y
+la convergencia de sumas de Riemann para los términos deterministas. $\square$
+\end{proof}
+
+\begin{observacion}{El término de corrección de Itô}
+El término $\frac{\sigma_t^2}{2}\partial_{xx}f$ es la corrección respecto
+al cálculo ordinario. Su origen es inequívoco: proviene de $(\Delta W_i)^2
+\to dt$, que a su vez proviene de la variación cuadrática no trivial del
+movimiento browniano. En el cálculo ordinario, para cualquier función
+diferenciable $g(t)$ se tiene $(dg)^2 = O((dt)^2)$ y ese término no contribuye.
+Para el browniano, $(dW)^2 = dt$ y contribuye al primer orden. La corrección
+de Itô es la marca algebraica de la no diferenciabilidad del browniano.
+\end{observacion}
+
+\subsection{La fórmula de Itô multidimensional}
+\label{subsec:ito_multi}
+
+Para $\bm{X}_t \in \mathbb{R}^d$ con $d\bm{X}_t = \bm{\mu}_t\,dt +
+\bm{\Sigma}_t\,d\bm{W}_t$ ($\bm{W}_t \in \mathbb{R}^m$ browniano $m$-dimensional
+con componentes independientes) y $f(t,\bm{x}) \in C^{1,2}$:
+\begin{equation}
+  df(t,\bm{X}_t)
+  = \left(\partial_t f
+    + (\nabla_{\bm{x}} f)^\top\bm{\mu}_t
+    + \frac{1}{2}\mathrm{tr}\!\left(\bm{\Sigma}_t\bm{\Sigma}_t^\top
+    \nabla^2_{\bm{x}} f\right)\right)dt
+    + (\nabla_{\bm{x}} f)^\top\bm{\Sigma}_t\,d\bm{W}_t.
+  \label{eq:ito_multi}
+\end{equation}
+El tensor de difusión $\bm{D}_t = \bm{\Sigma}_t\bm{\Sigma}_t^\top \in
+\mathbb{R}^{d\times d}$ es semidefinido positivo. El operador
+$\frac{1}{2}\mathrm{tr}(\bm{D}\nabla^2 f) = \frac{1}{2}\sum_{i,j} D_{ij}
+\partial_{x_i x_j} f$ es el \textbf{generador difusivo}. Para difusión
+isótropa $\bm{D} = \sigma^2\bm{I}$: este operador es $\frac{\sigma^2}{2}\Delta f$,
+el laplaciano escalado que el estudiante reconoce de la ecuación de calor.
+
+\subsection{Aplicaciones de la fórmula de Itô}
+\label{subsec:ito_aplicaciones}
+
+\medskip
+\noindent\textbf{Verificación de las martingalas del browniano.}
+Aplicando~\eqref{eq:ito_formula} a $f(t,x) = x^2 - t$:
+$df = -dt + 2x\,dx + \frac{1}{2}\cdot 2\cdot(dW_t)^2 = -dt + 2W_t\,dW_t + dt
+= 2W_t\,dW_t$. El coeficiente de $dt$ es cero: $W_t^2 - t$ es martingala.
+
+Aplicando a $f(t,x) = e^{\theta x - \theta^2 t/2}$:
+$df = -\frac{\theta^2}{2}f\,dt + \theta f\,dW_t + \frac{\theta^2}{2}f\,dt
+= \theta f\,dW_t$. Coeficiente de $dt$ cero: $e^{\theta W_t - \theta^2 t/2}$
+es martingala.
+
+\medskip
+\noindent\textbf{La SDE de Langevin y la pérdida del SGD.}
+Para $dX_t = -\nabla\mathcal{L}(X_t)\,dt + \sqrt{\eta c}\,dW_t$ y
+$f = \mathcal{L}$:
+\[
+  d\mathcal{L}(X_t) = -\|\nabla\mathcal{L}\|^2\,dt
+  + \frac{\eta c}{2}\Delta\mathcal{L}\,dt
+  + \sqrt{\eta c}\,\nabla\mathcal{L}\cdot d\bm{W}_t.
+\]
+En valor esperado: $\frac{d}{dt}\mathbb{E}[\mathcal{L}] = -\mathbb{E}
+[\|\nabla\mathcal{L}\|^2] + \frac{\eta c}{2}\mathbb{E}[\Delta\mathcal{L}]$.
+El primer término es la disipación (descenso de la pérdida por el gradiente);
+el segundo es la inyección de energía por el ruido. En el estado estacionario,
+ambos se compensan: $\mathbb{E}[\|\nabla\mathcal{L}\|^2] = \frac{\eta c}{2}
+\mathbb{E}[\Delta\mathcal{L}]$, que es la condición de equilibrio de la
+distribución de Gibbs del Capítulo~\ref{ch:cap5}.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Ecuaciones diferenciales estocásticas}
+\label{sec:sde}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Definición y soluciones fuertes}
+\label{subsec:sde_def}
+
+\begin{definicion}{Ecuación diferencial estocástica}
+\label{def:sde}
+Una \textbf{SDE} es la ecuación integral:
+\begin{equation}
+  X_t = X_0 + \int_0^t \mu(X_s,s)\,ds + \int_0^t \sigma(X_s,s)\,dW_s,
+  \label{eq:sde}
+\end{equation}
+con $\mu, \sigma: \mathbb{R}\times[0,T] \to \mathbb{R}$ los coeficientes de
+\textbf{deriva} (\textit{drift}) y \textbf{difusión} respectivamente.
+Una \textbf{solución fuerte} es un proceso adaptado $X_t$ que satisface~\eqref{eq:sde}
+c.s.\ para cada realización del movimiento browniano $W$.
+\end{definicion}
+
+La notación diferencial $dX_t = \mu(X_t,t)\,dt + \sigma(X_t,t)\,dW_t$ es una
+abreviatura conveniente para la ecuación integral. La SDE en forma diferencial
+no tiene significado propio: debe interpretarse como la ecuación integral
+donde el segundo término es la integral de Itô.
+
+\subsection{Teorema de existencia y unicidad}
+\label{subsec:existencia}
+
+\begin{teorema}{Existencia y unicidad de soluciones fuertes (Itô-Doob)}
+\label{thm:ito_doob}
+Si los coeficientes satisfacen para constante $L > 0$ y todo $x, y \in \mathbb{R}$,
+$t \in [0,T]$:
+\begin{enumerate}
+  \item \textbf{Lipschitz:}
+        $|\mu(x,t)-\mu(y,t)| + |\sigma(x,t)-\sigma(y,t)| \leq L|x-y|$.
+  \item \textbf{Crecimiento lineal:}
+        $|\mu(x,t)|^2 + |\sigma(x,t)|^2 \leq L^2(1+|x|^2)$.
+\end{enumerate}
+Entonces para cualquier $X_0$ con $\mathbb{E}[X_0^2] < \infty$, existe una
+única solución fuerte de~\eqref{eq:sde} con $\sup_{t\in[0,T]}\mathbb{E}[X_t^2]
+< \infty$.
+\end{teorema}
+
+\begin{proof}[Esquema (iteración de Picard)]
+Se construye la sucesión $X_t^{(0)} = X_0$ y, para $n \geq 0$:
+\[
+  X_t^{(n+1)} = X_0 + \int_0^t \mu(X_s^{(n)},s)\,ds
+  + \int_0^t \sigma(X_s^{(n)},s)\,dW_s.
+\]
+
+\noindent\textbf{Convergencia en $L^2$:}
+Sea $e_t^{(n)} = \mathbb{E}[\sup_{s \leq t}|X_s^{(n+1)}-X_s^{(n)}|^2]$.
+Usando la desigualdad de Doob para martingalas y la isometría de Itô:
+\begin{align*}
+  e_t^{(n)}
+  &\leq C\bigg(\int_0^t \mathbb{E}[|\mu(X_s^{(n)})-\mu(X_s^{(n-1)})|^2]\,ds \\
+  &\qquad + \int_0^t \mathbb{E}[|\sigma(X_s^{(n)})-\sigma(X_s^{(n-1)})|^2]\,ds
+    \bigg)
+  \leq 2CL^2 \int_0^t e_s^{(n-1)}\,ds.
+\end{align*}
+Por inducción: $e_t^{(n)} \leq \frac{(2CL^2 t)^n}{n!}e_T^{(0)}$.
+Como $\sum_n \sqrt{e_T^{(n)}} < \infty$, la sucesión converge en $L^2$
+uniformemente en $[0,T]$, y el límite $X_t$ satisface la SDE~\eqref{eq:sde}.
+
+\noindent\textbf{Unicidad:}
+Si $X_t$ e $Y_t$ son dos soluciones con la misma condición inicial:
+\[
+  \mathbb{E}[|X_t-Y_t|^2]
+  \leq 2L^2(t+1)\int_0^t \mathbb{E}[|X_s-Y_s|^2]\,ds.
+\]
+Por el lema de Gronwall: $\mathbb{E}[|X_t-Y_t|^2] \leq 0 \cdot C(t,T) = 0$
+para todo $t$, luego $X_t = Y_t$ c.s. $\square$
+\end{proof}
+
+\subsection{El proceso de Ornstein-Uhlenbeck: solución explícita}
+\label{subsec:ou}
+
+El proceso de Ornstein-Uhlenbeck (OU) es la SDE lineal:
+\begin{equation}
+  dX_t = -\alpha X_t\,dt + \sigma\,dW_t, \qquad X_0 = x_0,
+  \label{eq:ou}
+\end{equation}
+con $\alpha > 0$ (tasa de retorno) y $\sigma > 0$ (intensidad del ruido).
+Los coeficientes $\mu(x) = -\alpha x$ y $\sigma$ cumplen las condiciones del
+Teorema~\ref{thm:ito_doob}: la solución existe, es única y puede calcularse
+explícitamente.
+
+\medskip
+\noindent\textbf{Solución por variación de parámetros (factor integrante).}
+
+\noindent\textit{Paso 1.} El proceso $Y_t = e^{\alpha t}X_t$. Aplicar la
+fórmula de Itô al producto $f(t,x) = e^{\alpha t}x$ con $dX_t = -\alpha X_t\,dt
++ \sigma\,dW_t$:
+\begin{align*}
+  dY_t &= d(e^{\alpha t}X_t) \\
+  &= \alpha e^{\alpha t}X_t\,dt + e^{\alpha t}\,dX_t \\
+  &= \alpha e^{\alpha t}X_t\,dt + e^{\alpha t}(-\alpha X_t\,dt + \sigma\,dW_t) \\
+  &= \sigma e^{\alpha t}\,dW_t.
+\end{align*}
+
+\noindent\textit{Paso 2.} Integrando:
+$Y_t - Y_0 = \sigma\int_0^t e^{\alpha s}\,dW_s$, es decir:
+\begin{equation}
+  X_t = x_0 e^{-\alpha t}
+  + \sigma\int_0^t e^{-\alpha(t-s)}\,dW_s.
+  \label{eq:ou_sol}
+\end{equation}
+
+\noindent\textit{Paso 3.} La integral estocástica de un proceso determinista
+es una variable gaussiana. Calculando media y varianza:
+\begin{align*}
+  \mathbb{E}[X_t] &= x_0 e^{-\alpha t}, \\
+  \mathrm{Var}[X_t]
+  &= \sigma^2\int_0^t e^{-2\alpha(t-s)}\,ds
+   = \frac{\sigma^2}{2\alpha}(1-e^{-2\alpha t}).
+\end{align*}
+Por tanto $X_t \sim \mathcal{N}(x_0 e^{-\alpha t},\,\frac{\sigma^2}{2\alpha}
+(1-e^{-2\alpha t}))$.
+
+\medskip
+\noindent\textbf{Distribución estacionaria.}
+Cuando $t \to \infty$:
+\begin{equation}
+  X_\infty \sim \mathcal{N}\!\left(0,\, \frac{\sigma^2}{2\alpha}\right).
+  \label{eq:ou_estacionaria}
+\end{equation}
+La distribución estacionaria es gaussiana, centrada en cero, con varianza
+$\sigma^2/(2\alpha)$, independiente de la condición inicial $x_0$. La tasa de
+convergencia a la estacionaria es $e^{-\alpha t}$: más rápida para $\alpha$
+grande (resorte fuerte) y más lenta para $\alpha$ pequeño.
+
+\begin{observacion}{El proceso OU como forward process de la difusión}
+El forward process de los modelos de difusión del Capítulo~\ref{ch:cap12} es exactamente
+el proceso OU con parámetros específicos. Con $\alpha = 1$ y $\sigma = \sqrt{2}$,
+la varianza estacionaria es $\sigma^2/(2\alpha) = 1$: la distribución estacionaria
+es $\mathcal{N}(0,1)$, el prior de los modelos de difusión. El proceso OU lleva
+cualquier distribución de datos hacia $\mathcal{N}(0,1)$ con velocidad
+exponencial. El reverse process (Capítulo~\ref{ch:cap11}) deberá invertir exactamente
+este transporte.
+
+Para $\bm{X}_t \in \mathbb{R}^d$ con $d\bm{X}_t = -\bm{X}_t\,dt +
+\sqrt{2}\,d\bm{W}_t$, la distribución estacionaria es $\mathcal{N}(\bm{0},
+\bm{I})$ componente a componente: el noise schedule de los modelos de difusión más
+simples (DDPM) es una discretización de este proceso continuo.
+\end{observacion}
+
+\begin{fisicaconexion}{El proceso de Ornstein-Uhlenbeck en física estadística}
+El proceso OU fue introducido por Ornstein y Uhlenbeck (1930) para describir
+la velocidad de una partícula browniana en un fluido viscoso, corrigiendo la
+teoría de Einstein al incluir la inercia. La ecuación de Langevin completa es
+$m\dot{v} = -\gamma v + F_{\mathrm{ruido}}(t)$, que en la forma de SDE es
+exactamente~\eqref{eq:ou} con $X_t = v_t$, $\alpha = \gamma/m$ y
+$\sigma^2 = 2\gamma k_BT/m^2$ (relación fluctuación-disipación). La distribución
+estacionaria~\eqref{eq:ou_estacionaria} con $\sigma^2/(2\alpha) = k_BT/m$
+es la distribución de Maxwell-Boltzmann para la velocidad: la física
+estadística de equilibrio emerge como la distribución estacionaria de la SDE
+de Langevin.
+
+La conexión más profunda es con el \textbf{teorema fluctuación-disipación}: el
+coeficiente de difusión $\sigma^2$ y la tasa de amortiguamiento $\alpha$ no son
+independientes. La relación $\sigma^2 = 2\alpha k_BT/m$ (en unidades apropiadas,
+$D = k_BT\mu$ con $\mu$ la movilidad) es necesaria para que la distribución
+estacionaria sea el ensemble de Gibbs-Boltzmann $p^*(v) \propto e^{-mv^2/(2k_BT)}$.
+Esta es la misma condición de equilibrio que emerge del análisis de la distribución
+de Gibbs del SGD del Capítulo~\ref{ch:cap5}: la temperatura del SGD $\eta c/2$
+juega el mismo rol que $k_BT/m$ en la ecuación de Langevin física.
+
+En espectroscopía de resonancia magnética nuclear (RMN), el proceso OU describe
+la relajación de la magnetización transversal $M_\perp(t) = M_0 e^{-t/T_2}$
+bajo la acción del campo fluctuante de los espines vecinos: la tasa $\alpha =
+1/T_2$ es el tiempo de relajación espín-espín. Los tiempos de relajación $T_1$
+(longitudinal) y $T_2$ (transversal) son directamente los parámetros $\alpha$
+de los procesos OU que describen las componentes de la magnetización.
+\end{fisicaconexion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El generador infinitesimal y la conexión con las EDPs}
+\label{sec:generador}
+\dificultad{3}{3}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El generador de Markov}
+\label{subsec:generador}
+
+\begin{definicion}{Generador infinitesimal}
+\label{def:generador}
+Para la SDE $dX_t = \mu(X_t)\,dt + \sigma(X_t)\,dW_t$ (autónoma para
+simplificar la notación), el \textbf{generador infinitesimal} es el operador
+diferencial:
+\begin{equation}
+  \mathcal{A}f(x)
+  = \mu(x)\frac{\partial f}{\partial x}(x)
+  + \frac{\sigma(x)^2}{2}\frac{\partial^2 f}{\partial x^2}(x).
+  \label{eq:generador}
+\end{equation}
+\end{definicion}
+
+El nombre se justifica por el siguiente resultado, consecuencia directa de la
+fórmula de Itô:
+
+\begin{proposicion}{Caracterización del generador}
+\label{prop:generador_def}
+Para $f \in C^2$, el proceso $f(X_t) - f(X_0) - \int_0^t \mathcal{A}f(X_s)\,ds$
+es una martingala. Equivalentemente:
+\[
+  \mathcal{A}f(x) = \lim_{t\downarrow 0}
+  \frac{\mathbb{E}^x[f(X_t)] - f(x)}{t},
+\]
+donde $\mathbb{E}^x$ denota la esperanza condicionada a $X_0 = x$.
+\end{proposicion}
+
+\begin{proof}
+Por la fórmula de Itô: $f(X_t) - f(x) = \int_0^t \mathcal{A}f(X_s)\,ds
++ \int_0^t f'(X_s)\sigma(X_s)\,dW_s$. El último término es una martingala
+de Itô con media cero. Tomando la esperanza:
+$\mathbb{E}^x[f(X_t)] - f(x) = \int_0^t \mathbb{E}^x[\mathcal{A}f(X_s)]\,ds$.
+Para $f, \mu, \sigma$ acotadas, $\mathbb{E}^x[\mathcal{A}f(X_s)] \to \mathcal{A}f(x)$
+cuando $s \to 0$, y dividiendo por $t \to 0$ se obtiene el límite. $\square$
+\end{proof}
+
+\subsection{La ecuación de Fokker-Planck}
+\label{subsec:fokker_planck}
+
+La \textbf{ecuación de Fokker-Planck} describe la evolución de la densidad
+de probabilidad $p_t(x) = p(X_t \in dx)/dx$ del proceso $X_t$. Es la ecuación
+dual (adjunta $L^2$) de la ecuación de Kolmogorov hacia atrás.
+
+Para un proceso general $dX_t = \mu(X_t,t)\,dt + \sigma(X_t,t)\,dW_t$,
+la ecuación de Fokker-Planck es:
+\begin{equation}
+  \frac{\partial p_t}{\partial t}
+  = \mathcal{A}^* p_t
+  = -\frac{\partial}{\partial x}(\mu(x,t)\,p_t)
+  + \frac{1}{2}\frac{\partial^2}{\partial x^2}(\sigma(x,t)^2\,p_t),
+  \label{eq:fp}
+\end{equation}
+donde $\mathcal{A}^* = -\partial_x \circ \mu + \frac{1}{2}\partial_{xx}
+\circ \sigma^2$ es el adjunto $L^2$ del generador $\mathcal{A}$. Esta
+ecuación se derivará rigurosamente en el Capítulo~\ref{ch:cap11}.
+
+Para $\mu = 0$ y $\sigma = 1$ (difusión pura):
+$\frac{\partial p_t}{\partial t} = \frac{1}{2}\partial_{xx}p_t$. Esta es la
+\textbf{ecuación de calor} (con escala temporal $1/2$), que el estudiante
+resolvió en física matemática. La densidad de transición del movimiento
+browniano es:
+\[
+  p(X_t = x | X_0 = x_0) = \frac{1}{\sqrt{2\pi t}}e^{-(x-x_0)^2/(2t)},
+\]
+que es exactamente la función de Green de la ecuación de calor con
+fuente puntual en $x_0$: $\partial_t G = \frac{1}{2}\partial_{xx}G$,
+$G(x,0;x_0) = \delta(x-x_0)$. La ecuación de calor y el movimiento browniano
+son la misma estructura matemática.
+
+\begin{fisicaconexion}{La ecuación de calor, la difusión y la función de Green}
+La ecuación de calor $\partial_t T = \kappa\nabla^2 T$ (con $\kappa$ la
+difusividad térmica) es uno de los prototipos de EDP parabólica que el físico
+resuelve con series de Fourier, separación de variables o transformadas. La
+conexión estocástica añade una capa de significado: la solución de la ecuación
+de calor con condición inicial $T(\bm{x},0) = T_0(\bm{x})$ puede escribirse
+como esperanza sobre el movimiento browniano escalado:
+\[
+  T(\bm{x},t) = \mathbb{E}^{\bm{x}}[T_0(\bm{x} + \sqrt{2\kappa}\,\bm{W}_t)],
+\]
+donde el browniano modela la trayectoria aleatoria de un portador de calor.
+Este es el caso $V=0$, $g = T_0$, $\mu = 0$, $\sigma = \sqrt{2\kappa}$ de la
+fórmula de Feynman-Kac~\eqref{eq:feynman_kac}. La función de Green
+$G(\bm{x},t;\bm{x}_0) = (4\pi\kappa t)^{-d/2}e^{-|\bm{x}-\bm{x}_0|^2/(4\kappa t)}$
+es la densidad de transición del browniano escalado: temperatura y probabilidad
+son la misma función en dos idiomas.
+
+Para la \textbf{ecuación de Schrödinger} en tiempo imaginario $\tau = it$:
+$\partial_\tau\psi = -\hat{H}\psi/\hbar$ con $\hat{H} = -(\hbar^2/2m)\nabla^2
++ V(\bm{x})$, la sustitución $\tau \to t$ convierte la ecuación de Schrödinger
+en la ecuación de Fokker-Planck~\eqref{eq:fp} (con deriva y potencial). La
+densidad de probabilidad cuántica $|\psi|^2$ evoluciona como la densidad de
+probabilidad de una difusión. El camino de Feynman es exactamente la
+representación de Feynman-Kac~\eqref{eq:feynman_kac} de la función de Green
+cuántica: la integral de camino es la integral de Wiener sobre trayectorias
+brownianas. Esta dualidad entre mecánica cuántica y procesos estocásticos
+(mecánica estocástica de Nelson, 1966) es el fundamento teórico profundo de la
+relación entre los modelos de difusión del Capítulo~\ref{ch:cap12} y la física
+estadística cuántica.
+\end{fisicaconexion}
+\label{subsec:kolmogorov_atras}
+
+Sea $u(x,t) = \mathbb{E}^{x,t}[g(X_T)]$ la esperanza condicional de una
+función terminal $g$ dado $X_t = x$. La \textbf{ecuación de Kolmogorov hacia
+atrás} establece:
+\begin{equation}
+  \frac{\partial u}{\partial t} + \mathcal{A}u = 0,
+  \qquad u(x,T) = g(x).
+  \label{eq:kolmogorov_atras}
+\end{equation}
+Esta ecuación retrocede en tiempo desde la condición terminal $u(x,T) = g(x)$.
+La similitud con el backward pass: la ecuación hacia atrás propaga información
+del futuro (la función objetivo) al pasado (las condiciones de estado).
+
+\begin{proof}[Derivación de~\eqref{eq:kolmogorov_atras}]
+Para $s < T$, por la propiedad de Markov:
+$u(X_s,s) = \mathbb{E}[g(X_T)|\mathcal{F}_s]$.
+El proceso $u(X_s,s)$ es una martingala (esperanza condicional de $g(X_T)$).
+Por la fórmula de Itô~\eqref{eq:ito_formula}:
+\[
+  du(X_s,s) = \left(\partial_t u + \mathcal{A}u\right)ds
+  + \sigma(X_s,s)\partial_x u\,dW_s.
+\]
+Para que $u(X_s,s)$ sea martingala, el coeficiente de $ds$ debe ser cero:
+$\partial_t u + \mathcal{A}u = 0$. La condición terminal es $u(x,T) = g(x)$
+por definición. $\square$
+\end{proof}
+
+\subsection{La fórmula de Feynman-Kac}
+\label{subsec:feynman_kac}
+
+La fórmula de Feynman-Kac generaliza la conexión entre EDPs y esperanzas
+estocásticas al caso con potencial. Para la EDP:
+\begin{equation}
+  \frac{\partial u}{\partial t} + \mathcal{A}u - V(x,t)u = 0,
+  \qquad u(x,T) = g(x),
+  \label{eq:feynman_kac_pde}
+\end{equation}
+con $V \geq 0$ un potencial, la solución es:
+
+\begin{teorema}{Fórmula de Feynman-Kac}
+\label{thm:feynman_kac}
+Bajo condiciones de regularidad apropiadas sobre $\mu$, $\sigma$, $V$ y $g$,
+la solución de la EDP~\eqref{eq:feynman_kac_pde} es:
+\begin{equation}
+  u(x,t)
+  = \mathbb{E}^{x,t}\!\left[
+    \exp\!\left(-\int_t^T V(X_s,s)\,ds\right) g(X_T)
+  \right].
+  \label{eq:feynman_kac}
+\end{equation}
+\end{teorema}
+
+\begin{proof}
+Definir el proceso adjunto con factor de descuento:
+$M_s = e^{-\int_t^s V(X_r,r)\,dr}\,u(X_s,s)$ para $s \in [t,T]$.
+Se demostrará que $M_s$ es martingala, lo que implica
+$\mathbb{E}^{x,t}[M_T] = M_t = u(x,t)$.
+
+Aplicar la fórmula de Itô al producto:
+\[
+  dM_s = e^{-\int_t^s V\,dr}\left[
+    (-V(X_s,s)u + \partial_t u + \mathcal{A}u)\,ds
+    + \sigma\partial_x u\,dW_s
+  \right].
+\]
+Usando~\eqref{eq:feynman_kac_pde}: $-Vu + \partial_t u + \mathcal{A}u = 0$.
+Por tanto $dM_s = e^{-\int_t^s V\,dr}\sigma(X_s,s)\partial_x u(X_s,s)\,dW_s$:
+el coeficiente de $ds$ es cero y $M_s$ es martingala.
+
+Tomando la esperanza condicional con $M_t = u(x,t)$ y usando la condición
+terminal $u(X_T,T) = g(X_T)$:
+$u(x,t) = \mathbb{E}^{x,t}[M_T]
+= \mathbb{E}^{x,t}[e^{-\int_t^T V\,dr}\,g(X_T)]$. $\square$
+\end{proof}
+
+\begin{observacion}{Feynman-Kac y la función de score}
+En el Capítulo~\ref{ch:cap12}, la función de score $\nabla_{\bm{x}}\log p_t(\bm{x})$
+de los modelos de difusión satisface una EDP parabólica de la familia
+\eqref{eq:feynman_kac_pde}. La fórmula de Feynman-Kac~\eqref{eq:feynman_kac}
+expresa el score como una esperanza sobre el proceso estocástico forward,
+lo que proporciona la base teórica del \textit{score matching} para
+entrenar modelos de difusión: en lugar de resolver la EDP directamente,
+se estima la esperanza estocástica por Monte Carlo.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 10}
+\label{sec:resumen10}
+%───────────────────────────────────────────────────────────────────────────────
+
+Este capítulo construyó el cálculo de Itô sobre tres pilares. El primero es la
+variación cuadrática del movimiento browniano: $[W,W]_T = T$ c.s., resultado
+demostrado con convergencia casi segura vía el segundo lema de Borel-Cantelli.
+Este resultado es la razón precisa de $(dW)^2 = dt$ y la fuente de todas las
+diferencias entre el cálculo ordinario y el estocástico. El segundo pilar es
+la integral de Itô, construida como límite $L^2$ de sumas de Riemann con punto
+izquierdo, con la isometría de Itô como herramienta central. El tercer pilar es
+la fórmula de Itô, demostrada por expansión de Taylor reteniedo el término de
+segundo orden en $dX$, que produce la corrección $\frac{\sigma^2}{2}\partial_{xx}f$
+inexistente en el cálculo ordinario.
+
+El hilo hacia la física matemática del estudiante es la ecuación de calor:
+la difusión pura $dX_t = dW_t$ tiene como densidad de transición exactamente
+la función de Green de la ecuación de calor $\partial_t p = \frac{1}{2}\Delta p$.
+Las EDPs parabólicas y las SDEs son la misma estructura matemática: las
+soluciones de EDPs son esperanzas de funcionales estocásticos (Feynman-Kac)
+y las densidades de transición de SDEs son soluciones de EDPs (Fokker-Planck).
+
+Las dos conexiones hacia adelante son precisas. El \textbf{Capítulo~\ref{ch:cap11}}
+derivará rigurosamente la ecuación de Fokker-Planck a partir de la fórmula
+de Itô, estudiará su distribución estacionaria, y demostrará el teorema de
+Anderson para el time reversal: la SDE cuya densidad de transición va hacia
+atrás en tiempo, con la función de score como término de deriva adicional.
+La demostración del teorema de Anderson usa exactamente la fórmula de Itô
+y las propiedades de martingala desarrolladas aquí. El \textbf{Capítulo~\ref{ch:cap12}}
+usará el proceso OU como forward process y el teorema de Anderson como
+reverse process para construir los modelos de difusión: el score network
+entrenado es la función de score de Feynman-Kac estimada por matching.
+
+%───────────────────────────────────────────────────────────────────────────────
+\label{sec:estrella10}
+\begin{estrella}{Simulación estocástica en reactores de investigación}
+
+\textbf{La SDE de Langevin para la cinética puntual con ruido.}
+La ecuación de cinética puntual del reactor (Capítulo~\ref{ch:cap5}) asume
+que la reactividad $\rho(t)$ es una función determinista del tiempo. En la
+práctica, el flujo neutrónico en el IAN-R1 fluctúa estadísticamente incluso
+en condiciones nominales de operación, por dos fuentes de ruido: (1) la
+naturaleza discreta de los eventos de fisión (ruido de Poisson de las fuentes
+neutrónicas) y (2) las fluctuaciones mecánicas de las barras de control
+(vibraciones). El modelo estocástico del flujo neutrónico en estado estacionario
+perturbado es:
+\[
+  d\Phi_t = \bigl[-\alpha(\Phi_t - \Phi_0)\bigr]\,dt
+  + \sigma_\Phi\,dW_t,
+\]
+que es exactamente el proceso OU~\eqref{eq:ou} con $X_t = \Phi_t$, tasa de
+retorno $\alpha$ determinada por el tiempo de vida de los neutrones prompts, y
+$\Phi_0$ el flujo de referencia. La solución explícita~\eqref{eq:ou_sol}
+predice que las fluctuaciones de flujo tienen distribución gaussiana con
+varianza $\sigma_\Phi^2/(2\alpha)$ en estado estacionario.
+
+\textbf{Medición experimental de $\alpha$ por análisis de ruido.}
+La técnica de análisis de ruido en reactores (Noise Analysis) mide la función
+de autocorrelación del flujo:
+\[
+  R_\Phi(\tau) = \mathbb{E}[\Phi_t\Phi_{t+\tau}]
+  = \Phi_0^2 + \frac{\sigma_\Phi^2}{2\alpha}e^{-\alpha|\tau|},
+\]
+que se obtiene directamente de la solución~\eqref{eq:ou_sol} y las propiedades
+del proceso OU. Midiendo $R_\Phi(\tau)$ experimentalmente (correlación de
+señales de cámara de ionización) y ajustando la exponencial decayente, se
+extrae $\alpha$ sin perturbar el reactor. Este método es equivalente al
+análisis de Rossi-$\alpha$: ambos miden la tasa de decaimiento $\alpha$ del
+modo prompt del reactor. La isometría de Itô (Teorema~\ref{thm:isometria})
+garantiza que la varianza de la estimación de $\alpha$ puede acotarse en
+función del tiempo de observación $T$ y la varianza del proceso.
+
+\textbf{El proceso OU multidimensional para barras acopladas.}
+El IAN-R1 tiene varias barras de control cuyas posiciones fluctúan por
+vibraciones. El modelo completo es:
+\[
+  d\bm{X}_t = -\bm{A}\bm{X}_t\,dt + \bm{\Sigma}\,d\bm{W}_t,
+\]
+donde $\bm{X}_t \in \mathbb{R}^d$ son las posiciones de las barras y $\bm{A}$
+es la matriz de rigidez mecánica. La fórmula de Itô multidimensional~\eqref{eq:ito_multi}
+con $f = \Phi(\bm{X})$ el mapa barra$\to$flujo (sustituto MLP del Capítulo~\ref{ch:cap8})
+da directamente la SDE para el flujo inducido:
+\[
+  d\Phi_t = \nabla_{\bm{X}}\Phi\cdot(-\bm{A}\bm{X}_t)\,dt
+  + \frac{1}{2}\mathrm{tr}(\bm{\Sigma}\bm{\Sigma}^\top\nabla^2_{\bm{X}}\Phi)\,dt
+  + (\nabla_{\bm{X}}\Phi)^\top\bm{\Sigma}\,d\bm{W}_t.
+\]
+El término de corrección de Itô $\frac{1}{2}\mathrm{tr}(\bm{\Sigma}\bm{\Sigma}^\top
+\nabla^2_{\bm{X}}\Phi)$ es la corrección de segundo orden que aparece por la
+no linealidad del mapa sustituto: el flujo medio no es simplemente
+$\Phi(\mathbb{E}[\bm{X}_t])$, sino que hay una corrección de Jensen debida a
+la curvatura del sustituto, exactamente el término $\sigma^2\partial_{xx}f/2$
+de la fórmula de Itô.
+\end{estrella}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Verificación de la variación cuadrática y la isometría de Itô}
+\textbf{Objetivo:} verificar numéricamente el Teorema~\ref{thm:vc} y la
+isometría de Itô~\eqref{eq:isometria} por simulación de trayectorias brownianas.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Simular $N = 10^3$ trayectorias del browniano estándar en $[0,1]$
+        con $n \in \{10, 100, 1000\}$ subintervalos (incrementos
+        $\Delta W_k \sim \mathcal{N}(0, 1/n)$ i.i.d.).
+  \item Para cada $n$, calcular $V_1^{(2)}(\Pi_n) = \sum_k(\Delta W_k)^2$
+        por trayectoria. Verificar que $\mathbb{E}[V_1^{(2)}] \approx 1$ y
+        $\mathrm{Var}[V_1^{(2)}] \approx 2/n$ (consistente con la demostración
+        del Teorema~\ref{thm:vc}).
+  \item Calcular la integral de Itô $I = \int_0^1 W_t\,dW_t = \sum_k W_{t_k}\Delta W_k$
+        por simulación. Verificar la isometría: $\mathbb{E}[I^2] \approx
+        \int_0^1 \mathbb{E}[W_t^2]\,dt = \int_0^1 t\,dt = 1/2$.
+  \item Verificar la fórmula de Itô: $\int_0^1 W_t\,dW_t = (W_1^2 - 1)/2$
+        (caso $f(x) = x^2/2$). Comparar el resultado de la suma de Riemann
+        estocástica con la fórmula exacta para cada trayectoria.
+\end{enumerate}
+\medskip\noindent\textbf{Verificación:} el histograma de $I = (W_1^2-1)/2$
+debe ser una distribución $(\chi^2(1) - 1)/2$.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Simulación del proceso OU y estimación de parámetros}
+\textbf{Objetivo:} simular el proceso OU, verificar la distribución estacionaria
+y estimar los parámetros $\alpha$ y $\sigma$ a partir de trayectorias ruidosas
+(análogo al análisis de ruido en reactores).
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Simular $N = 500$ trayectorias del OU con $\alpha = 2$, $\sigma = 1$,
+        $X_0 \sim \mathcal{N}(0,1)$ y paso $\Delta t = 0.01$ hasta $T = 10$
+        usando Euler-Maruyama: $X_{k+1} = X_k - \alpha X_k\Delta t +
+        \sigma\sqrt{\Delta t}\,\xi_k$.
+  \item Verificar que el histograma de $X_T$ (con $T$ grande) aproxima
+        $\mathcal{N}(0, \sigma^2/(2\alpha)) = \mathcal{N}(0, 0.25)$.
+  \item Estimar $\alpha$ desde la función de autocorrelación empírica
+        $\hat{R}(\tau) = \frac{1}{T}\int_0^{T-\tau}X_t X_{t+\tau}\,dt$:
+        ajustar $\hat{R}(\tau) = \hat{\sigma}^2_\infty e^{-\hat{\alpha}|\tau|}$
+        por mínimos cuadrados sobre $\tau \in [0, 2]$.
+  \item Comparar los parámetros estimados $(\hat{\alpha}, \hat{\sigma})$ con
+        los verdaderos en función del número de trayectorias $N$ y el tiempo
+        de observación $T$. ¿Cuál es más importante para la estimación precisa?
+\end{enumerate}
+\end{ejerciciocomp}
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La construcción rigurosa del movimiento browniano fue realizada por Wiener
+(1923)~\cite{wiener1923differential}, quien construyó la medida de Wiener sobre
+el espacio $C([0,T])$. El teorema de Donsker (Sección~\ref{subsec:caminata})
+es la versión funcional del teorema central del límite; la referencia estándar
+es Billingsley (1999)~\cite{billingsley1999convergence}. El teorema de Kolmogorov-Chentsov
+para continuidad de trayectorias es estándar en cualquier texto de procesos
+estocásticos; véase Karatzas y Shreve (1991)~\cite{karatzas1991brownian}, la
+referencia canónica del campo.
+
+La integral de Itô fue introducida por Kiyosi Itô (1944)~\cite{ito1944stochastic}.
+La isometría de Itô (Teorema~\ref{thm:isometria}) y la extensión por densidad
+son la construcción estándar; véase Øksendal (2003)~\cite{oksendal2003stochastic}
+para una presentación accesible. La integral de Stratonovich (Sección~\ref{subsec:stratonovich})
+fue introducida por Stratonovich (1966)~\cite{stratonovich1966new}; la conversión
+entre las dos formulaciones~\eqref{eq:ito_strat} es estándar.
+
+La fórmula de Itô (Teorema~\ref{thm:ito_formula}) fue demostrada por Itô
+(1951)~\cite{ito1951formula}. El movimiento browniano geométrico (Ejercicio
+Resuelto~\ref{ej:browniano_geometrico}) es el modelo de Black y Scholes (1973)
+para precios de opciones; la fórmula de Black-Scholes es una aplicación directa
+de la fórmula de Itô a la EDP de Kolmogorov hacia atrás~\eqref{eq:kolmogorov_atras}.
+
+El proceso de Ornstein-Uhlenbeck fue introducido por Ornstein y Uhlenbeck
+(1930)~\cite{ornstein1930brownian} para modelar la velocidad browniana con
+inercia. Su solución explícita~\eqref{eq:ou_sol} y la distribución
+estacionaria~\eqref{eq:ou_estacionaria} son clásicas. El teorema de existencia
+y unicidad (Teorema~\ref{thm:ito_doob}) es debido a Itô y Doob; la prueba por
+iteración de Picard sigue a Øksendal (2003).
+
+La ecuación de Fokker-Planck (enunciada en la Sección~\ref{subsec:fokker_planck}
+y a derivar en el Capítulo~\ref{ch:cap11}) fue introducida por Fokker (1914) y
+Planck (1917) en el contexto de la difusión browniana. La ecuación de Kolmogorov
+hacia atrás~\eqref{eq:kolmogorov_atras} y la fórmula de Feynman-Kac
+(Teorema~\ref{thm:feynman_kac}) son debidas a Kolmogorov (1931) y a Feynman
+(1948) y Kac (1949)~\cite{kac1949distributions} respectivamente. La conexión
+entre la integral de camino de Feynman y la medida de Wiener, mencionada en la
+\textsf{Conexión física} de la Sección~\ref{subsec:fokker_planck}, fue
+desarrollada por Nelson (1966)~\cite{nelson1966derivation}.
+
+Para el análisis de ruido en reactores nucleares (Sección~\ref{sec:estrella10}),
+la referencia estándar es Williams (1974)~\cite{williams1974random}; el análisis
+de Rossi-$\alpha$ y los métodos de correlación para medir parámetros cinéticos
+se revisan en Pázsit y Pál (2008)~\cite{pazsit2008neutron}.
+\end{notasbib}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios resueltos}
+\addcontentsline{toc}{section}{Ejercicios resueltos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\label{ej:martingalas}
+\textbf{(Verificación de martingalas del browniano).}
+
+Verificar directamente desde la definición (sin usar la fórmula de Itô) que
+$M_t^{(2)} = W_t^2 - t$ es martingala.
+
+\medskip\noindent\textit{Solución.}
+Para $s < t$, usando los incrementos independientes del browniano:
+\begin{align*}
+  \mathbb{E}[W_t^2|\mathcal{F}_s]
+  &= \mathbb{E}[(W_s + (W_t-W_s))^2|\mathcal{F}_s] \\
+  &= \mathbb{E}[W_s^2 + 2W_s(W_t-W_s) + (W_t-W_s)^2|\mathcal{F}_s] \\
+  &= W_s^2 + 2W_s\,\mathbb{E}[W_t-W_s|\mathcal{F}_s]
+    + \mathbb{E}[(W_t-W_s)^2|\mathcal{F}_s].
+\end{align*}
+El incremento $W_t-W_s$ es independiente de $\mathcal{F}_s$:
+$\mathbb{E}[W_t-W_s|\mathcal{F}_s] = \mathbb{E}[W_t-W_s] = 0$ y
+$\mathbb{E}[(W_t-W_s)^2|\mathcal{F}_s] = \mathrm{Var}[W_t-W_s] = t-s$.
+Por tanto:
+\[
+  \mathbb{E}[M_t^{(2)}|\mathcal{F}_s]
+  = \mathbb{E}[W_t^2-t|\mathcal{F}_s]
+  = W_s^2 + (t-s) - t = W_s^2 - s = M_s^{(2)}.
+\]
+$M_t^{(2)}$ es martingala. $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:browniano_geometrico}
+\textbf{(Movimiento browniano geométrico: solución explícita y paradoja de Itô).}
+
+Sea $dS_t = \mu S_t\,dt + \sigma S_t\,dW_t$ con $S_0 = s_0 > 0$.
+
+\textbf{(a)} Encontrar la solución explícita aplicando la fórmula de Itô a
+$f(S) = \log S$.
+
+\textbf{(b)} Verificar que la solución preserva $S_t > 0$ c.s.
+
+\textbf{(c)} La "paradoja": la solución tiene $\mathbb{E}[S_t] = s_0 e^{\mu t}$,
+que crece con tasa $\mu$. Pero el logaritmo de la media geométrica satisface
+$\mathbb{E}[\log S_t] = \log s_0 + (\mu - \sigma^2/2)t$, que crece con tasa
+$\mu - \sigma^2/2 < \mu$. ¿Por qué la tasa "efectiva" es menor que $\mu$?
+
+\medskip\noindent\textit{Solución.}
+\textbf{(a)} Aplicar la fórmula de Itô a $f(S) = \log S$, con $\partial_S f = 1/S$,
+$\partial_{SS}f = -1/S^2$, y $dS_t = \mu S_t\,dt + \sigma S_t\,dW_t$:
+\[
+  d\log S_t
+  = \frac{1}{S_t}\,dS_t - \frac{1}{2S_t^2}(dS_t)^2
+  = (\mu - \tfrac{\sigma^2}{2})\,dt + \sigma\,dW_t.
+\]
+Integrando: $\log S_t = \log s_0 + (\mu-\sigma^2/2)t + \sigma W_t$, es decir:
+$S_t = s_0\exp((\mu-\sigma^2/2)t + \sigma W_t)$.
+
+\textbf{(b)} Como $S_t = s_0\exp(\cdot)$ con $s_0 > 0$, se tiene $S_t > 0$ c.s.
+
+\textbf{(c)} La corrección $-\sigma^2/2$ es la convexidad de la función exponencial
+vista desde el teorema de Jensen: $\mathbb{E}[e^X] \geq e^{\mathbb{E}[X]}$ para
+cualquier variable aleatoria $X$. La media aritmética $\mathbb{E}[S_t]$ crece
+más rápido que la media geométrica $e^{\mathbb{E}[\log S_t]}$ por la varianza
+del browniano. El término $-\sigma^2/2$ en la tasa del logaritmo es el precio
+estocástico de la convexidad: exactamente la corrección de Itô. $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:ou_distribucion}
+\textbf{(Distribución transitoria del proceso OU y convergencia a la estacionaria).}
+
+Para el proceso OU $dX_t = -X_t\,dt + \sqrt{2}\,dW_t$ con $X_0 \sim
+\mathcal{N}(\mu_0,\sigma_0^2)$:
+
+\textbf{(a)} Calcular $\mathbb{E}[X_t]$ y $\mathrm{Var}[X_t]$ para todo $t \geq 0$.
+
+\textbf{(b)} Mostrar que $X_t \sim \mathcal{N}(\mu_0 e^{-t}, \sigma_0^2 e^{-2t}
++ 1 - e^{-2t})$ para todo $t$.
+
+\textbf{(c)} ¿Para qué condición inicial $X_0$ la distribución de $X_t$ es
+estacionaria (idéntica para todo $t$)?
+
+\medskip\noindent\textit{Solución.}
+\textbf{(a)} De~\eqref{eq:ou_sol} con $\alpha = 1$, $\sigma = \sqrt{2}$:
+$X_t = X_0 e^{-t} + \sqrt{2}\int_0^t e^{-(t-s)}\,dW_s$.
+$\mathbb{E}[X_t] = \mu_0 e^{-t}$.
+$\mathrm{Var}[X_t] = \sigma_0^2 e^{-2t} + 2\int_0^t e^{-2(t-s)}\,ds
+= \sigma_0^2 e^{-2t} + 1 - e^{-2t}$.
+
+\textbf{(b)} $X_t$ es suma de una gaussiana ($X_0 e^{-t}$) y una integral
+estocástica de proceso determinista (gaussiana), ambas independientes:
+su distribución es gaussiana con la media y varianza calculadas.
+
+\textbf{(c)} La distribución es estacionaria si no depende de $t$:
+$\mu_0 e^{-t} = \mu_0$ requiere $\mu_0 = 0$; $\sigma_0^2 e^{-2t}+1-e^{-2t}
+= \sigma_0^2$ requiere $\sigma_0^2 = 1$. La condición inicial estacionaria
+es $X_0 \sim \mathcal{N}(0,1)$. $\square$
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios propuestos}
+\addcontentsline{toc}{section}{Ejercicios propuestos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\textbf{(Variación $p$-ésima del movimiento browniano).}
+Sea $V_T^{(p)}(\Pi) = \sum_i |\Delta W_i|^p$ la variación $p$-ésima.
+\begin{enumerate}[label=(\alph*)]
+  \item Para $p = 1$ (variación total): mostrar que $\mathbb{E}[V_T^{(1)}]
+        = \sqrt{2/\pi}\sum_i\sqrt{\Delta t_i} \sim \sqrt{n}$ para partición
+        uniforme con $n$ subintervalos. ¿Qué ocurre cuando $n \to \infty$?
+  \item Para $p = 2$: verificar el Teorema~\ref{thm:vc} calculando
+        $\mathrm{Var}[V_T^{(2)}]$ explícitamente usando $\mathbb{E}[Z^4] = 3$
+        para $Z \sim \mathcal{N}(0,1)$.
+  \item Para $p > 2$: mostrar que $V_T^{(p)} \to 0$ en probabilidad cuando
+        $\|\Pi\| \to 0$. ¿Qué ocurre para $p < 2$?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Isometría de Itô e independencia del punto de evaluación).}
+Definir la integral "de punto derecho"
+$\int_0^T f(t)\,dW_t^{\mathrm{right}} = \lim_{\|\Pi\|\to 0}\sum_i f(t_{i+1})
+\Delta W_i$ (análoga a la de Itô pero usando el final del intervalo).
+\begin{enumerate}[label=(\alph*)]
+  \item ¿Satisface la integral de punto derecho la isometría de Itô?
+  \item Calcular $\int_0^T W_t\,dW_t$ con la integral de Itô y con la de
+        punto derecho. ¿Difieren?
+  \item Mostrar que la diferencia entre las dos integrales es exactamente el
+        término de corrección de Stratonovich~\eqref{eq:ito_strat}.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Fórmula de Itô para el proceso de CIR).}
+El proceso de Cox-Ingersoll-Ross (CIR): $dX_t = \kappa(\theta-X_t)\,dt +
+\sigma\sqrt{X_t}\,dW_t$ con $X_0 = x_0 > 0$.
+\begin{enumerate}[label=(\alph*)]
+  \item Aplicar la fórmula de Itô a $f(X) = X^2$ para obtener la evolución
+        de $\mathbb{E}[X_t^2]$, y resolver la ODE resultante.
+  \item Para $\kappa = 1$, $\theta = 1$, $\sigma = 0.5$, calcular
+        $\mathrm{Var}[X_t]$ para $t \in [0,5]$ y verificar que $X_t \geq 0$
+        c.s.\ si $2\kappa\theta \geq \sigma^2$ (condición de Feller).
+  \item Comparar la distribución estacionaria del CIR con la del proceso OU:
+        ¿cuál es la diferencia cualitativa más importante?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Ecuación de Kolmogorov y la ecuación de calor).}
+Sea $X_t$ el movimiento browniano estándar y $u(x,t) = \mathbb{E}^{x,0}
+[\sin(X_T)]$ para $T$ fijo.
+\begin{enumerate}[label=(\alph*)]
+  \item Escribir la ecuación de Kolmogorov hacia atrás para $u$.
+  \item Resolver la ecuación (con condición terminal $u(x,T) = \sin x$) usando
+        la transformada de Fourier.
+  \item Verificar la solución obtenida con la fórmula de Feynman-Kac
+        ($V = 0$): calcular $\mathbb{E}[\sin(X_T)|X_0 = x]$ directamente usando
+        la función generatriz del browniano.
+  \item Interpretar el factor de amortiguamiento en la solución: ¿por qué
+        $u(x,0)$ tiene menor amplitud que $\sin x$?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Simulación de SDEs: el método de Euler-Maruyama).}
+El método de Euler-Maruyama discretiza $dX_t = \mu(X_t)\,dt + \sigma(X_t)\,dW_t$
+con paso $\Delta t$:
+$X_{k+1} = X_k + \mu(X_k)\Delta t + \sigma(X_k)\sqrt{\Delta t}\,\xi_k$,
+$\xi_k \sim \mathcal{N}(0,1)$ i.i.d.
+\begin{enumerate}[label=(\alph*)]
+  \item Implementar Euler-Maruyama para el proceso OU del
+        Ejercicio~\ref{ej:ou_distribucion} con $\Delta t \in \{0.1, 0.01, 0.001\}$.
+  \item Comparar la distribución empírica de $10^4$ trayectorias en $t = 1$
+        con la distribución analítica del Ejercicio Resuelto~\ref{ej:ou_distribucion}.
+        ¿Cuál es el error como función de $\Delta t$?
+  \item Verificar que la distribución estacionaria empírica (histograma de
+        $X_t$ para $t$ grande) converge a $\mathcal{N}(0,1)$.
+  \item El método de Milstein añade una corrección de segundo orden:
+        $X_{k+1} = X_k + \mu(X_k)\Delta t + \sigma(X_k)\sqrt{\Delta t}\,\xi_k
+        + \frac{1}{2}\sigma(X_k)\sigma'(X_k)(\xi_k^2-1)\Delta t$.
+        Comparar la precisión de Euler-Maruyama y Milstein para el browniano
+        geométrico (Ejercicio Resuelto~\ref{ej:browniano_geometrico}).
+\end{enumerate}
+\end{ejercicio}

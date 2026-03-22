@@ -1,0 +1,1233 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{No linealidad, composición y arquitectura de la red neuronal}
+\label{ch:cap4}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Los tres capítulos anteriores establecieron el marco matemático del aprendizaje:
+el problema de aproximación, las consecuencias del sobreajuste y la geometría del
+paisaje de optimización. Pero en todo ese desarrollo la familia paramétrica no lineal
+fue un objeto abstracto: se sabía que existía (Teorema~\ref{thm:universal}), se sabía
+que el paisaje de su pérdida era no convexo (Sección~\ref{sec:noconvexidad}), pero
+no se había dicho con precisión cuál es su forma.
+
+Este capítulo construye ese objeto. El argumento central es una proposición de tres
+líneas que lo justifica todo: la composición de funciones afines es afín. Sin
+no linealidad, una red de cien capas es matemáticamente idéntica a una red de una
+capa. Esa observación convierte la función de activación de un detalle de implementación
+en una necesidad estructural, y hace que toda la arquitectura de la red neuronal
+emerja como la única respuesta posible a una pregunta precisa.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Por qué la linealidad no alcanza}
+\label{sec:linealidad_no_alcanza}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{1}{1}
+
+\begin{definicion}{Función afín}
+\label{def:afin}
+Una función $A:\mathbb{R}^n \to \mathbb{R}^m$ es \textbf{afín} si existe una
+matriz $\bm{W} \in \mathbb{R}^{m \times n}$ y un vector $\bm{b} \in \mathbb{R}^m$
+tales que:
+\[
+  A(\bm{x}) = \bm{W}\bm{x} + \bm{b}, \qquad \forall\, \bm{x} \in \mathbb{R}^n.
+\]
+Cuando $\bm{b} = \bm{0}$, la función es \textbf{lineal} (en el sentido estricto
+de álgebra lineal). En el contexto de redes neuronales se suele decir ``capa lineal''
+para referirse a funciones afines, incluyendo el sesgo.
+\end{definicion}
+
+\begin{proposicion}{La composición de funciones afines es afín}
+\label{prop:comp_afin}
+Sean $A_1:\mathbb{R}^{n_0}\to\mathbb{R}^{n_1}$ y $A_2:\mathbb{R}^{n_1}\to\mathbb{R}^{n_2}$
+dos funciones afines con $A_l(\bm{z}) = \bm{W}^{(l)}\bm{z}+\bm{b}^{(l)}$.
+Su composición $A_2 \circ A_1:\mathbb{R}^{n_0}\to\mathbb{R}^{n_2}$ es afín:
+\[
+  (A_2 \circ A_1)(\bm{x})
+  = \underbrace{\bm{W}^{(2)}\bm{W}^{(1)}}_{\bm{W}_{\mathrm{eq}}}\bm{x}
+  + \underbrace{\bm{W}^{(2)}\bm{b}^{(1)}+\bm{b}^{(2)}}_{\bm{b}_{\mathrm{eq}}}.
+\]
+Por inducción, la composición de $L$ funciones afines es afín con matriz
+$\bm{W}_{\mathrm{eq}} = \bm{W}^{(L)}\cdots\bm{W}^{(1)} \in \mathbb{R}^{n_L\times n_0}$
+y sesgo $\bm{b}_{\mathrm{eq}} \in \mathbb{R}^{n_L}$.
+\end{proposicion}
+
+\begin{proof}
+Cálculo directo:
+\begin{align*}
+  (A_2 \circ A_1)(\bm{x})
+  &= A_2(A_1(\bm{x}))
+   = A_2(\bm{W}^{(1)}\bm{x}+\bm{b}^{(1)}) \\
+  &= \bm{W}^{(2)}(\bm{W}^{(1)}\bm{x}+\bm{b}^{(1)})+\bm{b}^{(2)} \\
+  &= (\bm{W}^{(2)}\bm{W}^{(1)})\bm{x}+(\bm{W}^{(2)}\bm{b}^{(1)}+\bm{b}^{(2)}).
+\end{align*}
+La inducción sobre $L$ sigue el mismo argumento. $\square$
+\end{proof}
+
+La consecuencia es inmediata y contundente.
+
+\begin{proposicion}{La profundidad sin activación no aporta capacidad}
+\label{prop:depth_linear}
+La familia de funciones representables por una red de $L$ capas afines sin
+activación es idéntica a la familia de funciones representables por una sola
+capa afín. Formalmente, para toda elección de matrices $\bm{W}^{(l)}$ y sesgos
+$\bm{b}^{(l)}$, $l=1,\ldots,L$, existe una única capa afín
+$A_{\mathrm{eq}}(\bm{x}) = \bm{W}_{\mathrm{eq}}\bm{x}+\bm{b}_{\mathrm{eq}}$
+que produce exactamente la misma función.
+\end{proposicion}
+
+\begin{observacion}{El costo del colapso}
+Una red de $L$ capas afines con anchuras $n_0, n_1, \ldots, n_L$ tiene
+$\sum_{l=1}^L n_l(n_{l-1}+1)$ parámetros. La capa equivalente tiene solo
+$n_L(n_0+1)$ parámetros. La red profunda tiene más parámetros que la equivalente
+superficial, pero representa exactamente el mismo conjunto de funciones. Todo el
+esfuerzo de entrenar los parámetros adicionales es inútil: el modelo nunca escapará
+del subespacio de las funciones afines, independientemente de cuántas capas se apilen.
+Esto no es una limitación práctica sino una imposibilidad matemática.
+\end{observacion}
+
+\subsection{El rol estructural de la no linealidad}
+\label{subsec:rol_no_linealidad}
+
+\dificultad{1}{1}
+
+La Proposición~\ref{prop:depth_linear} convierte la pregunta en una necesidad
+de diseño: para que la profundidad aporte capacidad, cada capa debe introducir
+algo que no sea afín. La solución estándar es intercalar una función no lineal
+entre capas afines sucesivas.
+
+Esa función no lineal debe cumplir tres requisitos simultáneos:
+
+\begin{enumerate}
+  \item \textbf{No linealidad:} romper la estructura afín para que la
+        Proposición~\ref{prop:depth_linear} no aplique.
+  \item \textbf{Diferenciabilidad (casi en todo punto):} para que el
+        gradiente $\nabla_{\bm{\theta}}\mathcal{L}$ exista y los algoritmos
+        del Capítulo~\ref{ch:cap5} sean aplicables.
+  \item \textbf{Aplicabilidad elemento a elemento:} para que la estructura
+        vectorial de las capas se preserve y la implementación matricial
+        sea eficiente.
+\end{enumerate}
+
+La función que satisface estos tres requisitos recibe el nombre de
+\textbf{función de activación}, y su elección tiene consecuencias profundas
+sobre la capacidad de representación, la velocidad de entrenamiento y las
+propiedades de generalización del modelo.
+
+\begin{fisicaconexion}{Linealidad, superposición y sus límites en física}
+El principio de superposición ---que el efecto combinado de varias causas es
+la suma de los efectos individuales--- es el corazón de la física lineal: las
+ecuaciones de Maxwell en el vacío, la mecánica cuántica en la aproximación
+de campo libre, la acústica lineal. Pero la física real es no lineal en cuanto
+las amplitudes son grandes o los medios son activos. En óptica no lineal, la
+susceptibilidad de segundo orden $\chi^{(2)}$ genera armónicos: dos fotones de
+frecuencia $\omega$ producen uno de frecuencia $2\omega$, algo imposible en un
+medio lineal (donde la superposición implica que frecuencias distintas no
+interactúan). En mecánica, el péndulo lineal (ángulos pequeños) tiene frecuencia
+independiente de la amplitud; el péndulo no lineal tiene frecuencia que depende
+de la amplitud. La red neuronal está exactamente en el mismo dilema: sin
+no linealidad, la ``media'' entre dos entradas es la media de las salidas
+(superposición), y la red no puede representar nada que viole esa propiedad.
+La función de activación es el $\chi^{(2)}$ de la red: el mecanismo que
+introduce la interacción entre componentes de la entrada y hace posible
+representar fenómenos no superponibles.
+\end{fisicaconexion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Funciones de activación}
+\label{sec:activaciones}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{1}{2}
+
+\begin{definicion}{Función de activación}
+\label{def:activacion}
+Una \textbf{función de activación} es un mapa $\sigma:\mathbb{R}\to\mathbb{R}$
+no lineal, diferenciable en casi todo punto. Dado un vector
+$\bm{z} = (z_1,\ldots,z_m)^\top \in \mathbb{R}^m$, la función de activación
+se aplica \textbf{elemento a elemento}:
+\[
+  \sigma(\bm{z}) = \bigl(\sigma(z_1), \sigma(z_2), \ldots, \sigma(z_m)\bigr)^\top
+  \in \mathbb{R}^m.
+\]
+La dimensión del vector no cambia bajo la aplicación de $\sigma$.
+\end{definicion}
+
+\subsection{Catálogo de activaciones}
+\label{subsec:catalogo}
+
+\dificultad{1}{2}
+
+A continuación se describen las funciones de activación de mayor uso. Para
+cada una se dan la expresión analítica, la derivada (fundamental para
+backpropagation, Capítulo~\ref{ch:cap6}), el rango de imagen y las propiedades
+prácticas.
+
+\medskip
+\noindent\textbf{Sigmoide.}
+\[
+  \sigma(z) = \frac{1}{1+e^{-z}}, \qquad \sigma'(z) = \sigma(z)\bigl(1-\sigma(z)\bigr).
+\]
+Rango: $(0,1)$. Históricamente la primera activación usada en perceptrones (McCulloch
+y Pitts, 1943; Rosenblatt, 1958). Tiene interpretación probabilística natural
+(salida como probabilidad de clase). Sus desventajas son dos: la saturación para
+$|z|\gg 1$ (la derivada se aproxima a cero, problema que se analiza en la
+Sección~\ref{subsec:vanishing}) y que la imagen no está centrada en cero (lo que
+ralentiza la convergencia del gradiente).
+
+\medskip
+\noindent\textbf{Tangente hiperbólica (tanh).}
+\[
+  \tanh(z) = \frac{e^z - e^{-z}}{e^z + e^{-z}}, \qquad
+  \tanh'(z) = 1 - \tanh^2(z).
+\]
+Rango: $(-1,1)$. Antisimétrica: $\tanh(-z) = -\tanh(z)$. Relacionada con
+la sigmoide por $\tanh(z) = 2\sigma(2z)-1$. Al estar centrada en cero es
+preferible a la sigmoide en la mayoría de las configuraciones, pero comparte
+el problema de saturación.
+
+\medskip
+\noindent\textbf{Unidad Lineal Rectificada (ReLU).}
+\[
+  \mathrm{ReLU}(z) = \max(0,z), \qquad
+  \mathrm{ReLU}'(z) = \mathbf{1}[z>0] = \begin{cases}1 & z>0,\\0 & z<0.\end{cases}
+\]
+Rango: $[0,+\infty)$. La derivada no está definida en $z=0$, pero este punto tiene
+medida cero y en la práctica se asigna arbitrariamente (típicamente $0$ o $1/2$).
+ReLU es la activación dominante en redes profundas modernas desde 2010 (Nair y
+Hinton, 2010) por tres razones: el gradiente no se desvanece en la región activa
+($z > 0$), el cómputo es extremadamente barato, y produce representaciones
+dispersas (muchas neuronas inactivas para una entrada dada).
+
+\medskip
+\noindent\textbf{Leaky ReLU.}
+\[
+  \mathrm{LReLU}(z) = \max(\alpha z, z) = \begin{cases}z & z>0,\\\alpha z & z\leq 0,\end{cases}
+  \qquad \alpha \in (0,1) \text{ fijo (típ. }0.01\text{)}.
+\]
+Derivada: $\alpha$ para $z < 0$ y $1$ para $z > 0$. Resuelve el problema de la
+``neurona muerta'' de ReLU (una neurona con $z < 0$ siempre tiene gradiente cero y
+nunca se actualiza). Con $\alpha > 0$ siempre existe gradiente.
+
+\medskip
+\noindent\textbf{GELU (Gaussian Error Linear Unit).}
+\[
+  \mathrm{GELU}(z) = z\,\Phi(z), \qquad
+  \Phi(z) = \frac{1}{2}\left[1+\mathrm{erf}\!\left(\frac{z}{\sqrt{2}}\right)\right],
+\]
+donde $\Phi$ es la función de distribución acumulada normal estándar. Es una
+versión suavizada de ReLU: en vez de cortar abruptamente en $z=0$, la activación
+de cada entrada es proporcional a la probabilidad de que sea mayor que ruido
+gaussiano. Es la activación predominante en transformers y modelos de lenguaje
+modernos (BERT, GPT).
+
+\medskip
+\noindent\textbf{Softplus.}
+\[
+  \mathrm{Softplus}(z) = \log(1+e^z), \qquad
+  \mathrm{Softplus}'(z) = \sigma(z).
+\]
+Rango: $(0,+\infty)$. Aproximación suave y diferenciable de ReLU en todo $\mathbb{R}$.
+La derivada de Softplus es la sigmoide: conecta las dos activaciones clásicas en
+una sola familia.
+
+\begin{center}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Activación} & \textbf{Rango} & \textbf{Diferenciable} & \textbf{Uso típico} \\
+\midrule
+Sigmoide & $(0,1)$ & Sí & Salida probabilística \\
+Tanh & $(-1,1)$ & Sí & Capas ocultas (RNN) \\
+ReLU & $[0,\infty)$ & C.t.p. & Capas ocultas (MLP, CNN) \\
+Leaky ReLU & $\mathbb{R}$ & C.t.p. & Alternativa robusta a ReLU \\
+GELU & $\approx(-0.17,\infty)$ & Sí & Transformers \\
+Softplus & $(0,\infty)$ & Sí & Modelos de densidad \\
+\bottomrule
+\end{tabular}
+\captionof{table}{Resumen de las principales funciones de activación.
+C.t.p. = casi en todo punto.}
+\end{center}
+
+\begin{fisicaconexion}{Funciones de activación en física estadística y electrónica}
+Las funciones de activación más usadas no son inventos ad hoc: aparecen
+naturalmente en física. La sigmoide $\sigma(z) = (1+e^{-\beta z})^{-1}$
+es precisamente la \textbf{distribución de Fermi-Dirac}: la probabilidad de que
+un estado de energía $E$ esté ocupado a temperatura $T$ es $f(E) = (e^{(E-\mu)/k_BT}+1)^{-1}$,
+donde $\mu$ es el potencial químico. La función tanh es la \textbf{función de
+Langevin} de la teoría del paramagnetismo clásico: la magnetización media de un
+dipolo en campo externo $B$ y temperatura $T$ es $\langle\cos\theta\rangle = \coth(\mu B/k_BT) - k_BT/\mu B$,
+que en el límite de campo fuerte se aproxima a tanh. Y ReLU es exactamente el
+comportamiento de un \textbf{diodo ideal}: sin conducción para tensión negativa
+($z < 0$) y conducción lineal para tensión positiva ($z > 0$). La saturación de
+la sigmoide y tanh para $|z| \gg 1$ tiene incluso un análogo: la saturación
+magnética, cuando todos los dipolos están alineados y el campo adicional ya no
+produce más magnetización.
+\end{fisicaconexion}
+
+\subsection{El problema del gradiente que se desvanece}
+\label{subsec:vanishing}
+
+\dificultad{2}{2}
+
+Para activaciones acotadas como sigmoide y tanh, la derivada satisface
+$|\sigma'(z)| \leq M < 1$ para todo $z$ (con $M = 1/4$ para sigmoide y $M = 1$
+para tanh, aunque en la práctica la derivada de tanh es menor que $1$ salvo en
+$z = 0$). Esta propiedad tiene una consecuencia grave en redes profundas.
+
+Se adelanta aquí un resultado que se demostrará formalmente en el
+Capítulo~\ref{ch:cap6}: el gradiente de $\mathcal{L}$ respecto a los parámetros
+de la capa $l$ contiene como factor un producto de matrices de la forma:
+\[
+  \prod_{k=l}^{L-1} \operatorname{diag}(\sigma'(\bm{z}^{(k)}))\,\bm{W}^{(k+1)}.
+\]
+Cada factor $\operatorname{diag}(\sigma'(\bm{z}^{(k)}))$ es una matriz diagonal
+cuyos elementos son $\sigma'(z^{(k)}_j) \leq M$. Si $M < 1$ y las matrices
+$\bm{W}^{(k)}$ tienen norma espectral del orden de $1$, la norma del producto
+decae como $O(M^{L-l})$: el gradiente de las capas tempranas es exponencialmente
+pequeño en el número de capas que las separan de la salida.
+
+\begin{observacion}{Por qué ReLU resuelve el problema}
+Para ReLU, $\sigma'(z) = \mathbf{1}[z>0] \in \{0,1\}$: el gradiente es $1$ en
+las neuronas activas y $0$ en las inactivas. En la región activa no hay atenuación
+multiplicativa: el gradiente se propaga sin disminuir por las capas. Este es el
+mecanismo fundamental que permitió entrenar redes de decenas de capas a partir de
+2012. Las redes residuales (ResNets) del Capítulo~\ref{ch:cap9} van más lejos
+aún, añadiendo conexiones de salto que crean caminos directos para el gradiente.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La neurona artificial}
+\label{sec:neurona}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{1}{2}
+
+\begin{definicion}{Neurona artificial}
+\label{def:neurona}
+Una \textbf{neurona artificial} con $n$ entradas es la función
+$\nu:\mathbb{R}^n \to \mathbb{R}$ definida por:
+\[
+  \nu(\bm{x}) = \sigma\bigl(\bm{w}^\top\bm{x} + b\bigr),
+\]
+donde $\bm{w} \in \mathbb{R}^n$ es el \textbf{vector de pesos}, $b \in \mathbb{R}$
+el \textbf{sesgo} y $\sigma:\mathbb{R}\to\mathbb{R}$ la \textbf{función de activación}.
+Los parámetros de una neurona son $(\bm{w}, b) \in \mathbb{R}^{n+1}$.
+\end{definicion}
+
+\subsection{Interpretación geométrica}
+\label{subsec:geom_neurona}
+
+La cantidad $\bm{w}^\top\bm{x} + b$ tiene una interpretación geométrica precisa.
+El conjunto $\mathcal{H} = \{\bm{x} \in \mathbb{R}^n : \bm{w}^\top\bm{x}+b = 0\}$
+es un \textbf{hiperplano} en $\mathbb{R}^n$ con vector normal $\bm{w}$. La
+distancia signada de un punto $\bm{x}$ a este hiperplano es:
+\[
+  d(\bm{x}, \mathcal{H}) = \frac{\bm{w}^\top\bm{x}+b}{\|\bm{w}\|_2}.
+\]
+La neurona evalúa $\sigma$ sobre esta distancia signada (escalada por
+$\|\bm{w}\|_2$). Hay tres regímenes cualitativos:
+
+\begin{itemize}
+  \item \textbf{Activación escalón} ($\sigma = \mathbf{1}[\cdot > 0]$): la
+        neurona asigna $1$ a todos los puntos de un semihiperespacio y $0$ al
+        opuesto. Es el perceptrón original de Rosenblatt (1958).
+  \item \textbf{Activaciones suaves} (sigmoide, tanh): la neurona produce una
+        transición continua entre $0$ y $1$ (o $-1$ y $1$) centrada en
+        $\mathcal{H}$, con ancho de transición inversamente proporcional a
+        $\|\bm{w}\|_2$.
+  \item \textbf{ReLU}: la neurona es exactamente lineal para $\bm{x}$ en el
+        semihiperespacio positivo ($\bm{w}^\top\bm{x}+b > 0$) y cero en el
+        negativo. El hiperplano $\mathcal{H}$ delimita la región activa de la
+        neurona.
+\end{itemize}
+
+Esta geometría conecta directamente con el Teorema de Aproximación Universal
+(Teorema~\ref{thm:universal}): los términos $\sigma(\bm{w}_j^\top\bm{x}+b_j)$
+de esa suma son exactamente neuronas con activación $\sigma$. El teorema dice
+que sumando suficientes neuronas con pesos y sesgos bien elegidos se puede
+aproximar cualquier función continua: equivalentemente, que superponiendo
+suficientes transiciones suaves en distintas direcciones del espacio de entrada
+se puede representar cualquier función suave.
+
+\subsection{Conexión con las RBF del Capítulo~1}
+\label{subsec:rbf_vs_neurona}
+
+La neurona artificial y la función de base radial (RBF) son dos formas distintas
+de construir bases no lineales para la aproximación, y sus geometrías son
+complementarias.
+
+Una RBF gaussiana $\phi(\bm{x}) = e^{-\|\bm{x}-\bm{c}\|^2/2\sigma^2}$ mide la
+\textbf{distancia euclídea} de $\bm{x}$ al centro $\bm{c}$: es localmente activa
+(responde fuertemente solo para $\bm{x}$ cercanos a $\bm{c}$) e isotrópica
+(sensible por igual a todas las direcciones). Una neurona sigmoide $\sigma(\bm{w}^\top\bm{x}+b)$
+mide la \textbf{proyección} de $\bm{x}$ sobre la dirección $\bm{w}$: es globalmente
+activa (responde para todos los $\bm{x}$ en una dirección específica) y anisotrópica
+(sensible solo a la componente de $\bm{x}$ en la dirección $\bm{w}$).
+
+Esta distinción tiene consecuencias en el paisaje de pérdida del Capítulo~\ref{ch:cap3}:
+las redes RBF tienen paisajes de pérdida con estructura más local y, en algunos
+casos, más convexa; las redes de neuronas tienen paisajes más complejos pero
+son mucho más eficientes en alta dimensión, donde las RBF sufren la maldición
+de la dimensionalidad.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La capa neuronal}
+\label{sec:capa}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{1}{2}
+
+\begin{definicion}{Capa neuronal densa}
+\label{def:capa}
+Una \textbf{capa neuronal densa} con $n$ entradas y $m$ salidas es la función
+$\varphi:\mathbb{R}^n \to \mathbb{R}^m$ definida por:
+\[
+  \varphi(\bm{x}) = \sigma\bigl(\bm{W}\bm{x} + \bm{b}\bigr),
+\]
+donde $\bm{W} \in \mathbb{R}^{m \times n}$ es la \textbf{matriz de pesos},
+$\bm{b} \in \mathbb{R}^m$ el \textbf{vector de sesgos} y $\sigma$ se aplica
+elemento a elemento. El número de parámetros de una capa densa es:
+\[
+  p_{\text{capa}} = mn + m = m(n+1).
+\]
+La $j$-ésima salida de $\varphi$ es exactamente la $j$-ésima neurona:
+$\varphi(\bm{x})_j = \sigma(\bm{w}_j^\top\bm{x}+b_j)$, donde $\bm{w}_j^\top$
+es la $j$-ésima fila de $\bm{W}$.
+\end{definicion}
+
+\subsection{Evaluación sobre un batch}
+\label{subsec:batch}
+
+En la práctica, las redes se evalúan sobre \textbf{batches} de $B$ muestras
+simultáneamente, no muestra a muestra. Sea $\bm{X} \in \mathbb{R}^{B \times n}$
+la matriz cuya $i$-ésima fila es $\bm{x}_i^\top$. La evaluación de la capa
+sobre el batch es:
+\[
+  \varphi(\bm{X}) = \sigma\bigl(\bm{X}\bm{W}^\top + \bm{1}_B\bm{b}^\top\bigr)
+  \in \mathbb{R}^{B \times m},
+\]
+donde $\bm{1}_B \in \mathbb{R}^B$ es el vector de unos y el broadcasting del
+sesgo replica $\bm{b}^\top$ en las $B$ filas. Esta operación es un único producto
+matricial $\bm{X}\bm{W}^\top$ seguido de una operación elemento a elemento.
+
+\begin{observacion}{Por qué el producto matricial es la operación central}
+El producto $\bm{X}\bm{W}^\top$ con $\bm{X} \in \mathbb{R}^{B\times n}$ y
+$\bm{W} \in \mathbb{R}^{m\times n}$ cuesta $O(Bmn)$ operaciones en punto
+flotante. Las GPUs modernas están diseñadas específicamente para ejecutar
+multiplicaciones de matrices densas de forma masivamente paralela: una GPU de
+gama media puede realizar $\approx 100$ teraFLOPS (operaciones de punto flotante
+por segundo), lo que permite procesar batches de miles de muestras en milisegundos.
+La elección de la capa densa como unidad fundamental de la red no es solo
+matemáticamente conveniente: es la estructura que mejor explota el paralelismo
+del hardware disponible.
+\end{observacion}
+
+\subsection{La capa como transformación de representación}
+\label{subsec:representacion}
+
+Cada capa transforma la representación de los datos. Si $n < m$ la capa expande
+la representación (más dimensiones, más espacio para separar las clases). Si
+$n > m$ la comprime (extrae los factores más relevantes). Si $n = m$ la transforma
+isométricamente en el mismo espacio dimensional.
+
+Esta perspectiva ---las capas como aprendizaje de representaciones jerárquicas---
+es una de las intuiciones más productivas en el diseño de arquitecturas: las
+capas tempranas aprenden características simples (bordes en una imagen, fonemas
+en audio), las capas intermedias combinan características en patrones más
+complejos, y las capas finales usan esos patrones para producir la salida. Esta
+jerarquía no se impone: emerge del proceso de entrenamiento.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La red neuronal densa: el perceptrón multicapa}
+\label{sec:mlp}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+\begin{definicion}{Red neuronal densa (MLP)}
+\label{def:mlp}
+Un \textbf{perceptrón multicapa} (\textit{multilayer perceptron}, MLP) de
+profundidad $L$ es la composición:
+\[
+  f(\bm{x};\bm{\theta})
+  = \varphi^{(L)} \circ \varphi^{(L-1)} \circ \cdots \circ \varphi^{(1)}(\bm{x}),
+\]
+donde:
+\begin{itemize}
+  \item $\varphi^{(l)}(\bm{z}) = \sigma^{(l)}(\bm{W}^{(l)}\bm{z}+\bm{b}^{(l)})$
+        para $l = 1, \ldots, L-1$ son las \textbf{capas ocultas}.
+  \item $\varphi^{(L)}(\bm{z}) = \bm{W}^{(L)}\bm{z}+\bm{b}^{(L)}$ es la
+        \textbf{capa de salida}, generalmente sin activación no lineal
+        en problemas de regresión.
+  \item $\bm{x} \in \mathbb{R}^{n_0}$ es la \textbf{entrada}.
+  \item Las dimensiones satisfacen: $\bm{W}^{(l)} \in \mathbb{R}^{n_l \times n_{l-1}}$,
+        $\bm{b}^{(l)} \in \mathbb{R}^{n_l}$, con $n_0$ la dimensión de entrada y
+        $n_L$ la dimensión de salida.
+\end{itemize}
+El \textbf{vector de parámetros} es:
+\[
+  \bm{\theta} = \bigl(\bm{W}^{(1)}, \bm{b}^{(1)}, \ldots, \bm{W}^{(L)}, \bm{b}^{(L)}\bigr).
+\]
+\end{definicion}
+
+\subsection{Vocabulario arquitectónico y conteo de parámetros}
+\label{subsec:vocabulario}
+
+\begin{definicion}{Arquitectura de un MLP}
+\label{def:arquitectura}
+La \textbf{arquitectura} de un MLP queda completamente especificada por la tupla
+$(n_0, n_1, n_2, \ldots, n_{L-1}, n_L)$, donde $n_0$ es la dimensión de entrada,
+$n_1,\ldots,n_{L-1}$ son las \textbf{anchuras} de las capas ocultas, y $n_L$ es la
+dimensión de salida. La \textbf{profundidad} es $L$ (número de capas con parámetros).
+
+El número total de parámetros es:
+\[
+  p = \sum_{l=1}^{L} n_l(n_{l-1}+1)
+  = \sum_{l=1}^{L} \underbrace{n_l n_{l-1}}_{\text{pesos}} + \underbrace{n_l}_{\text{sesgos}}.
+\]
+\end{definicion}
+
+\begin{ejemplo}{Conteo de parámetros en una red concreta}
+\label{ex:conteo}
+Considérese la arquitectura $(3, 64, 64, 1)$: entrada tridimensional ($n_0 = 3$,
+por ejemplo coordenadas espaciales en un problema físico), dos capas ocultas de
+$64$ neuronas y salida escalar. El conteo de parámetros por capa es:
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Capa} & $n_{l-1}$ & $n_l$ & \textbf{Pesos} & \textbf{Sesgos} \\
+\midrule
+1 (entrada $\to$ oculta 1) & 3 & 64 & 192 & 64 \\
+2 (oculta 1 $\to$ oculta 2) & 64 & 64 & 4096 & 64 \\
+3 (oculta 2 $\to$ salida) & 64 & 1 & 64 & 1 \\
+\midrule
+\textbf{Total} & & & 4352 & 129 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Total: $p = 4352 + 129 = 4481$ parámetros. Esta red, que cabe en la memoria de
+cualquier dispositivo moderno, puede aproximar funciones altamente complejas en
+$\mathbb{R}^3$.
+\end{ejemplo}
+
+\subsection{El MLP como familia paramétrica no lineal}
+\label{subsec:mlp_familia}
+
+El MLP es exactamente una familia paramétrica no lineal en el sentido de la
+Definición~\ref{def:nolineal}: los parámetros $\bm{W}^{(l)}$ y $\bm{b}^{(l)}$
+aparecen dentro de composiciones de funciones no lineales y no pueden extraerse
+como combinación lineal de funciones base independientes de $\bm{\theta}$.
+
+Esta observación conecta los cuatro primeros capítulos: el Capítulo~1 definió el
+problema de aproximación y mostró que la familia lineal tiene solución exacta; el
+Capítulo~2 mostró que el sobreajuste exige controlar la complejidad; el
+Capítulo~3 mostró que el paisaje de pérdida de una familia no lineal es no convexo;
+y ahora el Capítulo~4 exhibe la familia no lineal concreta cuya expresividad el
+Teorema de Aproximación Universal garantiza.
+
+El Teorema~\ref{thm:universal} se puede releer ahora con vocabulario preciso: una
+red de una capa oculta ($L = 2$) con $M$ neuronas y activación $\sigma$ continua
+y no constante puede aproximar cualquier función continua en un compacto con
+precisión $\varepsilon$. Lo que el teorema no dice ---y lo que los Capítulos~5 y
+\ref{ch:cap6} abordan--- es cómo encontrar los parámetros que realizan esa
+aproximación.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Profundidad versus anchura}
+\label{sec:depth_vs_width}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+El Teorema de Aproximación Universal garantiza que la profundidad $L = 2$ es
+suficiente en principio. Sin embargo, ``suficiente en principio'' puede requerir
+una anchura exponencialmente grande. La profundidad tiene ventajas de
+representación que la anchura no puede compensar eficientemente.
+
+\subsection{El teorema de aproximación universal revisitado}
+\label{subsec:uat_revisited}
+
+El Teorema~\ref{thm:universal} establece que para cualquier $\varepsilon > 0$
+existe un MLP con $L = 2$ que aproxima $g$ con error $\varepsilon$. Pero no
+acota el número de neuronas $M$ necesarias. Resultados más recientes muestran
+que $M$ puede crecer exponencialmente con la dimensión de la entrada:
+
+\begin{observacion}{Costo de la superficialidad}
+Para aproximar funciones con interacciones de orden $k$ entre $n$ variables de
+entrada, una red de una capa oculta puede requerir $\Omega(n^k)$ neuronas
+(Montufar et al., 2014; Eldan y Shamir, 2016). Una red de profundidad $L > 2$
+puede representar las mismas funciones con $O(n \cdot L)$ neuronas, factorizando
+las interacciones de orden alto mediante representaciones intermedias compartidas.
+\end{observacion}
+
+\subsection{Composición jerárquica y factorización de complejidad}
+\label{subsec:jerarquia}
+
+\dificultad{2}{3}
+
+La intuición de fondo es que las redes profundas \textbf{factorizan} la complejidad
+de la función a aproximar. Una función de $n$ variables con correlaciones de orden
+$k$ contiene $\binom{n}{k}$ términos de interacción independientes. Una red
+superficial debe representarlos todos de forma independiente, con una neurona por
+término. Una red profunda puede construirlos composicionalmente: la capa 1 aprende
+características de orden 1, la capa 2 combina dos características de orden 1 para
+producir una de orden 2, la capa 3 combina dos de orden 2 para producir una de
+orden 4, etc.
+
+\begin{fisicaconexion}{Expansiones multipolares y representaciones jerárquicas}
+La factorización jerárquica de complejidad tiene un análogo exacto en la
+\textbf{expansión multipolar} de la electrostática. El potencial eléctrico de una
+distribución de carga arbitraria $\rho(\bm{r})$ se expande en momentos de orden
+creciente: el término monopolar $q/r$ captura la carga total, el término dipolar
+$\bm{p}\cdot\hat{r}/r^2$ captura la asimetría de primer orden, el cuadrupolar
+captura las correlaciones de segundo orden, etc. Cada orden añade información
+estructural sobre $\rho(\bm{r})$ que los órdenes anteriores no pueden representar.
+Una red neuronal profunda construye exactamente esa jerarquía de forma aprendida:
+la primera capa captura ``momentos'' simples de la entrada (proyecciones en
+distintas direcciones), las capas intermedias construyen correlaciones de orden
+creciente entre esos momentos, y la última capa combina todas las correlaciones en
+la predicción final. La diferencia con la expansión multipolar es que los ``momentos''
+de la red se aprenden de los datos en lugar de derivarse analíticamente.
+\end{fisicaconexion}
+
+\begin{observacion}{Profundidad óptima en la práctica}
+Para la mayoría de las aplicaciones prácticas, la profundidad óptima no se
+determina teóricamente sino experimentalmente: se entrena la misma arquitectura
+con distintas profundidades y se evalúa el error de generalización. Una regla
+empírica para modelos de física es que $L = 3$--$6$ capas ocultas
+con anchura moderada ($64$--$512$ neuronas) supera consistentemente a redes muy
+anchas con $L = 1$--$2$ capas. La búsqueda sistemática de arquitecturas es el
+problema de \textit{neural architecture search} (NAS), que se menciona brevemente
+en el Capítulo~\ref{ch:cap8}.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El grafo computacional}
+\label{sec:grafo}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+La evaluación de un MLP puede describirse como una secuencia de operaciones
+elementales. Esta descripción, formalizada como un \textbf{grafo computacional},
+es la abstracción que hace posible la diferenciación automática, el paralelismo
+en hardware especializado y la modularidad de los frameworks de aprendizaje profundo.
+Entender el grafo no es un detalle de implementación: es la clave para leer el
+código de cualquier red neuronal sin importar el framework.
+
+\subsection{Notación de pre-activación y post-activación}
+\label{subsec:notacion_forward}
+
+Se introduce la notación que se usará en el Capítulo~\ref{ch:cap6} para derivar el
+algoritmo de backpropagation.
+
+\begin{definicion}{Activaciones de capa}
+\label{def:activaciones_capa}
+Para un MLP de profundidad $L$ evaluado en $\bm{x} \in \mathbb{R}^{n_0}$,
+se definen:
+\begin{align}
+  \bm{a}^{(0)} &= \bm{x} \quad \text{(entrada)}, \label{eq:a0}\\
+  \bm{z}^{(l)} &= \bm{W}^{(l)}\bm{a}^{(l-1)} + \bm{b}^{(l)}
+                \quad \text{(\textbf{pre-activación} de la capa }l\text{)}, \label{eq:z}\\
+  \bm{a}^{(l)} &= \sigma^{(l)}(\bm{z}^{(l)})
+                \quad \text{(\textbf{post-activación} de la capa }l\text{)}, \label{eq:a}
+\end{align}
+para $l = 1, \ldots, L$, con $\sigma^{(L)} = \mathrm{id}$ en la capa de salida
+(regresión). La salida del MLP es $f(\bm{x};\bm{\theta}) = \bm{a}^{(L)}$.
+\end{definicion}
+
+La evaluación del MLP consiste en calcular sucesivamente
+$(\bm{z}^{(1)}, \bm{a}^{(1)}), (\bm{z}^{(2)}, \bm{a}^{(2)}), \ldots,
+(\bm{z}^{(L)}, \bm{a}^{(L)})$. Este proceso se denomina \textbf{paso hacia
+adelante} (\textit{forward pass}).
+
+\subsection{El grafo computacional como grafo dirigido acíclico}
+\label{subsec:dag}
+
+\begin{definicion}{Grafo computacional}
+\label{def:grafo_comp}
+El \textbf{grafo computacional} de un MLP es un grafo dirigido acíclico (DAG)
+$G = (V, E)$ donde:
+\begin{itemize}
+  \item Cada \textbf{nodo} $v \in V$ representa un tensor intermedio
+        ($\bm{x}$, $\bm{z}^{(l)}$, $\bm{a}^{(l)}$, o la pérdida $\mathcal{L}$).
+  \item Cada \textbf{arista} $e \in E$ representa una operación elemental:
+        producto matricial ($\bm{z} = \bm{W}\bm{a}+\bm{b}$),
+        activación ($\bm{a} = \sigma(\bm{z})$), o pérdida
+        ($\mathcal{L} = \ell(\bm{a}^{(L)}, \bm{y})$).
+  \item El grafo es \textbf{acíclico}: no hay ciclos, de modo que la evaluación
+        siempre puede hacerse en un orden topológico bien definido.
+\end{itemize}
+\end{definicion}
+
+Para un MLP de profundidad $L$ la estructura del grafo es lineal:
+\[
+  \bm{x}
+  \xrightarrow{\bm{W}^{(1)}\cdot+\bm{b}^{(1)}} \bm{z}^{(1)}
+  \xrightarrow{\sigma^{(1)}} \bm{a}^{(1)}
+  \xrightarrow{\bm{W}^{(2)}\cdot+\bm{b}^{(2)}} \bm{z}^{(2)}
+  \xrightarrow{\sigma^{(2)}} \bm{a}^{(2)}
+  \;\cdots\;
+  \xrightarrow{\bm{W}^{(L)}\cdot+\bm{b}^{(L)}} \bm{z}^{(L)}
+  \xrightarrow{\phantom{\sigma}} \mathcal{L}.
+\]
+
+Esta estructura lineal es la más simple posible. En el Capítulo~\ref{ch:cap9}
+se verán arquitecturas con grafos más complejos: conexiones de salto (ResNet),
+ramas paralelas (Inception) y grafos con estructura de atención (Transformer).
+
+\subsection{El forward pass como protocolo de evaluación}
+\label{subsec:forward_protocolo}
+
+El forward pass ejecuta el grafo de izquierda a derecha siguiendo el orden
+topológico. Para cada nodo, recibe los tensores de sus predecesores, aplica
+la operación correspondiente y produce el tensor de salida que se pasa al
+nodo siguiente.
+
+\begin{algorithm}[H]
+\caption{Forward pass de un MLP}
+\label{alg:forward}
+\KwIn{Entrada $\bm{x}$, parámetros $\{\bm{W}^{(l)}, \bm{b}^{(l)}\}_{l=1}^L$}
+\KwOut{Salida $\hat{y} = f(\bm{x};\bm{\theta})$, activaciones $\{\bm{z}^{(l)}, \bm{a}^{(l)}\}_{l=1}^L$}
+$\bm{a}^{(0)} \leftarrow \bm{x}$\;
+\For{$l \leftarrow 1$ \KwTo $L$}{
+  $\bm{z}^{(l)} \leftarrow \bm{W}^{(l)}\bm{a}^{(l-1)} + \bm{b}^{(l)}$\tcp*{Transformación afín}
+  $\bm{a}^{(l)} \leftarrow \sigma^{(l)}(\bm{z}^{(l)})$\tcp*{Activación elemento a elemento}
+}
+\Return $\bm{a}^{(L)}$\;
+\end{algorithm}
+
+El forward pass almacena todas las activaciones intermedias
+$\{\bm{z}^{(l)}, \bm{a}^{(l)}\}$. Esto no es un capricho de implementación:
+el Capítulo~\ref{ch:cap6} mostrará que el cálculo del gradiente (backward pass)
+requiere exactamente estos valores. La elección de qué almacenar y cuándo es el
+núcleo de los algoritmos de \textit{gradient checkpointing} para modelos con
+millones de parámetros.
+
+\subsection{Costo computacional del forward pass}
+\label{subsec:costo_forward}
+
+El costo del forward pass para una muestra es la suma de los costos de cada
+operación afín:
+\[
+  C_{\text{forward}} = \sum_{l=1}^L \underbrace{2\,n_l\,n_{l-1}}_{\text{mult.-suma para }\bm{W}^{(l)}\bm{a}^{(l-1)}}
+  + \underbrace{n_l}_{\text{suma de sesgo}}
+  + \underbrace{n_l}_{\text{activación}}
+  = O\!\left(\sum_{l=1}^L n_l\,n_{l-1}\right) \;\text{FLOPs}.
+\]
+
+\begin{ejemplo}{Costo del forward pass para MNIST}
+La arquitectura $(784, 256, 256, 10)$ (entrada: imagen $28\times28$ en escala de
+grises, dos capas ocultas, salida: $10$ dígitos) tiene:
+\begin{itemize}
+  \item Capa 1: $2 \times 256 \times 784 = 401{,}408$ operaciones.
+  \item Capa 2: $2 \times 256 \times 256 = 131{,}072$ operaciones.
+  \item Capa 3: $2 \times 10 \times 256 = 5{,}120$ operaciones.
+\end{itemize}
+Total: $\approx 537{,}600$ FLOPs por imagen. Para un batch de $B = 128$ imágenes:
+$\approx 68.8$M FLOPs. Una GPU de gama media ejecuta $\approx 10$T FLOPs/s:
+el forward pass completo del batch tarda $\approx 7\,\mu$s.
+\end{ejemplo}
+
+\subsection{De las operaciones al hardware: por qué importa el grafo}
+\label{subsec:hardware}
+
+El grafo computacional es el puente entre las matemáticas del modelo y el hardware
+que lo ejecuta. Esta conexión opera en tres niveles.
+
+\medskip
+\noindent\textbf{Nivel 1: Paralelismo de datos.}
+Cada muestra en el batch es independiente: las $B$ evaluaciones del forward pass
+pueden ejecutarse simultáneamente. Las GPUs tienen miles de núcleos de cómputo
+diseñados para ejecutar la misma instrucción sobre distintos datos (arquitectura
+SIMD, \textit{Single Instruction Multiple Data}). La evaluación en batch es la
+operación natural para este hardware: un producto matricial $\bm{X}\bm{W}^\top$
+con $\bm{X} \in \mathbb{R}^{B\times n}$ explota exactamente este paralelismo.
+
+\medskip
+\noindent\textbf{Nivel 2: Paralelismo de operadores.}
+Las operaciones de distintos nodos \emph{independientes} del grafo pueden ejecutarse
+simultáneamente. Para un MLP la estructura es secuencial (cada capa depende de la
+anterior), pero arquitecturas como los transformers tienen sub-grafos paralelos
+(múltiples cabezas de atención) que se ejecutan concurrentemente en distintos
+núcleos.
+
+\medskip
+\noindent\textbf{Nivel 3: Compilación y optimización del grafo.}
+Los frameworks modernos (JAX, PyTorch 2.0, TensorFlow con XLA) compilan el grafo
+a código optimizado para el hardware objetivo. Esta compilación incluye: fusión de
+operadores (combinar multiplicación matricial y activación en una sola operación
+de kernel), planificación de memoria (decidir qué tensores mantener en memoria
+de GPU y cuáles recomputar), y vectorización automática. El programador escribe
+el modelo en términos de nodos del grafo; el compilador decide cómo ejecutarlo
+eficientemente.
+
+\subsection{Frameworks modernos como lenguajes de grafos}
+\label{subsec:frameworks}
+
+Los frameworks de aprendizaje profundo son, en esencia, lenguajes de definición
+y ejecución de grafos computacionales. Entender el grafo permite leer cualquier
+framework sin aprender su API de memoria.
+
+\medskip
+\noindent\textbf{PyTorch} construye el grafo \textbf{dinámicamente} durante la
+ejecución del forward pass (\textit{define-by-run}): cada operación en Python
+añade un nodo al grafo y registra cómo calcular su gradiente. El grafo se descarta
+después del backward pass. Esta flexibilidad hace que depurar sea intuitivo (el
+código Python es directamente el modelo) pero limita algunas optimizaciones de
+compilación.
+
+\begin{verbatim}
+import torch
+import torch.nn as nn
+
+class MLP(nn.Module):
+    def __init__(self, n0, n1, n2, nL):
+        super().__init__()
+        # Definición de capas: W y b se crean aquí
+        self.capa1 = nn.Linear(n0, n1)  # W^(1), b^(1)
+        self.capa2 = nn.Linear(n1, n2)  # W^(2), b^(2)
+        self.salida = nn.Linear(n2, nL) # W^(3), b^(3)
+
+    def forward(self, x):
+        # Forward pass: construcción dinámica del grafo
+        a1 = torch.relu(self.capa1(x))  # z^(1), a^(1)
+        a2 = torch.relu(self.capa2(a1)) # z^(2), a^(2)
+        return self.salida(a2)           # z^(3) = a^(3)
+\end{verbatim}
+
+Cada línea del método \texttt{forward} corresponde a un subgrafo:
+\texttt{self.capa1(x)} computa $\bm{z}^{(1)} = \bm{W}^{(1)}\bm{x}+\bm{b}^{(1)}$,
+\texttt{torch.relu(...)} computa $\bm{a}^{(1)} = \mathrm{ReLU}(\bm{z}^{(1)})$.
+PyTorch registra automáticamente cómo calcular $\partial\mathcal{L}/\partial\bm{W}^{(1)}$
+cuando se llame a \texttt{loss.backward()}.
+
+\medskip
+\noindent\textbf{JAX} trata el grafo de forma \textbf{funcional y estática}
+(\textit{define-then-run}): el modelo se escribe como función pura de Python y
+JAX compila (\texttt{jit}) el grafo completo a código XLA optimizado para CPU,
+GPU o TPU.
+
+\begin{verbatim}
+import jax
+import jax.numpy as jnp
+
+def mlp(params, x):
+    # params = [(W1,b1), (W2,b2), (W3,b3)]
+    a = x
+    for W, b in params[:-1]:
+        z = a @ W.T + b      # pre-activación
+        a = jnp.tanh(z)      # post-activación
+    W, b = params[-1]
+    return a @ W.T + b       # capa de salida
+
+# Diferenciación automática del forward:
+grad_fn = jax.grad(lambda p, x, y: jnp.mean((mlp(p, x) - y)**2))
+# grad_fn calcula dL/dparams usando el grafo construido por mlp
+\end{verbatim}
+
+En JAX, \texttt{jax.grad} toma la función \texttt{mlp} (que define el grafo
+implícitamente) y produce automáticamente la función que calcula su gradiente
+respecto al primer argumento. La diferenciación automática, que se estudiará en
+el Capítulo~\ref{ch:cap6}, es el mecanismo que hace posible este paso.
+
+\begin{observacion}{Lo que el grafo abstrae}
+El grafo computacional abstrae tres decisiones de implementación que el programador
+no necesita tomar explícitamente: (1) el orden de evaluación (topológico, siempre
+correcto), (2) la forma de calcular gradientes (automática, por backpropagation),
+y (3) la asignación de operaciones a hardware (automática, por el compilador del
+framework). El programador especifica \emph{qué} computa la red; el framework decide
+\emph{cómo} y \emph{dónde} computarlo. Esta separación entre especificación y
+ejecución es la razón por la que el mismo código de PyTorch o JAX funciona sin
+modificaciones en CPU, GPU y TPU.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 4}
+\label{sec:resumen4}
+%───────────────────────────────────────────────────────────────────────────────
+
+Este capítulo respondió la pregunta que el Capítulo~1 dejó abierta: ¿qué forma
+específica tiene la familia paramétrica no lineal capaz de aproximar cualquier
+función continua?
+
+La respuesta emergió de una sola demostración: la composición de funciones afines
+es afín. Esa proposición hace que la función de activación sea inevitable, no
+opcional. Sin ella, apilar capas no gana expresividad. Con ella, la composición
+de capas afines y activaciones elemento a elemento produce una familia cuya
+expresividad el Teorema de Aproximación Universal garantiza.
+
+La arquitectura resultante ---la red neuronal densa--- tiene una descripción
+matemática precisa ($\bm{z}^{(l)} = \bm{W}^{(l)}\bm{a}^{(l-1)}+\bm{b}^{(l)}$,
+$\bm{a}^{(l)} = \sigma(\bm{z}^{(l)})$), un costo computacional analizable y una
+representación como grafo dirigido acíclico que la conecta directamente con los
+frameworks y el hardware modernos. Ese grafo no es solo una conveniencia notacional:
+es la abstracción que hace posible la diferenciación automática, el paralelismo
+masivo en GPU y la compilación optimizada de código.
+
+El siguiente capítulo cierra el ciclo: dado el objeto (MLP), el paisaje de su
+pérdida (Capítulo~3) y la representación que facilita el cálculo de gradientes
+(el grafo del forward pass), se pueden diseñar los algoritmos que ajustan los
+parámetros. Eso es la optimización estocástica del Capítulo~5.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios resueltos}
+\addcontentsline{toc}{section}{Ejercicios resueltos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\label{ej:comp_afin_inductivo}
+\textbf{(La composición de $L$ funciones afines es afín: caso general).}
+
+Demostrar por inducción que la composición de $L$ funciones afines
+$A_l(\bm{z}) = \bm{W}^{(l)}\bm{z}+\bm{b}^{(l)}$, $l = 1,\ldots,L$, es afín,
+e identificar explícitamente la matriz y el sesgo equivalentes.
+
+\medskip\noindent\textit{Solución.}
+\textit{Caso base} ($L=2$): demostrado en la Proposición~\ref{prop:comp_afin}.
+La función equivalente tiene $\bm{W}_{\mathrm{eq}} = \bm{W}^{(2)}\bm{W}^{(1)}$ y
+$\bm{b}_{\mathrm{eq}} = \bm{W}^{(2)}\bm{b}^{(1)}+\bm{b}^{(2)}$.
+
+\textit{Paso inductivo}: supóngase que la composición de $L-1$ funciones afines
+$A_{L-1}\circ\cdots\circ A_1$ es afín con matriz $\bm{W}_{L-1}$ y sesgo
+$\bm{b}_{L-1}$. Entonces:
+\[
+\begin{aligned}
+  A_L \circ (A_{L-1}\circ\cdots\circ A_1)(\bm{x})
+  &= \bm{W}^{(L)}(\bm{W}_{L-1}\bm{x}+\bm{b}_{L-1})+\bm{b}^{(L)} \\
+  &= \underbrace{(\bm{W}^{(L)}\bm{W}_{L-1})}_{\bm{W}_L}\bm{x}
+    + \underbrace{(\bm{W}^{(L)}\bm{b}_{L-1}+\bm{b}^{(L)})}_{\bm{b}_L},
+\end{aligned}
+\]
+que es afín. Por inducción, la matriz equivalente completa es
+$\bm{W}_{\mathrm{eq}} = \bm{W}^{(L)}\cdots\bm{W}^{(1)}$ y el sesgo es
+$\bm{b}_{\mathrm{eq}} = \sum_{l=1}^L \bm{W}^{(L)}\cdots\bm{W}^{(l+1)}\bm{b}^{(l)}$
+(con la convención de que el producto vacío es la identidad). $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:forward_manual}
+\textbf{(Forward pass manual de un MLP pequeño).}
+
+Sea el MLP con arquitectura $(2, 3, 1)$, activación ReLU en la capa oculta y sin
+activación en la salida, con parámetros:
+\[
+  \bm{W}^{(1)} = \begin{pmatrix}1&-1\\0&1\\-1&0\end{pmatrix},\quad
+  \bm{b}^{(1)} = \begin{pmatrix}0\\1\\-1\end{pmatrix},\quad
+  \bm{W}^{(2)} = \begin{pmatrix}1&1&-1\end{pmatrix},\quad
+  b^{(2)} = 0.
+\]
+Evaluar el forward pass para $\bm{x} = (1, 2)^\top$ y calcular la pérdida MSE
+respecto a $y = 1.5$.
+
+\medskip\noindent\textit{Solución.}
+\textit{Capa 1:}
+\[
+  \bm{z}^{(1)} = \bm{W}^{(1)}\bm{x}+\bm{b}^{(1)}
+  = \begin{pmatrix}1-2\\0+2\\-1+0\end{pmatrix}+\begin{pmatrix}0\\1\\-1\end{pmatrix}
+  = \begin{pmatrix}-1\\3\\-2\end{pmatrix},
+\]
+\[
+  \bm{a}^{(1)} = \mathrm{ReLU}(\bm{z}^{(1)})
+  = \begin{pmatrix}\max(0,-1)\\\max(0,3)\\\max(0,-2)\end{pmatrix}
+  = \begin{pmatrix}0\\3\\0\end{pmatrix}.
+\]
+\textit{Capa 2:}
+\[
+  z^{(2)} = \bm{W}^{(2)}\bm{a}^{(1)}+b^{(2)}
+  = (1)(0)+(1)(3)+(-1)(0)+0 = 3.
+\]
+\textit{Pérdida:}
+$\mathcal{L} = (3 - 1.5)^2 = 2.25$.
+
+La primera y la tercera neurona de la capa oculta están inactivas (pre-activación
+negativa). Solo la segunda neurona contribuye a la salida. En el Capítulo~\ref{ch:cap6}
+se verá que el gradiente de $\mathcal{L}$ respecto a los pesos de las neuronas
+inactivas es cero (por la derivada de ReLU), lo que ilustra el problema de
+la ``neurona muerta.'' $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:conteo_parametros}
+\textbf{(Conteo de parámetros y comparación de arquitecturas).}
+
+Comparar el número de parámetros de tres arquitecturas con la misma entrada
+($n_0 = 100$) y salida ($n_L = 10$):
+\begin{enumerate}[label=(\alph*)]
+  \item Red superficial: $(100, 1000, 10)$.
+  \item Red profunda: $(100, 100, 100, 100, 100, 10)$ (cuatro capas ocultas de 100).
+  \item Red muy profunda: $(100, 50, 50, 50, 50, 50, 50, 10)$ (seis capas ocultas de 50).
+\end{enumerate}
+
+\medskip\noindent\textit{Solución.}
+
+(a) $(100, 1000, 10)$: $p = 100\cdot1001 + 1000\cdot 11 = 100100 + 11000 = 111{,}100$.
+
+(b) $(100, 100, 100, 100, 100, 10)$: $p = 100\cdot101 + 3\cdot100\cdot101 + 100\cdot11
+= 10100 + 30300 + 1100 = 41{,}500$.
+
+(c) $(100, 50, 50, 50, 50, 50, 50, 10)$: $p = 100\cdot51 + 5\cdot50\cdot51 + 50\cdot11
+= 5100 + 12750 + 550 = 18{,}400$.
+
+La red superficial (a) tiene $2.7\times$ más parámetros que la profunda (b) y
+$6\times$ más que la muy profunda (c). Sin embargo, la Sección~\ref{sec:depth_vs_width}
+argumenta que (b) y (c) pueden representar clases de funciones que (a) no puede
+representar eficientemente. La profundidad permite hacer más con menos parámetros.
+$\square$
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios propuestos}
+\addcontentsline{toc}{section}{Ejercicios propuestos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\textbf{(Equivalencia de redes lineales).}
+Sea un MLP sin activación con arquitectura $(n_0, n_1, n_2)$ donde $n_1 < n_0$
+y $n_2 = n_0$.
+\begin{enumerate}[label=(\alph*)]
+  \item Calcule la dimensión del espacio de funciones representables por esta
+        red (como subconjunto del espacio de funciones afines
+        $\mathbb{R}^{n_0}\to\mathbb{R}^{n_0}$).
+  \item Compare con la red de una capa $(n_0, n_0)$. ¿Son equivalentes? ¿Cuál
+        tiene mayor espacio de representación?
+  \item ¿Qué ocurre si $n_1 \geq n_0$? ¿Recuperamos toda la capacidad de la
+        capa única?
+  \item Relacione con el concepto de rango de una matriz: ¿qué restricción
+        implica el cuello de botella $n_1 < n_0$ sobre la función afín
+        equivalente?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Gradiente que se desvanece: experimento numérico).}
+Sea un MLP con $L$ capas de anchura constante $m = 10$, activación sigmoide
+e inicialización aleatoria $W^{(l)}_{ij} \sim \mathcal{N}(0, 1/m)$.
+\begin{enumerate}[label=(\alph*)]
+  \item Para $L = 2, 5, 10, 20$, realice el forward pass con $\bm{x}$ aleatorio
+        y calcule $\|\nabla_{\bm{W}^{(1)}}\mathcal{L}\|_F$ (norma de Frobenius
+        del gradiente de la primera capa).
+  \item Trace $\log\|\nabla_{\bm{W}^{(1)}}\mathcal{L}\|_F$ en función de $L$.
+        ¿Tiene el comportamiento predicho por la Sección~\ref{subsec:vanishing}?
+  \item Repita con activación ReLU. ¿Desaparece el problema?
+  \item Repita con activación tanh e inicialización de Xavier:
+        $W^{(l)}_{ij} \sim \mathcal{N}(0, 2/(n_{l-1}+n_l))$.
+        ¿Mejora la situación?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(El grafo computacional de una operación no estándar).}
+Considérese la operación de normalización por capa (\textit{layer normalization}):
+\[
+  \mathrm{LN}(\bm{z}) = \frac{\bm{z} - \mu(\bm{z})}{\sqrt{s^2(\bm{z})+\varepsilon}}\odot\bm{\gamma}+\bm{\beta},
+\]
+donde $\mu(\bm{z}) = \frac{1}{m}\sum_j z_j$, $s^2(\bm{z}) = \frac{1}{m}\sum_j(z_j-\mu)^2$,
+$\bm{\gamma}, \bm{\beta} \in \mathbb{R}^m$ son parámetros aprendibles y $\varepsilon > 0$
+es una constante de estabilidad numérica.
+\begin{enumerate}[label=(\alph*)]
+  \item Dibuje el grafo computacional de $\mathrm{LN}$, identificando todos los
+        nodos intermedios.
+  \item ¿Cuántos parámetros añade $\mathrm{LN}$ a una capa de anchura $m$?
+  \item ¿Por qué $\mathrm{LN}$ no es una función afín? ¿Rompe la
+        Proposición~\ref{prop:depth_linear}?
+  \item Calcule $\partial\mathrm{LN}(\bm{z})_i/\partial z_j$ para $i \neq j$.
+        ¿Las salidas de $\mathrm{LN}$ son independientes entre sí?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Capacidad de representación de ReLU).}
+Una red ReLU de profundidad $L$ y anchura $m$ en cada capa divide el espacio
+de entrada en regiones lineales (\textit{linear regions}): subconjuntos de $\mathbb{R}^n$
+donde la red se comporta como una función afín.
+\begin{enumerate}[label=(\alph*)]
+  \item Para $L = 1$, $m = 3$, $n = 2$: dibuje las regiones lineales producidas
+        por tres neuronas ReLU con pesos $\bm{w}_1 = (1,0)$, $\bm{w}_2 = (0,1)$,
+        $\bm{w}_3 = (1,1)$ y sesgos $b_j = 0$.
+  \item ¿Cuántas regiones lineales distintas puede producir un MLP ReLU de
+        profundidad $L=1$ con $m$ neuronas en $\mathbb{R}^n$? (Resultado:
+        $\sum_{j=0}^n \binom{m}{j}$.)
+  \item ¿Cómo crece el número de regiones lineales con la profundidad $L$?
+        Compare cualitativamente redes de $L = 1, 2, 3$ capas con el mismo
+        número total de neuronas.
+  \item Relacione el número de regiones lineales con la expresividad del modelo
+        para aproximar funciones con muchas variaciones locales.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Implementación del forward pass en JAX/NumPy).}
+Implemente desde cero (usando solo \texttt{numpy} o \texttt{jax.numpy}) una
+función \texttt{forward\_pass(params, x)} que evalúe el MLP del Algoritmo~\ref{alg:forward}.
+\begin{enumerate}[label=(\alph*)]
+  \item La función debe soportar arquitecturas arbitrarias pasadas como lista
+        de pares $[(\bm{W}^{(1)}, \bm{b}^{(1)}), \ldots, (\bm{W}^{(L)}, \bm{b}^{(L)})]$.
+  \item Use ReLU en todas las capas ocultas y sin activación en la capa de salida.
+  \item Verifique su implementación reproduciendo el Ejercicio Resuelto~\ref{ej:forward_manual}.
+  \item Mida el tiempo de evaluación para la arquitectura $(784, 256, 256, 10)$
+        con batches de tamaño $B = 1, 32, 128, 512$ y trace la curva de tiempo
+        en función de $B$. ¿Es lineal en $B$? ¿Por qué sí o por qué no?
+\end{enumerate}
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\label{sec:estrella4}
+\begin{estrella}{El MLP como modelo sustituto del reactor de investigación}
+
+\textbf{El problema computacional.}
+La simulación de transporte neutrónico en un reactor de investigación (mediante
+códigos de elementos finitos como MCNP o SERPENT) puede tardar horas para una
+geometría fija. En tareas que requieren evaluar miles de configuraciones
+---búsqueda de puntos de operación, análisis de seguridad, control en tiempo
+real--- ese costo es prohibitivo. La solución es entrenar un \textbf{modelo
+sustituto} (\textit{surrogate model}): un MLP que aprende la función
+$f_{\mathrm{MLP}}(\bm{u}) \approx \bm{\Phi}(\bm{u})$, donde $\bm{u} \in \mathbb{R}^d$
+es un vector de parámetros operacionales (posiciones de barras de control,
+caudal del refrigerante, temperatura del moderador) y $\bm{\Phi} \in \mathbb{R}^K$
+es la distribución de flujo neutrónico en $K$ nodos del núcleo.
+
+\textbf{La arquitectura como decisión física.}
+La elección de la arquitectura $(d, n_1, \ldots, n_{L-1}, K)$ no es arbitraria:
+refleja la estructura del problema. La dimensión de entrada $d$ es el número de
+parámetros operacionales relevantes (típicamente $d \sim 10$--$50$). La dimensión
+de salida $K$ es la resolución espacial deseada del flujo ($K \sim 10^2$--$10^4$).
+Las capas ocultas aprenden la \textbf{dependencia no lineal} del flujo con los
+parámetros: una barra de control a posición $u_i$ atenúa el flujo en su entorno
+de forma localizada y no lineal, y esa no linealidad es exactamente la que la
+composición de activaciones del MLP puede representar. Una sola capa lineal no
+podría capturar las interacciones entre barras de control.
+
+\textbf{Conteo de parámetros y costo de entrenamiento.}
+Para $d = 20$, dos capas ocultas de anchura $256$ y $K = 500$ nodos:
+$p = 20\cdot257 + 256\cdot257 + 256\cdot501 = 5{,}140 + 65{,}792 + 128{,}256 = 199{,}188$
+parámetros. El coste de un forward pass es $O(\sum n_l n_{l-1}) \approx 200{,}000$
+FLOPs: el sustituto evalúa una configuración en microsegundos, frente a las horas
+del simulador de referencia. El entrenamiento requiere $\sim 10^4$ simulaciones
+de referencia para cubrir el espacio de operación, lo que es un coste único
+amortizable en toda la vida operativa del reactor.
+
+\textbf{Gradiente que se desvanece y elección de activación.}
+La profundidad del sustituto introduce el riesgo de gradiente que se desvanece
+(Sección~\ref{subsec:vanishing}). Para este tipo de modelos se prefiere la
+activación tanh (que produce salidas suaves y físicamente plausibles) combinada
+con inicialización de Xavier para mantener la magnitud de los gradientes estable
+durante el entrenamiento. La activación ReLU introduce discontinuidades en la
+derivada del flujo respecto a los parámetros, lo que puede producir artefactos
+en aplicaciones de control donde se necesita $\nabla_{\bm{u}} f_{\mathrm{MLP}}$.
+
+\textbf{Conexión con el capítulo.}
+El sustituto ilustra los tres resultados principales del capítulo en contexto
+real: (1) la no linealidad de la activación es la que permite representar
+dependencias físicas no superponibles entre barras de control; (2) la profundidad
+factoriza la complejidad de la distribución de flujo de forma jerárquica
+(interacciones locales en capas tempranas, distribución global en capas tardías);
+(3) el grafo computacional del sustituto es el mismo DAG del Algoritmo~\ref{alg:forward},
+y su diferenciación automática produce $\nabla_{\bm{u}} f_{\mathrm{MLP}}$ sin
+coste adicional, útil para control y optimización del punto de operación.
+\end{estrella}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Visualización de funciones de activación y sus derivadas}
+\textbf{Objetivo:} comparar visualmente las funciones de activación del catálogo
+y entender el impacto de la saturación sobre la magnitud del gradiente.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Evaluar sigmoide, tanh, ReLU, Leaky ReLU ($\alpha = 0.1$) y GELU en
+        el rango $z \in [-4, 4]$ con $N = 500$ puntos.
+  \item Para cada activación, graficar $\sigma(z)$ y $\sigma'(z)$ en la misma
+        figura (dos paneles).
+  \item Identificar visualmente las zonas de saturación (donde $|\sigma'(z)| < 0.01$)
+        para sigmoide y tanh. ¿Qué fracción del rango $[-4, 4]$ está saturada?
+  \item Para ReLU, verificar numéricamente que $\sigma'(z) = 1$ para $z > 0$
+        y $\sigma'(z) = 0$ para $z < 0$ usando diferencias finitas con paso
+        $h = 10^{-5}$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Extensión:}
+Simular el producto de $L$ derivadas en el problema del gradiente que se desvanece:
+para $L = 1, 2, \ldots, 20$ y cada activación, calcular $\prod_{k=1}^L \sigma'(z_k)$
+con $z_k \sim \mathcal{N}(0, 1)$ promediado sobre $100$ realizaciones. Graficar
+la magnitud media del producto en escala logarítmica en función de $L$. ¿Cuál
+activación mantiene el gradiente estable?
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{El MLP como aproximador de una función física en 2D}
+\textbf{Objetivo:} entrenar un MLP para aproximar una función que modela la
+dependencia del flujo neutrónico con dos parámetros operacionales, y estudiar
+cómo la arquitectura afecta la calidad de la aproximación.
+
+\medskip\noindent\textbf{Función objetivo:}
+\[
+  g(u_1, u_2) = \exp\!\bigl(-0.5(u_1^2 + u_2^2)\bigr)\,\cos(2\pi u_1)\,\cos(2\pi u_2),
+  \quad (u_1, u_2) \in [-2, 2]^2.
+\]
+Esta función tiene oscilaciones locales moduladas por una envolvente gaussiana,
+mimicando la dependencia no lineal y no separable del flujo con dos parámetros.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Generar $N_{\text{train}} = 500$ puntos $(u_1^{(i)}, u_2^{(i)})$ en
+        $[-2,2]^2$ con distribución uniforme y $N_{\text{test}} = 1000$ puntos
+        adicionales para evaluación.
+  \item Entrenar tres arquitecturas con activación tanh:
+        (A)~$(2, 8, 1)$, (B)~$(2, 32, 1)$, (C)~$(2, 16, 16, 1)$.
+        Usar MSE como pérdida y Adam con tasa de aprendizaje $10^{-3}$ durante
+        $2000$ épocas.
+  \item Para cada arquitectura, graficar la función aprendida
+        $f_{\text{MLP}}(u_1, u_2)$ como mapa de calor y comparar con $g$.
+        Reportar el error de prueba $\mathcal{L}_{\text{test}}$.
+  \item ¿Cuál arquitectura aproxima mejor? ¿Coincide con la predicción de la
+        Sección~\ref{sec:depth_vs_width}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:} el error de prueba de la arquitectura (C)
+debe ser menor que el de (B) con similar número de parámetros, ilustrando la
+ventaja de la profundidad sobre la anchura pura.
+\end{ejerciciocomp}
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La neurona artificial como modelo matemático del comportamiento de las neuronas
+biológicas fue propuesta por McCulloch y Pitts en 1943~\cite{mcculloch1943logical}.
+El perceptrón de una capa, junto con la regla de aprendizaje del perceptrón, fue
+introducido por Rosenblatt en 1958~\cite{rosenblatt1958perceptron}. La demostración
+del Teorema de Aproximación Universal para redes de una capa oculta con activación
+sigmoide fue establecida por Cybenko en 1989~\cite{cybenko1989approximation} y
+generalizada por Hornik, Stinchcombe y White en 1989~\cite{hornik1989multilayer}
+para cualquier activación continua no constante. El resultado de Hornik (1991)
+mostró que la condición necesaria y suficiente sobre la activación es la no
+polinomialidad. Estos resultados no garantizan eficiencia: la cota del número de
+neuronas necesarias en función de la precisión y la dimensión fue estudiada en
+detalle por Barron (1993) y, para redes profundas, por Montufar et al.\ (2014).
+
+El problema del gradiente que se desvanece fue identificado por Hochreiter en su
+tesis doctoral (1991) y analizado por Bengio, Simard y Frasconi (1994). La
+activación ReLU como solución fue propuesta independientemente por varios grupos;
+la referencia estándar es Nair y Hinton (2010)~\cite{nair2010rectified}, aunque
+el nombre ``Rectified Linear Unit'' fue acuñado por Glorot, Bordes y Bengio (2011).
+La revolución de las redes profundas con ReLU se asocia convencionalmente a la
+victoria de AlexNet (Krizhevsky, Sutskever e Hinton, 2012)~\cite{krizhevsky2012imagenet}
+en el concurso ImageNet, que demostró que las redes profundas con ReLU superaban
+a los métodos clásicos de visión por computadora por un margen que no había sido
+predicho.
+
+La conexión entre activaciones y distribuciones de la física estadística ---la
+sigmoide como distribución de Fermi-Dirac, la tanh como función de Langevin---
+es bien conocida en la literatura de redes de Boltzmann~\cite{hinton2006fast} y
+máquinas de Boltzmann restringidas (RBM), donde la sigmoide emerge naturalmente
+de las probabilidades condicionales del modelo generativo. La iniciativa de usar
+MLPs como modelos sustitutos (\textit{surrogate models}) para simuladores físicos
+costosos tiene una historia larga en ingeniería nuclear: entre las referencias
+relevantes están los trabajos de Kozlowski y Downar~\cite{kozlowski2003pwr} sobre
+estimación de parámetros nucleares mediante redes neuronales, y los desarrollos
+más recientes en la literatura de física de altas energías citados en el
+Capítulo~\ref{ch:cap8}.
+\end{notasbib}

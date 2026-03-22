@@ -1,0 +1,1308 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{El MLP en la práctica: ciclo de entrenamiento, regularización y generalización}
+\label{ch:cap8}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Los capítulos anteriores construyeron cada pieza por separado: el objeto (Cap.~\ref{ch:cap4}),
+el optimizador (Cap.~\ref{ch:cap5}), el gradiente (Cap.~\ref{ch:cap6}), el lenguaje probabilístico (Cap.~\ref{ch:cap7}).
+Este capítulo ensambla esas piezas en un protocolo de entrenamiento funcional y
+estudia lo que ocurre cuando se aplica a datos reales.
+
+El capítulo tiene dos mitades con lógicas distintas. La primera (Secciones~8.1–8.5)
+es instrumental: el ciclo completo, el diagnóstico, y las herramientas de
+regularización que permiten que el modelo generalice. La segunda (Sección~\ref{sec:double_descent})
+es analítica: el fenómeno \textit{double descent}, anunciado en la
+Sección~\ref{subsec:noconvexidad_nn} y diferido hasta que el lector tuviera
+todas las herramientas necesarias. Ahora las tiene: la SVD y la pseudoinversa
+(Cap.~\ref{ch:cap2}), la geometría del paisaje de pérdida (Cap.~\ref{ch:cap3}), la regularización
+implícita del SGD y la distribución de Gibbs (Cap.~\ref{ch:cap5}), y las cotas de
+generalización y sus limitaciones (Cap.~\ref{ch:cap7}). El análisis completo del
+\textit{double descent} en el modelo lineal es posible con álgebra elemental
+y produce la fórmula exacta para los tres regímenes.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El ciclo completo de entrenamiento}
+\label{sec:ciclo_completo}
+\dificultad{1}{1}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El algoritmo unificado}
+\label{subsec:alg_unificado}
+
+El siguiente pseudocódigo ensambla por primera vez los resultados de los
+Capítulos~\ref{ch:cap4}–\ref{ch:cap7} en el ciclo que se ejecutará miles o millones de veces.
+
+\begin{algorithm}[H]
+\caption{Ciclo completo de entrenamiento de un MLP}
+\label{alg:ciclo}
+\KwIn{Datos $\mathcal{D}_{\text{train}}$, $\mathcal{D}_{\text{val}}$;
+      arquitectura $(n_0,n_1,\ldots,n_L)$; hiperparámetros $\eta,B,P$}
+\KwOut{Parámetros óptimos $\bm{\theta}^*$}
+
+\tcp{--- Inicialización (Sección \ref{subsec:he}) ---}
+Inicializar $\{\bm{W}^{(l)},\bm{b}^{(l)}\}$ con He/Xavier según activación\;
+Inicializar estados del optimizador: $\bm{m} \leftarrow \bm{0}$,
+$\bm{v} \leftarrow \bm{0}$, $k \leftarrow 0$\;
+$E_{\text{val}}^* \leftarrow \infty$; $\bm{\theta}^* \leftarrow \bm{\theta}$;
+$p_{\text{espera}} \leftarrow 0$\;
+
+\Repeat{$p_{\text{espera}} \geq P$ \textbf{or} épocas agotadas}{
+  \tcp{--- Época de entrenamiento ---}
+  \ForEach{mini-lote $\mathcal{B} \subset \mathcal{D}_{\text{train}}$}{
+    $k \leftarrow k+1$\;
+    \tcp{Forward pass: Algoritmo \ref{alg:forward} + pérdida (Sección \ref{sec:mle})}
+    $\hat{\bm{y}}_\mathcal{B} \leftarrow f(\bm{X}_\mathcal{B};\bm{\theta})$;
+    $\mathcal{L}_\mathcal{B} \leftarrow \frac{1}{B}\sum_{i\in\mathcal{B}}
+    \ell(\hat{y}_i,y_i)$\;
+    \tcp{Backward pass: Teorema \ref{thm:cuatro_ec}}
+    $\nabla_{\bm{\theta}}\mathcal{L}_\mathcal{B} \leftarrow
+    \mathrm{backprop}(\mathcal{L}_\mathcal{B})$\;
+    \tcp{Paso de Adam: Definición \ref{def:adam}}
+    $\bm{\theta} \leftarrow \mathrm{Adam}(\bm{\theta},
+    \nabla_{\bm{\theta}}\mathcal{L}_\mathcal{B}, k, \eta)$\;
+  }
+  \tcp{--- Evaluación en validación ---}
+  $E_{\text{val}} \leftarrow \frac{1}{|\mathcal{D}_{\text{val}}|}
+  \sum_{(\bm{x},y)\in\mathcal{D}_{\text{val}}}\ell(f(\bm{x};\bm{\theta}),y)$\;
+  \eIf{$E_{\text{val}} < E_{\text{val}}^*$}{
+    $E_{\text{val}}^* \leftarrow E_{\text{val}}$;
+    $\bm{\theta}^* \leftarrow \bm{\theta}$;
+    $p_{\text{espera}} \leftarrow 0$\;
+  }{
+    $p_{\text{espera}} \leftarrow p_{\text{espera}} + 1$\;
+  }
+}
+\Return $\bm{\theta}^*$\;
+\end{algorithm}
+
+Cada línea del Algoritmo~\ref{alg:ciclo} es un resultado de un capítulo previo.
+El ciclo es el libro condensado.
+
+\subsection{Los tres conjuntos de datos}
+\label{subsec:tres_conjuntos}
+
+\begin{definicion}{Conjuntos de entrenamiento, validación y test}
+\label{def:conjuntos}
+Los datos disponibles se dividen en tres conjuntos disjuntos:
+\begin{itemize}
+  \item \textbf{Entrenamiento} $\mathcal{D}_{\text{train}}$: ajusta $\bm{\theta}$
+        vía backpropagation. El modelo lo ve en cada iteración.
+  \item \textbf{Validación} $\mathcal{D}_{\text{val}}$: selecciona
+        hiperparámetros y decide cuándo parar. El modelo no aprende de él
+        directamente, pero las decisiones de diseño se toman en base a él.
+  \item \textbf{Test} $\mathcal{D}_{\text{test}}$: evaluación final del modelo
+        seleccionado. Se toca exactamente una vez para el reporte definitivo.
+\end{itemize}
+\end{definicion}
+
+La violación más frecuente en la práctica es la \textbf{contaminación del test}:
+usar $\mathcal{D}_{\text{test}}$ para tomar decisiones iterativas de diseño.
+El mecanismo es sutil. Supóngase que se entrena un modelo, se evalúa en test,
+se ajusta la arquitectura, se reentrena, se vuelve a evaluar en test, y se repite
+$T$ veces. Aunque $\mathcal{D}_{\text{test}}$ no se usa directamente para ajustar
+$\bm{\theta}$, las decisiones de diseño están guiadas por él: el modelo final
+tiene mejor rendimiento en ese test del que tendría en datos nuevos. Con $T$
+comparaciones independientes a nivel de significación $\alpha$, la probabilidad
+de encontrar al menos una mejora aparente por azar es $1-(1-\alpha)^T \to 1$
+para $T$ grande. En benchmarks de física de altas energías donde el mismo dataset
+es reusado por múltiples grupos durante años, este efecto es real y documentado.
+
+\subsection{Curvas de entrenamiento y diagnóstico}
+\label{subsec:curvas}
+
+Las curvas $E_{\text{train}}(t)$ y $E_{\text{val}}(t)$ como función del tiempo
+de entrenamiento $t$ (épocas o iteraciones) son el instrumento de diagnóstico
+primario. Se identifican cuatro patrones canónicos:
+
+\medskip
+\noindent\textbf{Convergencia saludable.}
+Ambas curvas descienden monotónicamente y se estabilizan en valores próximos.
+La brecha $E_{\text{val}} - E_{\text{train}}$ es pequeña y estable.
+Intervención: ninguna necesaria.
+
+\medskip
+\noindent\textbf{Sobreajuste.}
+$E_{\text{train}}$ continúa descendiendo mientras $E_{\text{val}}$ empieza a
+crecer después de un mínimo. La brecha aumenta monótonamente.
+Intervenciones (en orden de preferencia): más datos, añadir dropout, reducir
+capacidad del modelo, aumentar $\lambda$ de regularización $\ell_2$.
+
+\medskip
+\noindent\textbf{Subajuste.}
+Ambas curvas se estancan en un valor alto, con brecha pequeña. El modelo no
+tiene capacidad suficiente o el entrenamiento es insuficiente.
+Intervenciones: aumentar profundidad o anchura, aumentar $\eta$, más épocas,
+revisar el preprocesado de los datos.
+
+\medskip
+\noindent\textbf{Inestabilidad.}
+Las curvas oscilan ampliamente o divergen. El optimizador está operando fuera
+de su región de estabilidad.
+Intervenciones: reducir $\eta$ (la causa más frecuente), revisar la
+inicialización, añadir gradient clipping (Sección~\ref{subsec:grad_clipping}),
+verificar la ausencia de NaNs en los datos o en la pérdida.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Parada temprana}
+\label{sec:early_stopping}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Definición y paciencia}
+\label{subsec:early_def}
+
+La parada temprana (\textit{early stopping}) detiene el entrenamiento cuando el
+error de validación no mejora en $P$ épocas consecutivas y devuelve los parámetros
+del mínimo de $E_{\text{val}}$. El hiperparámetro $P$ (paciencia) controla el
+equilibrio entre detener demasiado pronto (el modelo podría recuperarse de un
+plateau transitorio) y continuar innecesariamente (sobreajuste).
+
+La variante \textbf{ReduceLROnPlateau} reduce $\eta$ por un factor $\rho < 1$
+cuando $E_{\text{val}}$ no mejora en $P$ épocas, en lugar de detener el
+entrenamiento. La lógica es la del recocido (Sección~\ref{subsec:lr_temperatura}):
+reducir $\eta$ baja la temperatura del SGD, permitiendo una convergencia más fina
+en la región del paisaje ya explorada con la tasa grande.
+
+\subsection{Equivalencia con regularización de Tikhonov}
+\label{subsec:early_tikhonov}
+
+La parada temprana no es solo una heurística: en el caso lineal tiene una
+interpretación algebraica precisa que conecta con la SVD del Capítulo~\ref{ch:cap2}.
+
+\begin{proposicion}{Parada temprana como filtro espectral}
+\label{prop:early_svd}
+Sea el modelo lineal $f(\bm{x};\bm{\theta}) = \bm{V}\bm{\theta}$ con
+$\bm{V} \in \mathbb{R}^{N\times p}$, SVD $\bm{V} = \bm{U}\bm{\Sigma}\bm{Q}^\top$
+y pérdida MSE. El iterado del descenso de gradiente partiendo de
+$\bm{\theta}^{(0)} = \bm{0}$ con tasa $\eta$ satisface:
+\[
+  \bm{\theta}^{(k)} = \sum_{j=1}^r
+  \underbrace{\left(1-(1-\eta\sigma_j^2)^k\right)}_{h_k(\sigma_j^2)}
+  \frac{\bm{u}_j^\top\bm{y}}{\sigma_j}\,\bm{q}_j,
+\]
+donde $r = \mathrm{rank}(\bm{V})$, $\sigma_j$ son los valores singulares, y
+$\bm{u}_j, \bm{q}_j$ son los vectores singulares izquierdo y derecho. El
+\textbf{filtro espectral} $h_k(\sigma_j^2) = 1-(1-\eta\sigma_j^2)^k$:
+\begin{itemize}
+  \item Para $\sigma_j^2$ grande (señal fuerte): $h_k \to 1$ rápidamente.
+  \item Para $\sigma_j^2$ pequeño (señal débil o ruido): $h_k \to 1$ lentamente.
+\end{itemize}
+La parada temprana en la iteración $k$ equivale a la regularización de Tikhonov
+con $\lambda \approx 1/(\eta k)$: detener antes suprime más las componentes de
+baja varianza.
+\end{proposicion}
+
+\begin{proof}
+La derivada de la pérdida MSE es $\nabla_{\bm{\theta}}\mathcal{L} =
+\bm{V}^\top(\bm{V}\bm{\theta}-\bm{y})$. En la base de vectores singulares
+derechos $\{\bm{q}_j\}$, con $c_j^{(k)} = \bm{q}_j^\top\bm{\theta}^{(k)}$:
+\[
+  c_j^{(k+1)} = c_j^{(k)} - \eta\sigma_j^2(c_j^{(k)} - \bm{u}_j^\top\bm{y}/\sigma_j)
+  = (1-\eta\sigma_j^2)c_j^{(k)} + \eta\sigma_j\,\bm{u}_j^\top\bm{y}.
+\]
+Con $c_j^{(0)} = 0$, esta recurrencia lineal tiene la solución:
+$c_j^{(k)} = (1-(1-\eta\sigma_j^2)^k)\,\bm{u}_j^\top\bm{y}/\sigma_j$,
+que da el resultado al reconstruir $\bm{\theta}^{(k)} = \sum_j c_j^{(k)}\bm{q}_j$.
+
+Para la equivalencia con Tikhonov: el filtro de Tikhonov en la iteración $k$
+es $h_\lambda(\sigma_j^2) = \sigma_j^2/(\sigma_j^2+\lambda)$. Para $\lambda$
+pequeño y $\sigma_j^2$ fijo, $h_\lambda \approx 1-\lambda/\sigma_j^2$.
+Comparando con $h_k(\sigma_j^2) = 1-(1-\eta\sigma_j^2)^k \approx 1 -
+e^{-k\eta\sigma_j^2}$ para $k\eta\sigma_j^2$ moderado, ambos filtros suprimen
+componentes con $\sigma_j^2 \ll 1/(\eta k)$. La equivalencia es exacta en el
+límite $k \to \infty$ donde $h_k \to 1$ y la solución converge a la pseudoinversa.
+$\square$
+\end{proof}
+
+El mensaje geométrico es el mismo que el de la regularización de Tikhonov: las
+iteraciones de GD activan progresivamente las direcciones en orden de valor
+singular decreciente. Parar antes equivale a regularizar más agresivamente.
+La diferencia con Tikhonov es que la parada temprana es adaptativa: el criterio
+de parada ($E_{\text{val}}$) decide automáticamente cuándo la reducción de ruido
+deja de compensar la pérdida de señal.
+
+\begin{fisicaconexion}{Filtros espectrales en procesado de señales y tomografía}
+El filtro espectral de la parada temprana $h_k(\sigma_j^2) = 1-(1-\eta\sigma_j^2)^k$
+es formalmente un \textbf{filtro pasa-altos} en el dominio de los valores singulares:
+suprime las componentes de baja varianza (frecuencias bajas en el sentido de la
+descomposición espectral de $\bm{V}^\top\bm{V}$) y deja pasar las de alta varianza.
+En procesado de señales, este filtro es análogo al \textbf{filtro de Wiener}:
+dado un canal con señal $s$ y ruido $\varepsilon$, el filtro óptimo en el sentido
+MSE es $H(\omega) = S(\omega)/(S(\omega) + N(\omega))$, donde $S(\omega)$ y
+$N(\omega)$ son las densidades espectrales de potencia de señal y ruido. Para
+$S(\omega) \gg N(\omega)$ (alta SNR), $H \to 1$; para $S(\omega) \ll N(\omega)$
+(baja SNR), $H \to 0$. La parada temprana hace lo mismo sobre el espectro de
+los datos: componentes con $\sigma_j^2 \gg 1/(\eta k)$ (señal) pasan intactas;
+componentes con $\sigma_j^2 \ll 1/(\eta k)$ (ruido) son suprimidas.
+
+En \textbf{tomografía computarizada}, la retroproyección filtrada aplica
+exactamente este tipo de filtro espectral antes de proyectar: el núcleo de
+reconstrucción de Ram-Lak es un filtro pasa-altos que compensa la caída $1/\omega$
+del operador de proyección de Radon. La regularización de Tikhonov en tomografía
+corresponde a suavizar ese núcleo para suprimir frecuencias altas ruidosas: es
+el mismo intercambio señal/ruido que la parada temprana en el MLP.
+\end{fisicaconexion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Dropout}
+\label{sec:dropout}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Definición e implementación}
+\label{subsec:dropout_def}
+
+\begin{definicion}{Dropout}
+\label{def:dropout}
+Durante el entrenamiento, \textbf{dropout} con probabilidad $p_d \in (0,1)$
+aplica a cada capa una máscara binaria aleatoria $\bm{m}^{(l)} \in \{0,1\}^{n_l}$
+con $m_j^{(l)} \sim \mathrm{Bernoulli}(1-p_d)$ independientemente. La activación
+enmascarada es:
+\[
+  \tilde{\bm{a}}^{(l)} = \frac{1}{1-p_d}\,\bm{m}^{(l)} \odot \bm{a}^{(l)},
+\]
+donde el factor $1/(1-p_d)$ (\textbf{inverted dropout}) escala las activaciones
+activas para que $\mathbb{E}[\tilde{\bm{a}}^{(l)}] = \bm{a}^{(l)}$, haciendo
+innecesario cualquier reescalado en evaluación. Durante la evaluación, se usa
+$\tilde{\bm{a}}^{(l)} = \bm{a}^{(l)}$ (dropout desactivado).
+\end{definicion}
+
+La implementación eficiente genera la máscara $\bm{m}^{(l)}$ una vez por
+forward pass y la reutiliza en el backward pass (el gradiente fluye solo por
+las neuronas activas). En PyTorch: \texttt{nn.Dropout(p=p\_d)} aplica la
+convención de inverted dropout automáticamente.
+
+\subsection{Dropout como ensemble de subredes}
+\label{subsec:dropout_ensemble}
+
+Cada máscara binaria $\bm{m} \in \{0,1\}^M$ (con $M = \sum_l n_l$ neuronas
+ocultas totales) define una \textbf{subred} distinta: la red resultante de
+retener solo las neuronas activas. Con $p_d = 0.5$, existen $2^M$ subredes
+posibles. El entrenamiento con dropout optimiza simultáneamente todas esas
+subredes compartiendo parámetros: cada actualización afecta solo a los pesos
+de la subred activa en esa iteración, pero los pesos son compartidos entre
+todas las subredes.
+
+La predicción en evaluación promedia implícitamente esas $2^M$ subredes. Para
+la capa de salida con un solo neurón, la predicción es:
+\[
+  f(\bm{x};\bm{\theta})
+  \approx \mathbb{E}_{\bm{m}}\bigl[f_{\bm{m}}(\bm{x};\bm{\theta})\bigr],
+\]
+donde $f_{\bm{m}}$ es la subred definida por la máscara $\bm{m}$. Este ensemble
+exponencialmente grande (costo exponencial si se evaluara explícitamente) se
+aproxima en $O(1)$ con la evaluación estándar del modelo completo con pesos
+reescalados. Es el único ensemble con costo de entrenamiento lineal en el número
+de parámetros.
+
+\subsection{Dropout como inferencia variacional y MC Dropout}
+\label{subsec:dropout_mc}
+
+De la Proposición~\ref{prop:dropout_vi} del Capítulo~\ref{ch:cap7}, el entrenamiento con
+dropout es inferencia variacional aproximada en una red neuronal bayesiana.
+La consecuencia práctica es el \textbf{MC Dropout}: activar dropout en
+evaluación y hacer $K$ forward passes independientes.
+
+Para un problema de regresión con $K$ muestras de MC Dropout:
+\begin{align}
+  \hat{\mu}(\bm{x}) &= \frac{1}{K}\sum_{k=1}^K f(\bm{x};\bm{\theta},\bm{m}_k),
+  \label{eq:mc_mean}\\
+  \hat{\sigma}^2(\bm{x}) &= \hat{\sigma}_{\text{ep}}^2(\bm{x}) + \hat{\sigma}_{\text{al}}^2,
+  \label{eq:mc_var}
+\end{align}
+donde la \textbf{incertidumbre epistémica} $\hat{\sigma}_{\text{ep}}^2 =
+\frac{1}{K}\sum_k (f_k - \hat{\mu})^2$ (varianza entre predicciones) y la
+\textbf{incertidumbre aleatoria} $\hat{\sigma}_{\text{al}}^2 = \hat{\sigma}^2$
+(varianza del modelo de ruido, estimada de los datos de entrenamiento).
+
+\begin{observacion}{MC Dropout en física de partículas}
+Para la simulación de calorímetros, un modelo que predice la energía depositada
+$E$ con distribución $\mathcal{N}(\hat{\mu}(\bm{x}), \hat{\sigma}^2(\bm{x}))$
+permite propagar la incertidumbre del modelo al análisis físico aguas abajo.
+Un resultado de búsqueda de nueva física que use este modelo puede reportar no
+solo el valor central sino la incertidumbre sistemática debida al modelo,
+algo imposible con un regresor determinista. Con $K = 50$--$100$ muestras de
+MC Dropout, la sobrecarga computacional es un factor $K$ sobre la evaluación
+estándar: aceptable en producción para aplicaciones donde la calibración de
+incertidumbre es crucial.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Normalización de activaciones}
+\label{sec:normalizacion}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El problema del desplazamiento de covariables interno}
+\label{subsec:covariate_shift}
+
+Durante el entrenamiento, los parámetros de las capas anteriores cambian en cada
+iteración. Esto modifica la distribución de las pre-activaciones que recibe cada
+capa, obligándola a adaptarse continuamente a un blanco en movimiento: el
+\textbf{desplazamiento de covariables interno} (\textit{internal covariate shift},
+Ioffe y Szegedy, 2015). El efecto se amplifica con la profundidad: la distribución
+de $\bm{z}^{(l)}$ depende de los parámetros de todas las capas $1,\ldots,l-1$,
+cuyos cambios se acumulan. Las consecuencias son tasas de aprendizaje forzosamente
+pequeñas y alta sensibilidad a la inicialización.
+
+La solución es normalizar las activaciones para estabilizar su distribución
+durante el entrenamiento. Las distintas estrategias de normalización difieren
+en \emph{sobre qué} dimensión se calcula la estadística.
+
+\subsection{Batch Normalization}
+\label{subsec:batch_norm}
+
+\begin{definicion}{Batch Normalization}
+\label{def:bn}
+Para una capa con pre-activaciones $z_j^{(i)}$ (componente $j$, muestra $i$
+del batch de tamaño $B$), la \textbf{normalización por lote} es:
+\[
+  \hat{z}_j^{(i)} = \frac{z_j^{(i)} - \mu_j^\mathcal{B}}{\sqrt{(s_j^\mathcal{B})^2+\varepsilon}},
+  \qquad
+  \tilde{z}_j^{(i)} = \gamma_j\hat{z}_j^{(i)} + \beta_j,
+\]
+donde $\mu_j^\mathcal{B} = \frac{1}{B}\sum_i z_j^{(i)}$,
+$(s_j^\mathcal{B})^2 = \frac{1}{B}\sum_i(z_j^{(i)}-\mu_j^\mathcal{B})^2$
+son las estadísticas del mini-lote, $\varepsilon > 0$ es una constante de
+estabilidad numérica, y $(\gamma_j,\beta_j)$ son \textbf{parámetros aprendibles}
+de escala y desplazamiento.
+\end{definicion}
+
+El modo de entrenamiento usa las estadísticas del batch. El modo de evaluación
+usa estadísticas acumuladas durante el entrenamiento mediante medias corrientes
+(\textit{running statistics}):
+\[
+  \hat{\mu}_j \leftarrow \alpha\hat{\mu}_j + (1-\alpha)\mu_j^\mathcal{B},
+  \qquad
+  \hat{s}_j^2 \leftarrow \alpha\hat{s}_j^2 + (1-\alpha)(s_j^\mathcal{B})^2,
+\]
+con $\alpha \approx 0.9$--$0.99$. En evaluación se usa $\hat{\mu}_j$ y
+$\hat{s}_j^2$ en lugar de las estadísticas del batch.
+
+Los parámetros $(\gamma_j,\beta_j)$ son necesarios para restaurar la capacidad
+expressiva: sin ellos, BN fijaría todas las activaciones a media $0$ y varianza
+$1$, eliminando la posibilidad de que la red aprenda que en algunas capas
+conviene una distribución distinta.
+
+\begin{observacion}{Por qué BN funciona: suavizado del paisaje}
+Ioffe y Szegedy atribuyeron el éxito de BN a la reducción del \textit{internal
+covariate shift}. Investigación posterior (Santurkar et al., 2018) mostró
+experimentalmente que este mecanismo no es el principal: BN funciona
+principalmente porque \textbf{suaviza el paisaje de pérdida}, haciendo que
+el gradiente sea más predecible y permitiendo tasas de aprendizaje más grandes
+sin inestabilidad. La Sección~\ref{sec:double_descent} mostrará que un paisaje
+más suave tiene consecuencias directas sobre la generalización.
+\end{observacion}
+
+\begin{fisicaconexion}{Normalización y escalado en mediciones físicas}
+El problema que resuelve BN tiene un análogo directo en física experimental:
+el \textbf{preprocesado de variables heterogéneas}. Un detector de partículas
+mide simultáneamente energías en GeV ($O(10^2)$), ángulos en radianes ($O(1)$),
+multiplicidades enteras ($O(10^1)$) y tiempos de vuelo en nanosegundos ($O(10^{-1})$).
+Si estas variables se alimentan directamente a un MLP, el gradiente de la pérdida
+respecto a los pesos conectados a la energía domina sobre el de los conectados
+al ángulo por un factor $\sim 10^2$: el paisaje tiene curvatura enormemente
+anisótropa, exactamente el paisaje mal condicionado del Capítulo~\ref{ch:cap3}.
+La práctica estándar en análisis HEP ---estandarizar cada variable a media $0$ y
+varianza $1$ usando las estadísticas del conjunto de entrenamiento--- es un caso
+especial de BN con estadísticas fijas (no actualizadas durante el entrenamiento).
+BN generaliza esta idea a las activaciones internas: normaliza la distribución
+de entrada a cada capa en cada paso, no solo en el preprocesado. El efecto sobre
+la curvatura del paisaje es el mismo: reduce el número de condición efectivo de
+la hessiana y permite tasas de aprendizaje más grandes (Sección~\ref{subsec:euler}).
+\end{fisicaconexion}
+
+\subsection{Layer Normalization}
+\label{subsec:layer_norm}
+
+Para arquitecturas donde el tamaño de batch es pequeño o variable (transformers,
+modelos de lenguaje, RNNs), las estadísticas de BN son ruidosas e inestables.
+La normalización por capa normaliza sobre las características de un solo ejemplo:
+
+\begin{definicion}{Layer Normalization}
+\label{def:ln}
+Para una pre-activación $\bm{z}^{(i)} \in \mathbb{R}^{n_l}$ de la muestra $i$,
+la \textbf{normalización por capa} es:
+\[
+  \hat{z}_j^{(i)} = \frac{z_j^{(i)} - \mu^{(i)}}{\sqrt{(s^{(i)})^2+\varepsilon}},
+  \qquad
+  \tilde{z}_j^{(i)} = \gamma_j\hat{z}_j^{(i)} + \beta_j,
+\]
+donde $\mu^{(i)} = \frac{1}{n_l}\sum_j z_j^{(i)}$ y
+$(s^{(i)})^2 = \frac{1}{n_l}\sum_j(z_j^{(i)}-\mu^{(i)})^2$ se calculan sobre
+las $n_l$ componentes de la muestra $i$.
+\end{definicion}
+
+LN no depende del tamaño del batch y tiene el mismo comportamiento en
+entrenamiento y evaluación: no hay discrepancia entre los dos modos. Es la
+normalización estándar en transformers (BERT, GPT, LLaMA) y cualquier
+arquitectura con $B$ pequeño o variable.
+
+\subsection{Comparación y criterios de elección}
+\label{subsec:norm_comparacion}
+
+\begin{center}
+\begin{tabular}{lllll}
+\toprule
+\textbf{Método} & \textbf{Normaliza sobre} & \textbf{Batch size} &
+\textbf{Train$\neq$Eval} & \textbf{Uso típico} \\
+\midrule
+Batch Norm & Batch ($B$ muestras) & $B \geq 16$ & Sí & MLP, CNN \\
+Layer Norm & Características ($n_l$ dims) & Cualquiera & No & Transformers, RNN \\
+Group Norm & Grupos de canales & Pequeño & No & CNN, $B$ pequeño \\
+Instance Norm & Ejemplo individual & Cualquiera & No & Transferencia de estilo \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Para MLPs en física de altas energías: BN es la elección estándar para
+$B \geq 32$; LN para modelos con $B$ variable o inferencia muestra a muestra.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Regularización implícita del SGD}
+\label{sec:reg_implicita}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El sesgo de mínima norma del GD}
+\label{subsec:min_norma}
+
+El descenso de gradiente tiene un prior implícito: en el régimen sobredeterminado
+($p > N$) donde hay infinitas soluciones con pérdida cero, el GD desde
+inicialización pequeña converge a la de mínima norma $\ell_2$.
+
+\begin{proposicion}{GD converge a la solución de mínima norma}
+\label{prop:min_norma}
+Sea el modelo lineal $f(\bm{x};\bm{\theta}) = \bm{\theta}^\top\bm{x}$,
+$\bm{X} \in \mathbb{R}^{N\times p}$ con $p > N$ y $\mathrm{rank}(\bm{X}) = N$.
+El descenso de gradiente sobre $\mathcal{L}(\bm{\theta}) =
+\frac{1}{2N}\|\bm{X}\bm{\theta}-\bm{y}\|^2$ partiendo de $\bm{\theta}^{(0)}
+= \bm{0}$ converge a $\hat{\bm{\theta}} = \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}
+\bm{y} = \bm{X}^\dagger\bm{y}$: la pseudoinversa, que es la solución de mínima
+norma $\ell_2$ entre todas las que satisfacen $\bm{X}\bm{\theta} = \bm{y}$.
+\end{proposicion}
+
+\begin{proof}
+Cada actualización $\bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} -
+\frac{\eta}{N}\bm{X}^\top(\bm{X}\bm{\theta}^{(k)}-\bm{y})$ es
+$\bm{\theta}^{(k+1)} \in \mathrm{col}(\bm{X}^\top) = \mathrm{fila}(\bm{X})$,
+el espacio fila de $\bm{X}$. Por inducción con $\bm{\theta}^{(0)} = \bm{0}
+\in \mathrm{fila}(\bm{X})$, todas las iteraciones permanecen en
+$\mathrm{fila}(\bm{X})$. La solución de mínima norma es la única solución
+con $\bm{X}\bm{\theta} = \bm{y}$ en $\mathrm{fila}(\bm{X})$ (las soluciones
+con norma mayor tienen componentes en $\ker(\bm{X})$). Si el GD converge
+(lo que ocurre para $\eta < 2/\lambda_{\max}(\bm{X}\bm{X}^\top/N)$),
+converge a la solución de mínima norma. $\square$
+\end{proof}
+
+\subsection{El sesgo hacia mínimos planos}
+\label{subsec:minimos_planos}
+
+De la distribución estacionaria del SGD (Sección~\ref{subsec:estacionaria}):
+$p^*(\bm{\theta}) \propto e^{-2\mathcal{L}(\bm{\theta})/(\eta c)}$.
+
+En el régimen de alta temperatura ($\eta c$ grande), la distribución asigna
+masa relativa mayor a los mínimos donde la curvatura del paisaje es pequeña.
+Formalmente, para dos mínimos $\bm{\theta}_1^*$ y $\bm{\theta}_2^*$ con la
+misma profundidad ($\mathcal{L}(\bm{\theta}_1^*) = \mathcal{L}(\bm{\theta}_2^*)$
+pero distintas curvaturas ($\mathrm{tr}(\bm{H}(\bm{\theta}_1^*)) \ll
+\mathrm{tr}(\bm{H}(\bm{\theta}_2^*))$), la masa de $p^*$ en la vecindad de
+$\bm{\theta}_1^*$ es mayor por un factor $\propto \det(\bm{H}(\bm{\theta}_2^*))/
+\det(\bm{H}(\bm{\theta}_1^*))^{1/2}$ (aproximación gaussiana local del potencial).
+
+El mínimo plano $\bm{\theta}_1^*$ generaliza mejor: si $\bm{\theta}_1^*$ tiene
+curvatura pequeña, el paisaje de $\mathcal{L}$ es casi plano en su vecindad, y
+la pérdida en datos de test (que corresponde a una pequeña perturbación de
+$\mathcal{L}_{\text{train}}$) tampoco cambia mucho. Un mínimo estrecho
+$\bm{\theta}_2^*$ puede tener pérdida de entrenamiento igual pero pérdida de
+test mucho mayor. El SGD con temperatura efectiva $\eta c/2$ tiene un sesgo
+implícito hacia los mínimos planos.
+
+\begin{observacion}{Batches grandes y mínimos estrechos}
+Keskar et al.\ (2017) mostraron empíricamente que entrenar con batches grandes
+(temperatura efectiva baja) converge a mínimos más estrechos y generaliza peor
+que entrenar con batches pequeños (temperatura alta), incluso alcanzando el mismo
+$E_{\text{train}}$. La regla de escala $\eta \propto B$ del Capítulo~\ref{ch:cap5} mantiene
+la temperatura constante al escalar el batch, lo que preserva el sesgo hacia
+mínimos planos y la calidad de generalización.
+\end{observacion}
+
+\subsection{Normas espectrales y cotas de generalización modernas}
+\label{subsec:grad_clipping}
+
+Las cotas de VC del Capítulo~\ref{ch:cap7} son flojas en el régimen sobredeterminado.
+Las cotas modernas controlan la \textbf{norma espectral} de los pesos. Para
+una red de $L$ capas, la cota de Bartlett et al.\ (2017) establece que con
+probabilidad $\geq 1-\delta$:
+\[
+  E_{\text{gen}} \leq O\!\left(
+  \frac{\prod_{l=1}^L \|\bm{W}^{(l)}\|_2 \cdot
+  \sqrt{\sum_{l=1}^L \|\bm{W}^{(l)}\|_F^2/\|\bm{W}^{(l)}\|_2^2 +
+  \log(1/\delta)}}{\sqrt{N}}
+  \right).
+\]
+El SGD con inicialización pequeña y tasas moderadas mantiene
+$\|\bm{W}^{(l)}\|_2$ y $\|\bm{W}^{(l)}\|_F$ pequeñas: la regularización
+implícita actúa controlando exactamente las cantidades que aparecen en la
+cota correcta. La técnica de \textbf{gradient clipping} (limitar
+$\|\nabla_{\bm{\theta}}\mathcal{L}\|_2 \leq C$ antes de cada actualización)
+previene las actualizaciones grandes que crecerían las normas espectrales
+e inestabilizarían el entrenamiento.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El fenómeno \textit{double descent}}
+\label{sec:double_descent}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{La predicción clásica y su fallo}
+\label{subsec:prediccion_clasica}
+
+La descomposición sesgo-varianza del Capítulo~\ref{ch:cap2} predice una curva en U para el
+error de generalización como función de la capacidad $p$: al aumentar $p$, el
+sesgo decrece y la varianza crece, con un mínimo en $p^*$. Esta curva implica
+que todo modelo con $p > p^*$ sobreajusta inevitablemente.
+
+La práctica moderna contradice esta predicción. Los modelos grandes ($p \gg N$)
+entrenados con SGD hasta interpolación de los datos de entrenamiento
+($E_{\text{train}} = 0$) pueden generalizar tan bien o mejor que modelos óptimos
+de la curva clásica. Esto requiere explicación.
+
+\subsection{El fenómeno empírico}
+\label{subsec:double_emp}
+
+El fenómeno \textit{double descent} (Belkin et al., 2019; Nakkiran et al., 2021)
+consiste en dos curvas de descenso separadas por un pico:
+
+\begin{enumerate}
+  \item \textbf{Régimen clásico} ($p < N$): la curva sesgo-varianza clásica.
+        El error de generalización decrece hasta un mínimo local.
+  \item \textbf{Pico de interpolación} ($p \approx N$): en el umbral donde el
+        modelo puede justo interpolar los datos de entrenamiento, el error de
+        generalización presenta un pico pronunciado. En este punto el modelo
+        es el peor posible: interpola el ruido con la solución de mayor norma.
+  \item \textbf{Régimen sobreparamétrico} ($p \gg N$): el error decrece de
+        nuevo al aumentar $p$, potencialmente alcanzando el mínimo de la curva
+        clásica o superándolo.
+\end{enumerate}
+
+El fenómeno aparece en modelos lineales (análisis exacto posible), en redes
+neuronales (experimental), y en función del tiempo de entrenamiento (para
+capacidad fija en el umbral de interpolación).
+
+\subsection{Análisis completo en el modelo lineal: la regresión sin regularización}
+\label{subsec:ridgeless}
+
+El análisis exacto del \textit{double descent} en el modelo lineal es posible
+en el límite $N, p \to \infty$ con $\gamma = p/N$ fijo. Se deriva la fórmula
+para los tres regímenes.
+
+\medskip
+\noindent\textbf{Configuración.} Sea $f(\bm{x};\bm{\theta}) = \bm{\theta}^\top
+\bm{x}$ con $\bm{\theta}^* \in \mathbb{R}^p$ el vector verdadero. Los datos
+se generan como $y_i = \bm{\theta}^{*\top}\bm{x}_i + \varepsilon_i$ con
+$\bm{x}_i \sim \mathcal{N}(\bm{0}, \frac{1}{p}\bm{I})$, $\varepsilon_i \sim
+\mathcal{N}(0,\sigma^2)$ independiente. El estimador es
+$\hat{\bm{\theta}} = \bm{X}^\dagger\bm{y}$ (mínima norma), con
+$\bm{X} \in \mathbb{R}^{N\times p}$.
+
+\medskip
+\noindent\textbf{Descomposición del error de test.}
+El error de predicción en un punto de test $(\bm{x}^*, y^*)$ independiente es:
+\begin{align}
+  E_{\text{test}}
+  &= \mathbb{E}\bigl[(\bm{\theta}^{*\top}\bm{x}^* + \varepsilon^*
+    - \hat{\bm{\theta}}^\top\bm{x}^*)^2\bigr] \notag\\
+  &= \underbrace{\mathbb{E}\bigl[((\bm{\theta}^*-\hat{\bm{\theta}})^\top
+    \bm{x}^*)^2\bigr]}_{\text{sesgo}^2+\text{varianza del estimador}}
+  + \underbrace{\sigma^2}_{\text{ruido irreducible}}.
+  \label{eq:error_descomp}
+\end{align}
+
+\noindent\textbf{La pseudoinversa para los tres regímenes.}
+
+Para $p < N$ ($\bm{X}$ sobredeterminado con $\mathrm{rank}(\bm{X}) = p$
+con probabilidad 1 para $\bm{X}$ gaussiana):
+\[
+  \bm{X}^\dagger = (\bm{X}^\top\bm{X})^{-1}\bm{X}^\top
+  \quad\Longrightarrow\quad
+  \bm{X}^\dagger\bm{y} = (\bm{X}^\top\bm{X})^{-1}\bm{X}^\top\bm{y}.
+\]
+
+Para $p > N$ ($\bm{X}$ subdeterminado con $\mathrm{rank}(\bm{X}) = N$
+con probabilidad 1):
+\[
+  \bm{X}^\dagger = \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}
+  \quad\Longrightarrow\quad
+  \bm{X}^\dagger\bm{y} = \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{y}.
+\]
+
+Para $p = N$ ($\bm{X}$ cuadrada invertible con probabilidad 1):
+$\bm{X}^\dagger = \bm{X}^{-1}$ y $\hat{\bm{\theta}} = \bm{X}^{-1}\bm{y}$.
+
+\begin{teorema}{Error de test de la regresión sin regularización}
+\label{thm:double_descent}
+En el límite $N, p \to \infty$ con $\gamma = p/N$ fijo,
+$\|\bm{\theta}^*\|_2^2 = \rho^2 p$ (norma creciente con $p$) y
+$\sigma^2 > 0$, el error de test del estimador de mínima norma satisface:
+\begin{equation}
+  E_{\text{test}} \to
+  \begin{cases}
+    \sigma^2\dfrac{\gamma}{1-\gamma}
+    & \text{si } \gamma < 1,\\[10pt]
+    +\infty
+    & \text{si } \gamma = 1,\\[10pt]
+    \sigma^2 + \rho^2\dfrac{\gamma}{\gamma-1}
+    \cdot\dfrac{1}{\gamma}
+    & \text{si } \gamma > 1.
+  \end{cases}
+  \label{eq:dd_formula}
+\end{equation}
+\end{teorema}
+
+\begin{proof}
+Se trabajan los tres casos por separado.
+
+\medskip
+\noindent\textbf{Caso $\gamma < 1$ (sobredeterminado, $p < N$).}
+El estimador de mínima norma coincide con el de mínimos cuadrados:
+$\hat{\bm{\theta}} = (\bm{X}^\top\bm{X})^{-1}\bm{X}^\top\bm{y}$.
+Sustituyendo $\bm{y} = \bm{X}\bm{\theta}^* + \bm{\varepsilon}$:
+\[
+  \hat{\bm{\theta}} - \bm{\theta}^*
+  = (\bm{X}^\top\bm{X})^{-1}\bm{X}^\top\bm{\varepsilon}.
+\]
+El error de test usando la descomposición~\eqref{eq:error_descomp} con
+$\bm{x}^* \sim \mathcal{N}(\bm{0},\frac{1}{p}\bm{I})$ independiente de $\bm{X}$:
+\[
+  E_{\text{test}} = \frac{1}{p}\mathbb{E}\bigl[(\hat{\bm{\theta}}-\bm{\theta}^*)^\top
+  (\hat{\bm{\theta}}-\bm{\theta}^*)\bigr] + \sigma^2
+  = \frac{1}{p}\mathbb{E}\bigl[\|\hat{\bm{\theta}}-\bm{\theta}^*\|_2^2\bigr]
+  + \sigma^2.
+\]
+Para el término de varianza: $\frac{1}{p}\mathbb{E}\|\hat{\bm{\theta}}-\bm{\theta}^*\|^2
+= \frac{\sigma^2}{p}\mathrm{tr}\bigl(\mathbb{E}[(\bm{X}^\top\bm{X})^{-1}]\bigr)$.
+Usando la ley de los grandes números para matrices con entradas i.i.d.
+$\mathcal{N}(0,1/p)$: $\frac{1}{N}\bm{X}^\top\bm{X} \to \frac{1}{\gamma}\bm{I}$
+en probabilidad (esto sigue de la ley de Marchenko-Pastur en el límite
+$\gamma < 1$). Luego $(\bm{X}^\top\bm{X})^{-1} \approx \frac{\gamma}{N}\bm{I}$ y:
+\[
+  \frac{\sigma^2}{p}\mathrm{tr}\bigl((\bm{X}^\top\bm{X})^{-1}\bigr)
+  \approx \frac{\sigma^2}{p}\cdot p\cdot\frac{\gamma}{N}
+  = \frac{\sigma^2\gamma}{N} \cdot \frac{N}{N-p}
+  \xrightarrow{N,p\to\infty} \frac{\sigma^2\gamma}{1-\gamma}.
+\]
+La corrección exacta por el denominador $1/(1-\gamma)$ proviene de la fórmula
+de la traza de la inversa de una matriz de Wishart: para $\bm{A} = \bm{X}^\top\bm{X}/N$
+con $\bm{X} \in \mathbb{R}^{N\times p}$ gaussiana, $\mathbb{E}[\mathrm{tr}(\bm{A}^{-1})] =
+p/(N-p-1) \approx p\gamma/(N(1-\gamma))$.
+Por tanto $E_{\text{test}} \to \sigma^2 + \sigma^2\gamma/(1-\gamma) = \sigma^2/(1-\gamma)$.
+
+\medskip
+\noindent\textbf{Caso $\gamma = 1$ ($p = N$).}
+La matriz $\bm{X}$ es cuadrada. Para $\bm{X}$ gaussiana, $\bm{X}$ es
+casi seguramente invertible y $\hat{\bm{\theta}} = \bm{X}^{-1}\bm{y}$.
+La norma $\|\hat{\bm{\theta}}\|_2 = \|\bm{X}^{-1}\bm{y}\|_2 \geq
+\|\bm{X}^{-1}\|\cdot\|\bm{y}\|_2$.
+El mínimo valor singular de $\bm{X}/\sqrt{N}$ (con entradas $\sim\mathcal{N}(0,1/p)$
+y $p = N$) satisface $\sigma_{\min}(\bm{X}/\sqrt{N}) \to 0$ cuando $N \to \infty$
+según la ley de Marchenko-Pastur en $\gamma = 1$: la densidad espectral
+tiene soporte en $[0, 4]$ y se acumula en $0$. Por tanto
+$\|\bm{X}^{-1}\|_2 = 1/\sigma_{\min}(\bm{X}) \to \infty$ y el error diverge.
+
+\medskip
+\noindent\textbf{Caso $\gamma > 1$ (sobredeterminado, $p > N$).}
+El estimador es $\hat{\bm{\theta}} = \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{y}$.
+Con $\bm{y} = \bm{X}\bm{\theta}^* + \bm{\varepsilon}$:
+\[
+  \hat{\bm{\theta}} = \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{X}\bm{\theta}^*
+  + \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{\varepsilon}
+  = \bm{P}_{\bm{X}}\bm{\theta}^* + \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{\varepsilon},
+\]
+donde $\bm{P}_{\bm{X}} = \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{X}$ es la
+proyección ortogonal sobre $\mathrm{fila}(\bm{X})$. El error es:
+\[
+  \hat{\bm{\theta}} - \bm{\theta}^*
+  = (\bm{P}_{\bm{X}}-\bm{I})\bm{\theta}^*
+  + \bm{X}^\top(\bm{X}\bm{X}^\top)^{-1}\bm{\varepsilon}.
+\]
+El primer término es el \textbf{sesgo}: la proyección de $\bm{\theta}^*$
+sobre $\ker(\bm{X})$. El segundo es la \textbf{varianza}: el ruido amplificado
+por la pseudoinversa. El error de test:
+\[
+  E_{\text{test}} = \underbrace{\frac{1}{p}\mathbb{E}\bigl[\|(\bm{P}_{\bm{X}}-\bm{I})\bm{\theta}^*\|^2\bigr]}_{\text{sesgo}^2}
+  + \underbrace{\frac{\sigma^2}{p}\mathrm{tr}\bigl(\bm{X}^\top(\bm{X}\bm{X}^\top)^{-2}\bm{X}\bigr)}_{\text{varianza}}
+  + \sigma^2.
+\]
+
+Para el sesgo: $\bm{P}_{\bm{X}}-\bm{I}$ es la proyección sobre $\ker(\bm{X})$
+de dimensión $p-N$. Para $\bm{\theta}^*$ fijo y $\bm{X}$ aleatoria, la proyección
+de $\bm{\theta}^*$ sobre un subespacio aleatorio de dimensión $p-N$ en $\mathbb{R}^p$
+tiene norma cuadrática esperada $\|\bm{\theta}^*\|^2\cdot(p-N)/p = \rho^2 p\cdot(1-1/\gamma)$.
+Dividiendo por $p$: término de sesgo $= \rho^2(1-1/\gamma)$.
+
+Para la varianza: $\mathrm{tr}(\bm{X}^\top(\bm{X}\bm{X}^\top)^{-2}\bm{X}) =
+\mathrm{tr}((\bm{X}\bm{X}^\top)^{-1})$. Usando la ley de Marchenko-Pastur para
+$\gamma > 1$: $\frac{1}{N}\bm{X}\bm{X}^\top \to \bm{I}/\gamma + (\ldots)$, y
+$\mathrm{tr}((\bm{X}\bm{X}^\top)^{-1}) \approx N\gamma/((N/\gamma)\cdot N \cdot (\gamma-1)/\gamma)
+= \gamma/((\gamma-1))$ (cálculo exacto vía la fórmula integral de Stieltjes para
+la transformada de Hilbert de la distribución de Marchenko-Pastur con
+$\gamma > 1$). Dividiendo por $p = \gamma N$: término de varianza $= \sigma^2/(\gamma(\gamma-1))$.
+
+Sumando los tres términos:
+\[
+  E_{\text{test}} \to \rho^2\!\left(1-\frac{1}{\gamma}\right)
+  + \frac{\sigma^2}{\gamma(\gamma-1)} + \sigma^2
+  = \rho^2\frac{\gamma-1}{\gamma} + \frac{\sigma^2}{\gamma-1}.
+\]
+Esta expresión decrece en $\gamma$ (para $\gamma > 1$) tanto el término de
+varianza $\sigma^2/(\gamma-1)$ como el de sesgo $\rho^2(\gamma-1)/\gamma$.
+Cuando $\gamma \to \infty$: $E_{\text{test}} \to \rho^2 + \sigma^2$, que es el
+error irreducible del estimador $\hat{\bm{\theta}} = \bm{\theta}^*$ más el ruido.
+$\square$
+\end{proof}
+
+\begin{observacion}{Las tres curvas y el pico}
+La fórmula~\eqref{eq:dd_formula} produce exactamente la curva de doble descenso:
+\begin{itemize}
+  \item Para $\gamma < 1$: $E_{\text{test}} = \sigma^2/(1-\gamma)$ crece
+        monótonamente al acercarse a $\gamma = 1$ desde la izquierda.
+  \item En $\gamma = 1$: $E_{\text{test}} \to \infty$ (el pico).
+  \item Para $\gamma > 1$: $E_{\text{test}}$ decrece monótonamente hacia
+        $\rho^2 + \sigma^2$ conforme $\gamma \to \infty$.
+\end{itemize}
+El pico no es un artefacto del modelo: es la manifestación del mal
+condicionamiento de $\bm{X}$ en el umbral de interpolación. Para $\gamma$
+ligeramente mayor que $1$, el mínimo valor singular de $\bm{X}$ es pequeño pero
+positivo, haciendo que la pseudoinversa amplifique enormemente el ruido.
+Añadir más parámetros ($\gamma$ aumenta) aleja el espectro del cero y reduce
+la amplificación: el error mejora.
+\end{observacion}
+
+\begin{fisicaconexion}{La ley de Marchenko-Pastur en matrices aleatorias}
+La demostración del Teorema~\ref{thm:double_descent} invoca la \textbf{ley de
+Marchenko-Pastur} (1967), que describe el espectro límite de matrices de Wishart
+$\bm{W} = \frac{1}{N}\bm{X}\bm{X}^\top$ con $\bm{X} \in \mathbb{R}^{N\times p}$
+gaussiana en el límite $N, p \to \infty$ con $\gamma = p/N$ fijo. La densidad
+espectral límite es:
+\[
+  \rho_\gamma(\lambda) = \frac{\sqrt{(\lambda_+ - \lambda)(\lambda - \lambda_-)}}{2\pi\gamma\lambda},
+  \qquad \lambda \in [\lambda_-, \lambda_+],
+\]
+con $\lambda_\pm = (1 \pm \sqrt{\gamma})^2$. Esta distribución aparece
+extensamente en física. En \textbf{física nuclear}, la teoría de matrices
+aleatorias (Wigner, Dyson) describe el espectro de niveles de energía de núcleos
+pesados: los espaciados entre niveles siguen estadísticas GOE (Gaussian Orthogonal
+Ensemble) en lugar de ser de Poisson, lo que indica la existencia de correlaciones
+de largo alcance en la hamiltoniana. En \textbf{física de la materia condensada},
+el espectro de la matriz de correlación de mercados financieros sigue
+aproximadamente la ley de Marchenko-Pastur, con los autovalores por encima de
+$\lambda_+$ interpretados como señal real (correlaciones de sector) y los que
+caen dentro de la distribución como ruido. El mismo criterio ---autovalores de
+$\bm{X}^\top\bm{X}/N$ por encima de $\lambda_+$--- puede usarse para determinar
+cuántos componentes de la descomposición PCA de un dataset son estadísticamente
+significativos vs.\ ruido: en el umbral $\gamma = 1$, el soporte de la
+distribución toca el cero y el condicionamiento se colapsa, causando exactamente
+el pico del \textit{double descent}.
+\end{fisicaconexion}
+
+\subsection{\textit{Double descent} en el tiempo de entrenamiento}
+\label{subsec:dd_tiempo}
+
+El fenómeno aparece también en función del tiempo de entrenamiento para capacidad
+fija en o cerca del umbral de interpolación ($\gamma \approx 1$). El mecanismo
+es el siguiente:
+
+\begin{enumerate}
+  \item \textbf{Fase inicial}: el modelo aprende la señal. $E_{\text{train}}$ y
+        $E_{\text{val}}$ descienden juntos.
+  \item \textbf{Fase de memorización}: el modelo empieza a interpolar el ruido.
+        $E_{\text{train}}$ continúa bajando hacia cero, $E_{\text{val}}$ sube
+        (sobreajuste clásico). La parada temprana aquí da el mínimo de la curva
+        clásica.
+  \item \textbf{Fase de re-calibración}: el SGD, guiado por su sesgo hacia la
+        solución de mínima norma (Proposición~\ref{prop:min_norma}), refina la
+        solución hacia la de menor norma entre las que interpolan. Esa solución
+        tiene mejor generalización que la de la fase 2. $E_{\text{val}}$ baja de
+        nuevo. Entrenar hasta convergencia completa da el mínimo del régimen
+        sobreparamétrico.
+\end{enumerate}
+
+Este patrón reconcilia la parada temprana (óptima en la fase 1 para modelos
+subparamétricos) con el entrenamiento largo (óptimo en la fase 3 para modelos
+sobreparamétricos): son estrategias óptimas para regímenes distintos.
+
+\subsection{Implicaciones para el diseño de modelos}
+\label{subsec:dd_implicaciones}
+
+Tres mensajes prácticos que revierten la sabiduría convencional del aprendizaje
+clásico:
+
+\medskip
+\noindent\textbf{1. El modelo más pequeño que interpola no es el óptimo.}
+En la curva clásica, el consejo era "modelo más pequeño que ajuste los datos."
+En el régimen moderno, el peor diseño posible es el modelo que justamente interpola
+($\gamma \approx 1$): es el pico del \textit{double descent}. Mejor un modelo
+claramente subparamétrico (con regularización explícita) o claramente
+sobreparamétrico (con regularización implícita del SGD).
+
+\medskip
+\noindent\textbf{2. Los modelos grandes con SGD generalizan bien.}
+Para $\gamma \gg 1$, el error de test mejora con $p$. El SGD desde inicialización
+pequeña actúa como regularizador de mínima norma, seleccionando la solución más
+suave entre las que interpolan. No se necesita regularización explícita si el
+optimizador y la inicialización son los correctos.
+
+\medskip
+\noindent\textbf{3. El régimen relevante para física de altas energías.}
+Para simulación de calorímetros (CaloDiT, CaloFlow), los modelos tienen
+$p \sim 10^6$–$10^8$ y los datasets de entrenamiento tienen $N \sim 10^5$–$10^6$
+muestras (costosas de generar con simulación de Geant4). El cociente
+$\gamma = p/N \sim 10$–$10^3$ coloca estos modelos cómodamente en el régimen
+sobreparamétrico. La predicción del Teorema~\ref{thm:double_descent} es que
+el error mejora con $p$, lo que justifica el uso de modelos grandes.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Búsqueda de hiperparámetros}
+\label{sec:hiperparam}
+\dificultad{1}{1}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El espacio de hiperparámetros y su sensibilidad}
+\label{subsec:hiper_espacio}
+
+Los hiperparámetros de un MLP se clasifican por su sensibilidad típica:
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Tipo} & \textbf{Hiperparámetro} & \textbf{Sensibilidad} & \textbf{Rango típico} \\
+\midrule
+Arquitectura & Profundidad $L$ & Media & 3–8 \\
+Arquitectura & Anchura $n_l$ & Media & 64–1024 \\
+Arquitectura & Activación & Baja & ReLU, GELU \\
+\midrule
+Optimización & Tasa $\eta$ & \textbf{Alta} & $10^{-4}$–$10^{-2}$ \\
+Optimización & Batch size $B$ & Media & 64–2048 \\
+Optimización & $\beta_1,\beta_2$ de Adam & Baja & (0.9, 0.999) \\
+\midrule
+Regularización & Dropout $p_d$ & Media & 0.1–0.5 \\
+Regularización & $\lambda$ ($\ell_2$) & Media & $10^{-5}$–$10^{-3}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La tasa de aprendizaje es el hiperparámetro más sensible en casi todos los
+modelos. Los coeficientes de Adam $(\beta_1,\beta_2) = (0.9, 0.999)$ funcionan
+bien en la gran mayoría de las aplicaciones y raramente necesitan ajuste.
+
+\subsection{Grid search, búsqueda aleatoria y optimización bayesiana}
+\label{subsec:hiper_busqueda}
+
+\textbf{Grid search:} evalúa todas las combinaciones en una rejilla de valores.
+Costo exponencial en el número de hiperparámetros. Solo viable para $\leq 2$
+hiperparámetros.
+
+\textbf{Búsqueda aleatoria:} Bergstra y Bengio (2012) mostraron que muestrear
+aleatoriamente el espacio de hiperparámetros es tan eficiente como la rejilla
+cuando solo 2–3 hiperparámetros son relevantes (lo habitual). La razón: la
+rejilla desperdicia evaluaciones en regiones donde los hiperparámetros no
+importantes varían; la búsqueda aleatoria muestrea los hiperparámetros
+importantes en toda su gama. Con el mismo presupuesto de $T$ evaluaciones,
+la búsqueda aleatoria explora $T$ valores distintos de cada hiperparámetro
+importante; la rejilla de $T^{1/d}$ puntos por dimensión explora solo
+$T^{1/d}$ valores.
+
+\textbf{Optimización bayesiana:} modela el error de validación como función
+de los hiperparámetros usando un proceso gaussiano. Selecciona el siguiente
+punto de evaluación maximizando la \textbf{mejora esperada}:
+$\mathrm{EI}(\bm{h}) = \mathbb{E}[\max(0, E^* - E_{\text{val}}(\bm{h}))]$
+donde $E^*$ es el mejor error observado. Frameworks: Optuna, Ray Tune, Weights
+\& Biases Sweeps. Es la opción preferible cuando cada evaluación es costosa
+(entrenamiento completo de horas a días).
+
+\subsection{El \textit{learning rate finder}}
+\label{subsec:lr_finder}
+
+El método de Smith (2017): ejecutar el entrenamiento durante una pasada
+incrementando $\eta$ exponencialmente desde $\eta_{\min} \sim 10^{-7}$ hasta
+$\eta_{\max} \sim 1$, registrando la pérdida de entrenamiento en cada mini-lote.
+La tasa óptima para el scheduler coseno es el valor de $\eta$ justo antes del
+punto donde la pérdida deja de descender y empieza a crecer (el "codo" de la
+curva pérdida vs. $\log\eta$).
+
+La justificación: para $\eta$ pequeño, la pérdida decrece lentamente (el
+integrador de Euler da pasos pequeños). Para $\eta$ en el rango óptimo, la
+pérdida decrece rápidamente. Para $\eta$ demasiado grande, el integrador
+inestabiliza y la pérdida sube. El codo identifica el límite de estabilidad
+de Euler $\eta^* \lesssim 2/\mu_{\max}(\bm{H})$ (Sección~\ref{subsec:euler}).
+El procedimiento tarda menos de una época.
+
+\subsection{Reglas empíricas para MLPs en física de altas energías}
+\label{subsec:hiper_fisica}
+
+Para simulación de calorímetros y clasificación de jets, basadas en la
+literatura reciente de ATLAS, CMS y LHCb:
+
+\begin{itemize}
+  \item \textbf{Arquitectura:} $L = 4$–$6$ capas ocultas, $n_l \in [128, 512]$.
+        ReLU o GELU para capas ocultas. Salida lineal (regresión) o softmax
+        (clasificación). Layer normalization para modelos con $B$ variable.
+  \item \textbf{Optimización:} Adam con $\eta_0 \in [10^{-4}, 3\times 10^{-3}]$
+        encontrado con el LR finder. Scheduler coseno con warmup lineal de
+        $5$–$10\%$ de las épocas totales. Batch size $B \in [256, 2048]$ según
+        memoria de GPU disponible, con $\eta \propto B$ (regla de escala).
+  \item \textbf{Regularización:} dropout $p_d \in [0.1, 0.3]$ en las capas
+        ocultas. Weight decay ($\ell_2$) $\lambda \in [10^{-5}, 10^{-4}]$.
+        Early stopping con paciencia $P = 20$–$50$ épocas.
+  \item \textbf{Inicialización:} He para ReLU/GELU, Xavier para tanh/sigmoide.
+\end{itemize}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 8}
+\label{sec:resumen8}
+%───────────────────────────────────────────────────────────────────────────────
+
+Este capítulo completó el ciclo del MLP. Las herramientas construidas en los
+Capítulos~\ref{ch:cap4}–\ref{ch:cap7} se ensamblaron en el Algoritmo~\ref{alg:ciclo} y se estudiaron las
+regularizaciones que permiten que ese ciclo produzca modelos que generalizan.
+
+La parada temprana no es una heurística: es un filtro espectral que suprime
+progresivamente las componentes de baja varianza de los datos, equivalente a
+regularización de Tikhonov con $\lambda \propto 1/k$. El dropout no es un truco
+empírico: es inferencia variacional aproximada en una BNN, con la consecuencia
+práctica de que MC Dropout da estimaciones calibradas de incertidumbre epistémica.
+La regularización implícita del SGD no es un efecto secundario: es el mecanismo
+que hace que los modelos grandes generalicen, controlando exactamente las normas
+espectrales que aparecen en las cotas modernas de generalización.
+
+El fenómeno \textit{double descent} resuelve la aparente contradicción entre la
+teoría clásica y la práctica moderna. El Teorema~\ref{thm:double_descent} muestra
+que el error de generalización tiene tres regímenes: clásico ($\gamma < 1$), pico
+de interpolación ($\gamma = 1$), y sobreparamétrico ($\gamma > 1$). El régimen
+moderno opera en $\gamma \gg 1$, donde más parámetros siempre ayudan si el
+optimizador tiene el sesgo correcto.
+
+El capítulo siguiente va más allá del MLP denso: arquitecturas que explotan la
+estructura de los datos de física, donde el \textit{inductive bias} del diseño
+de la arquitectura permite una generalización mucho mejor que la regularización
+genérica.
+
+%───────────────────────────────────────────────────────────────────────────────
+\label{sec:estrella8}
+\begin{estrella}{Protocolo de entrenamiento del sustituto neutrónico}
+
+\textbf{El ciclo completo en el IAN-R1.}
+El Algoritmo~\ref{alg:ciclo} se aplica directamente al sustituto MLP del reactor
+de investigación, pero con decisiones de diseño específicas que derivan de las
+propiedades del problema físico. El dataset de entrenamiento consiste en $N$
+simulaciones de referencia (código de difusión de dos grupos o Monte Carlo) con
+entradas $\bm{u} \in \mathbb{R}^d$ (posiciones de barras de control, temperatura
+del refrigerante, potencia objetivo) y salidas $\bm{\Phi} \in \mathbb{R}^K$
+(flujo neutrónico en $K$ nodos del núcleo). Para el IAN-R1 con geometría cilíndrica,
+$d \sim 10$--$20$ y $K \sim 500$: el cociente $\gamma = p/N$ está controlado por
+el costo de generación de datos.
+
+\textbf{Elecciones de regularización motivadas físicamente.}
+Las variables de entrada $\bm{u}$ tienen escalas heterogéneas: posiciones de
+barras en cm ($O(10^1)$), temperatura en K ($O(10^2)$), potencia en MW ($O(10^0)$).
+La normalización BN (o la estandarización estática del preprocesado) es
+obligatoria para evitar el mal condicionamiento del paisaje descrito en la
+\textsf{Conexión física} de la Sección~\ref{subsec:batch_norm}.
+
+Las salidas del flujo $\Phi_j$ tienen variaciones relativas de varios órdenes de
+magnitud entre el centro y el reflector. La pérdida MSE estándar penaliza
+desproporcionadamente los nodos de alta potencia. Una pérdida ponderada por el
+flujo de referencia, $\mathcal{L} = \frac{1}{K}\sum_j w_j(\hat{\Phi}_j - \Phi_j)^2$
+con $w_j \propto 1/\Phi_j^2$ (error relativo), es más apropiada físicamente y
+produce un sustituto con menor error relativo uniforme sobre el núcleo.
+
+\textbf{El régimen del doble descenso en el sustituto.}
+Para el IAN-R1 con $N \sim 5\,000$--$10\,000$ simulaciones de referencia (costo
+de horas a días en un servidor de cálculo) y un MLP $(d, 256, 256, K)$ con
+$p \approx 2K \cdot 256 + 256^2 \approx 322\,000$ parámetros para $K = 500$,
+el cociente $\gamma = p/N \approx 32$--$64$. Este valor cae en el régimen
+sobreparamétrico: el Teorema~\ref{thm:double_descent} predice que el error
+mejora al aumentar $p$, y el SGD desde inicialización pequeña actúa como
+regularizador de mínima norma. La parada temprana con paciencia $P = 30$--$50$
+épocas captura el mínimo del régimen sobreparamétrico sin sobreajustar.
+
+\textbf{Parada temprana como filtro de ruido Monte Carlo.}
+Las simulaciones de referencia tienen ruido estadístico inherente (incertidumbre
+de $\sim 0.5$--$2\%$ por nodo en códigos Monte Carlo como MCNP). Este ruido
+actúa como el ruido $\sigma^2$ del Teorema~\ref{thm:double_descent}. La
+Proposición~\ref{prop:early_svd} garantiza que la parada temprana suprime las
+componentes espectrales del flujo cuya varianza está dominada por ese ruido
+Monte Carlo, preservando las componentes físicamente significativas
+(distribuciones de flujo suaves, simétricas, compatibles con la física de
+difusión). El resultado es un sustituto más suave y más generalizable que el que
+se obtendría entrenando hasta interpolación completa del ruido.
+
+\textbf{Diagnóstico con curvas de entrenamiento.}
+En el sustituto neutrónico, los cuatro patrones de la Sección~\ref{subsec:curvas}
+tienen interpretación física directa:
+\begin{itemize}
+  \item \textbf{Sobreajuste}: el modelo ha aprendido las fluctuaciones Monte
+        Carlo específicas de ese lote de simulaciones. La solución es generar
+        más simulaciones de referencia o aumentar el dropout.
+  \item \textbf{Subajuste}: la arquitectura es insuficiente para la complejidad
+        espacial del flujo (e.g., geometrías altamente heterogéneas con
+        reflectores de berilio). Aumentar la anchura o usar una arquitectura
+        con sesgo inductivo para funciones suaves.
+  \item \textbf{Inestabilidad}: las salidas del flujo tienen rangos muy dispares;
+        revisar la normalización de salida o usar pérdida de error relativo.
+\end{itemize}
+\end{estrella}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Verificación numérica del doble descenso}
+\textbf{Objetivo:} reproducir la curva del Teorema~\ref{thm:double_descent} y
+verificar que la fórmula analítica describe el comportamiento empírico.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Fijar $N = 200$, $\sigma^2 = 0.3$, $\bm{\theta}^* = \bm{1}_p/\sqrt{p}$
+        y variar $\gamma \in \{0.2, 0.4, 0.6, 0.8, 0.95, 1.05, 1.2, 1.5, 2, 3, 5\}$.
+  \item Para cada $\gamma$: generar $\bm{X} \in \mathbb{R}^{N\times p}$ con
+        entradas $\mathcal{N}(0,1/p)$; generar $\bm{y} = \bm{X}\bm{\theta}^* +
+        \bm{\varepsilon}$; calcular $\hat{\bm{\theta}} = \bm{X}^\dagger\bm{y}$;
+        estimar $E_\text{test}$ sobre $10^3$ puntos independientes. Repetir
+        $R=20$ veces y promediar.
+  \item Trazar $E_\text{test}(\gamma)$ empírico vs. la fórmula~\eqref{eq:dd_formula}.
+        ¿Coinciden? ¿Dónde está el pico?
+  \item Repetir con regularización de Tikhonov ($\lambda = 0.01$). ¿Desaparece
+        el pico? ¿Cuál es el $\gamma$ óptimo ahora?
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:} para $\gamma \to \infty$ el error debe
+converger a $\sigma^2 = 0.3$; el pico debe ser el punto más alto de la curva.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Comparación de estrategias de regularización}
+\textbf{Objetivo:} comparar el efecto de parada temprana, dropout y weight decay
+sobre la brecha entrenamiento-validación, y verificar que producen el mismo efecto
+cualitativo aunque por mecanismos distintos.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Generar un dataset de regresión: $N_\text{train} = 200$, $N_\text{val} = 500$
+        puntos de $f^*(x) = \sin(2\pi x) + \cos(4\pi x) + \varepsilon$,
+        $\varepsilon \sim \mathcal{N}(0, 0.1^2)$, con $x \in [-1,1]$ y cinco
+        características irrelevantes adicionales (ruido puro).
+  \item Entrenar un MLP $(6, 128, 128, 128, 1)$ con cuatro configuraciones:
+        (a)~sin regularización, (b)~early stopping ($P = 20$), (c)~dropout
+        $p_d = 0.3$, (d)~weight decay $\lambda = 10^{-3}$. Misma arquitectura,
+        mismo optimizador (Adam, $\eta = 10^{-3}$).
+  \item Para cada configuración, registrar $E_\text{train}$ y $E_\text{val}$
+        en función de las épocas. ¿Qué método controla mejor el sobreajuste?
+  \item Con MC Dropout ($K = 50$) en la configuración (c), graficar el intervalo
+        de confianza de la predicción sobre $[-1.5, 1.5]$. ¿Crece la
+        incertidumbre fuera del dominio de entrenamiento?
+\end{enumerate}
+\end{ejerciciocomp}
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La parada temprana como regularización fue analizada formalmente por Yao et al.\
+(2007) y Raskutti et al.\ (2014) en el contexto del análisis espectral del
+descenso de gradiente sobre kernel methods y modelos lineales. La equivalencia
+con la regularización de Tikhonov via el filtro espectral de la
+Proposición~\ref{prop:early_svd} es estándar en el análisis de problemas inversos
+(Engl, Hanke y Neubauer, 1996)~\cite{engl1996regularization}; la perspectiva
+adoptada aquí sigue a Vito et al.\ (2005).
+
+El artículo original de dropout es Srivastava et al.\
+(2014)~\cite{srivastava2014dropout}. La formulación de inverted dropout como
+convención estándar proviene de la implementación de Caffe y fue adoptada
+universalmente. La interpretación como ensemble fue desarrollada en detalle
+por Goodfellow, Warde-Farley et al.\ (2013). La interpretación como inferencia
+variacional es de Gal y Ghahramani (2016), citada en el Capítulo~\ref{ch:cap7}.
+
+La batch normalization fue introducida por Ioffe y Szegedy
+(2015)~\cite{ioffe2015batch}. El análisis de que el mecanismo real no es la
+reducción del covariate shift sino el suavizado del paisaje fue realizado por
+Santurkar et al.\ (2018)~\cite{santurkar2018how}. La layer normalization fue
+introducida por Ba et al.\ (2016)~\cite{ba2016layer}.
+
+El fenómeno \textit{double descent} fue nombrado y caracterizado empíricamente
+por Belkin et al.\ (2019)~\cite{belkin2019reconciling} y estudiado en función
+del tiempo de entrenamiento por Nakkiran et al.\ (2021)~\cite{nakkiran2021deep}.
+La ley de Marchenko-Pastur utilizada en la demostración del
+Teorema~\ref{thm:double_descent} fue establecida en Marchenko y Pastur
+(1967)~\cite{marchenko1967distribution}; la derivación del error exacto para el
+estimador de mínima norma vía la transformada de Stieltjes sigue a Hastie et al.\
+(2022)~\cite{hastie2022surprises}. El análisis de sesgo hacia mínimos planos y
+la conexión con el tamaño del batch es de Keskar et al.\
+(2017)~\cite{keskar2017large}.
+
+La búsqueda aleatoria de hiperparámetros como alternativa eficiente al grid
+search fue establecida por Bergstra y Bengio (2012)~\cite{bergstra2012random}.
+El LR finder fue introducido por Smith (2017)~\cite{smith2017cyclical}. La
+optimización bayesiana de hiperparámetros con procesos gaussianos y mejora
+esperada fue formalizada por Snoek, Larochelle y Adams
+(2012)~\cite{snoek2012practical}.
+\end{notasbib}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios resueltos}
+\addcontentsline{toc}{section}{Ejercicios resueltos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\label{ej:early_espectral}
+\textbf{(Filtro espectral de la parada temprana).}
+
+Para el modelo lineal $y = \theta_1 x_1 + \theta_2 x_2 + \varepsilon$ con
+datos $\bm{V} = \begin{pmatrix}2&0\\0&0.1\end{pmatrix}$ (diagonal para
+simplicidad) y $\bm{y} = (1.8, 0.08)^\top$, comparar la solución del GD
+en las iteraciones $k = 5, 20, 100$ con la solución de Tikhonov con
+$\lambda = 0.1, 0.01, 0$.
+
+\medskip\noindent\textit{Solución.}
+Los valores singulares son $\sigma_1 = 2$ y $\sigma_2 = 0.1$.
+Los coeficientes en la base singular son $\bm{u}_j^\top\bm{y}/\sigma_j$:
+$c_1^* = 1.8/2 = 0.9$ y $c_2^* = 0.08/0.1 = 0.8$.
+
+Con $\eta = 0.1$, el filtro espectral en la iteración $k$ es
+$h_k(\sigma_j^2) = 1 - (1-0.1\sigma_j^2)^k$:
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+& $k=5$ & $k=20$ & $k=100$ & Tikhonov $\lambda=0$ \\
+\midrule
+$h_k(\sigma_1^2=4)$ & $1-(0.6)^5 = 0.922$ & $\approx 1.000$ & $\approx 1.000$ & 1 \\
+$h_k(\sigma_2^2=0.01)$ & $1-(0.999)^5 = 0.005$ & $0.020$ & $0.095$ & 1 \\
+\midrule
+$\hat{\theta}_1^{(k)}$ & $0.830$ & $0.900$ & $0.900$ & $0.900$ \\
+$\hat{\theta}_2^{(k)}$ & $0.004$ & $0.016$ & $0.076$ & $0.800$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La dirección $\sigma_2 = 0.1$ (baja varianza, potencialmente ruido) tarda
+mucho más en activarse. La parada temprana en $k=5$ ignora casi completamente
+esa dirección, equivalente a Tikhonov con $\lambda \approx 1/(\eta k) = 2$:
+fuertemente regularizado. $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:dd_gamma}
+\textbf{(Verificación numérica del \textit{double descent}).}
+
+Para el modelo lineal con $\bm{\theta}^* = \bm{1}_p/\sqrt{p}$ (norma 1),
+$\sigma^2 = 0.1$, y distintos valores de $\gamma = p/N$ con $N = 100$,
+verificar numéricamente la fórmula~\eqref{eq:dd_formula}.
+
+\medskip\noindent\textit{Solución (esquema).}
+Para cada $\gamma \in \{0.3, 0.5, 0.8, 0.95, 1.05, 1.5, 2, 5, 10\}$:
+\begin{enumerate}
+  \item Generar $\bm{X} \in \mathbb{R}^{100\times p}$ con $p = \lfloor\gamma N\rfloor$,
+        entradas i.i.d.\ $\mathcal{N}(0,1/p)$.
+  \item Generar $\bm{y} = \bm{X}\bm{\theta}^* + \bm{\varepsilon}$,
+        $\bm{\varepsilon} \sim \mathcal{N}(\bm{0},\sigma^2\bm{I})$.
+  \item Calcular $\hat{\bm{\theta}} = \bm{X}^\dagger\bm{y}$ (usando \texttt{np.linalg.lstsq}).
+  \item Estimar $E_{\text{test}}$ sobre $10^4$ puntos de test independientes.
+  \item Comparar con la fórmula~\eqref{eq:dd_formula}: $\rho^2 = 1/p$, por lo
+        que el término de sesgo es $(\rho^2 p)(\gamma-1)/\gamma = (\gamma-1)/\gamma$
+        y el de varianza es $\sigma^2/(\gamma-1)$.
+\end{enumerate}
+Los resultados deben mostrar el pico en $\gamma \approx 1$ y la convergencia
+a $\sigma^2 = 0.1$ para $\gamma \to \infty$. $\square$
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios propuestos}
+\addcontentsline{toc}{section}{Ejercicios propuestos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\textbf{(Variantes de dropout).}
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{DropConnect}: en lugar de anular activaciones, DropConnect
+        anula pesos individuales con probabilidad $p_d$. Escribir la
+        modificación del forward pass para DropConnect. ¿Cambia la derivación
+        de la Proposición~\ref{prop:dropout_vi}?
+  \item \textbf{Variational dropout}: el prior sobre los pesos es
+        $p(w_{ij}) = \mathcal{N}(0,\alpha^{-1}|w_{ij}|^2)$ con $\alpha$
+        aprendible. Mostrar que minimizar la ELBO da una probabilidad de
+        dropout por peso $p_d^{ij} = \sigma(\log\alpha - k_1 - k_2\alpha -
+        k_3\alpha^2)$ (aproximación de Molchanov et al., 2017).
+        ¿Qué ocurre con los pesos donde $\alpha \to \infty$?
+  \item Comparar experimentalmente MC Dropout estándar vs.\ variational
+        dropout en términos de calibración (ECE) y exactitud en un dataset
+        de clasificación de vuestra elección.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Parada temprana y el número de condición).}
+Sea $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}\bm{\theta}
+- \bm{b}^\top\bm{\theta}$ con $\bm{H} = \mathrm{diag}(10, 1, 0.1, 0.01)$
+y $\bm{b} = (1,1,1,1)^\top$.
+\begin{enumerate}[label=(\alph*)]
+  \item Para $\eta = 0.1$ y $k = 5, 20, 100$ iteraciones de GD desde
+        $\bm{\theta}^{(0)} = \bm{0}$, calcular el error relativo
+        $\|\hat{\bm{\theta}}^{(k)} - \bm{\theta}^*\|/\|\bm{\theta}^*\|$
+        para cada componente.
+  \item ¿Cuántas iteraciones se necesitan para que la componente más lenta
+        ($H_{44} = 0.01$) alcance $90\%$ de su valor óptimo?
+  \item Comparar con la regularización de Tikhonov con $\lambda = 1/(\eta k)$:
+        ¿coinciden las soluciones?
+  \item Si se añade ruido gaussiano $\varepsilon \sim \mathcal{N}(0, 0.01)$
+        al gradiente (simulando SGD), ¿en qué iteración el error empieza a
+        crecer de nuevo por el ruido? ¿Es consistente con la temperatura
+        efectiva $\eta\sigma^2_\varepsilon$?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Doble descenso en redes neuronales).}
+Sea un MLP $(1, n_h, 1)$ con activación ReLU entrenado en $N = 50$ puntos
+de la función $f^*(x) = \sin(2\pi x) + \varepsilon$, $\varepsilon \sim
+\mathcal{N}(0, 0.1^2)$.
+\begin{enumerate}[label=(\alph*)]
+  \item Para $n_h \in \{2, 5, 10, 20, 40, 60, 80, 100\}$, entrenar hasta
+        convergencia y registrar $E_{\text{train}}$ y $E_{\text{val}}$.
+        ¿Se observa el pico en $n_h \approx N$?
+  \item Para $n_h = 40$ (umbral de interpolación), trazar $E_{\text{val}}$
+        en función de las épocas. ¿Se observa el \textit{double descent} en
+        el tiempo?
+  \item Repetir con weight decay $\lambda = 10^{-4}$. ¿Desaparece el pico?
+        ¿Por qué?
+  \item Comparar con la predicción del Teorema~\ref{thm:double_descent} para
+        el modelo lineal. ¿Es cualitativamente consistente?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Batch normalization y la tasa de aprendizaje).}
+\begin{enumerate}[label=(\alph*)]
+  \item Implementar un MLP $(10, 256, 256, 1)$ con y sin BN, entrenando en
+        datos gaussianos $(\bm{x}_i, y_i)$ con $y_i = \|\bm{x}_i\|^2 + \varepsilon_i$.
+  \item Para cada modelo, realizar el LR finder y comparar el rango de tasas
+        de aprendizaje estables. ¿La BN permite tasas más grandes?
+  \item Con la tasa óptima de cada modelo, trazar las curvas de entrenamiento.
+        ¿La BN acelera la convergencia?
+  \item Inicializar con todos los pesos iguales a $0.01$ (mala inicialización).
+        ¿Cómo afecta al modelo sin BN? ¿Y al modelo con BN?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Normas espectrales durante el entrenamiento).}
+\begin{enumerate}[label=(\alph*)]
+  \item Para el MLP $(3, 64, 64, 1)$ del Ejemplo~\ref{ex:conteo}, registrar
+        $\|\bm{W}^{(l)}\|_2$ (norma espectral) y $\|\bm{W}^{(l)}\|_F$
+        (norma de Frobenius) durante el entrenamiento con Adam.
+  \item ¿Las normas crecen, se estabilizan o decrecen durante el entrenamiento?
+  \item Añadir gradient clipping con umbral $C = 1$. ¿Cambia la evolución
+        de las normas? ¿Mejora la generalización?
+  \item Calcular la cota de Bartlett et al.\ al final del entrenamiento y
+        comparar con el error de test observado. ¿La cota es ajustada o floja?
+\end{enumerate}
+\end{ejercicio}

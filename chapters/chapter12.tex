@@ -1,0 +1,1525 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{Modelos generativos y difusión: de la teoría a los algoritmos}
+\label{ch:cap12}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Los Capítulos~\ref{ch:cap10} y~\ref{ch:cap11} construyeron la maquinaria matemática completa: el proceso
+OU como forward process, el teorema de Anderson como reverse SDE, y el denoising
+score matching como pérdida de entrenamiento. Este capítulo ensambla esos
+ingredientes en algoritmos concretos, los conecta con las arquitecturas del
+Capítulo~\ref{ch:cap9}, y cierra el arco del libro con una lectura unificada de todos los
+modelos de difusión como instancias del puente de Schrödinger del Capítulo~\ref{ch:cap11}.
+
+La tensión central es aparente: DDPM, score-based SDE, DDIM y flow matching
+parecen algoritmos distintos. La resolución es que todos resuelven el mismo
+problema variacional —transportar $\mathcal{N}(\bm{0},\bm{I})$ a $p_0$
+minimizando la KL entre leyes de procesos— con distintos niveles de
+regularización entrópica $\epsilon$ y distintas elecciones de discretización.
+La diferencia es de ingeniería, no de fundamento matemático.
+
+Hay una ecuación que sintetiza el libro entero. La SDE de Langevin del
+Capítulo~\ref{ch:cap5} y el reverse SDE de Anderson del Capítulo~\ref{ch:cap11} son la misma ecuación
+con roles opuestos: en el SGD, el ruido isótropo destruye correlaciones para
+escapar mínimos locales; en los modelos de difusión, el score reconstruye
+correlaciones para generar datos. La diferencia es el signo del tiempo.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El problema generativo y el marco unificador}
+\label{sec:generativo_marco}
+\dificultad{2}{1}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Qué es un modelo generativo}
+\label{subsec:modelo_generativo}
+
+Dado acceso a muestras $\{\bm{x}^{(i)}\}_{i=1}^N \overset{\mathrm{iid}}{\sim}
+p_0$ con $p_0$ desconocida en alta dimensión $\bm{x}\in\mathbb{R}^d$, un
+\textbf{modelo generativo} produce nuevas muestras distribuidas aproximadamente
+según $p_0$. Para imágenes, $d = C\times H\times W$: del orden de $10^5$--$10^6$.
+
+Tres enfoques estructuralmente distintos:
+
+\begin{enumerate}
+  \item \textbf{Densidad explícita:} estimar $\hat{p}_0$ por máxima
+        verosimilitud y muestrear. Intractable en alta dimensión salvo para
+        familias paramétricas muy restringidas (flujos normalizadores).
+  \item \textbf{Densidad implícita:} aprender un mapa $G_\theta:\mathcal{N}(\bm{0},\bm{I})
+        \to p_0$ sin conocer $p_0$ explícitamente, usando un discriminador para
+        medir la discrepancia. Ejemplo: GANs. Inestables por el equilibrio
+        minimax.
+  \item \textbf{Transporte:} definir un forward process conocido que lleva $p_0$
+        a $\mathcal{N}(\bm{0},\bm{I})$, y aprender a invertirlo. Ejemplo:
+        modelos de difusión. El objetivo de entrenamiento es convexo.
+\end{enumerate}
+
+Los modelos de difusión pertenecen al tercer enfoque. Su ventaja sobre las GANs
+es estructural: el objetivo MSE sobre el ruido predicho es convexo y estable,
+mientras que el equilibrio minimax de las GANs requiere un balance delicado que
+fácilmente se rompe.
+
+\subsection{El marco unificador: el puente de Schrödinger}
+\label{subsec:marco_unificador}
+
+El problema de generar muestras de $p_0$ a partir de $\mathcal{N}(\bm{0},\bm{I})$
+tiene una formulación variacional precisa. Sea $\mathbb{R}$ la ley del forward
+process (el proceso de referencia que lleva $p_0$ a $\mathcal{N}(\bm{0},\bm{I})$)
+y $\Pi(p_T, p_0)$ el conjunto de todos los procesos de Markov con marginal
+$p_T = \mathcal{N}(\bm{0},\bm{I})$ en $t=0$ y marginal $p_0$ en $t=T$.
+El \textbf{puente de Schrödinger} es la solución del problema:
+\[
+  \mathbb{P}^* = \argmin_{\mathbb{P}\in\Pi(p_T,p_0)}
+  D_{\mathrm{KL}}(\mathbb{P}\|\mathbb{R}).
+\]
+La Proposición~\ref{prop:anderson_schrodinger} del
+Capítulo~\ref{ch:cap11} demostró que el proceso reverso de Anderson
+es exactamente $\mathbb{P}^*$: el proceso más cercano al forward en KL
+entre leyes de procesos, entre todos los que tienen las marginales correctas.
+
+Lo que distingue a los distintos modelos de difusión es el nivel de
+\textbf{regularización entrópica} $\epsilon$ del proceso de referencia.
+Intuitivamente, $\epsilon$ mide cuánto ruido browniano contiene el proceso
+de referencia $\mathbb{R}$. Cuando $\epsilon$ es grande, $\mathbb{R}$
+es muy difusivo y las trayectorias son altamente estocásticas: el reverse
+SDE necesita muchos pasos pequeños para invertir esa difusión (DDPM,
+$\epsilon=\infty$, $\mathrm{NFE}\sim 10^3$). Cuando $\epsilon\to 0$,
+el proceso de referencia degenera en un mapa determinista y las
+trayectorias son rectas: el reverse ODE necesita muy pocos pasos
+(OT flow matching, $\epsilon=0^+$, $\mathrm{NFE}\sim 1$--$10$).
+
+El parámetro $\epsilon$ es la misma temperatura que aparece en la
+distribución de Gibbs del Capítulo~\ref{ch:cap5} y en la escala de
+CFG de la Sección~\ref{subsec:cfg}: controla el trade-off entre
+diversidad estocástica y determinismo del transporte. Todos los modelos
+de este capítulo son instancias del puente de Schrödinger con distintos
+valores de $\epsilon$ y distintas elecciones de discretización:
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lllll}
+\toprule
+\textbf{Modelo} & $\epsilon$ & \textbf{Proceso} & \textbf{Pérdida}
+  & \textbf{NFE} \\
+\midrule
+DDPM      & $\infty$ & SDE discreto
+  & $\|\bm{\varepsilon}-\bm{\varepsilon}_\theta\|^2$ & $10^3$ \\
+Score SDE & grande   & SDE continuo
+  & Score matching                                   & $10^2$ \\
+DDIM      & grande   & ODE discreta
+  & $\|\bm{\varepsilon}-\bm{\varepsilon}_\theta\|^2$ & $20$--$100$ \\
+DPM-Solver& grande   & ODE continua
+  & $\|\bm{\varepsilon}-\bm{\varepsilon}_\theta\|^2$ & $10$--$20$ \\
+OT flow matching & $0^+$ & ODE continua
+  & $\|v-v_\theta\|^2$                               & $1$--$10$ \\
+\bottomrule
+\end{tabular}
+\caption{Todos los modelos de difusión como instancias del puente de
+Schrödinger con distintos niveles de regularización entrópica $\epsilon$.
+NFE = número de evaluaciones de la red por muestra generada.}
+\label{tab:unificacion}
+\end{table}
+
+La columna de $\epsilon$ es la que el lector debe leer primero.
+DDPM y score SDE no tienen trayectorias rectas porque su proceso
+de referencia es muy difusivo; DDIM ya usa la ODE de flujo (determinista)
+pero hereda el score network entrenado con el proceso estocástico;
+OT flow matching elige directamente un proceso de referencia de difusión
+nula y aprende el campo de velocidades del transporte óptimo.
+El resto del capítulo desarrolla cada fila de esta tabla.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{DDPM: el modelo fundacional}
+\label{sec:ddpm}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El forward process discreto y su marginalización}
+\label{subsec:ddpm_forward}
+
+El forward process discreto (Ho et al., 2020) define una cadena de Markov
+gaussiana con $T$ pasos y \textbf{noise schedule} $0 < \beta_1 \leq \cdots
+\leq \beta_T < 1$:
+\begin{equation}
+  q(\bm{x}_t|\bm{x}_{t-1})
+  = \mathcal{N}\!\left(\bm{x}_t;\,\sqrt{1-\beta_t}\,\bm{x}_{t-1},\,\beta_t\bm{I}\right).
+  \label{eq:ddpm_forward}
+\end{equation}
+Definimos $\alpha_t = 1-\beta_t$ y $\bar{\alpha}_t = \prod_{s=1}^t\alpha_s$.
+
+\begin{proposicion}{Marginalización directa del forward process}
+\label{prop:ddpm_marginal}
+\begin{equation}
+  q(\bm{x}_t|\bm{x}_0)
+  = \mathcal{N}\!\left(\bm{x}_t;\,\sqrt{\bar{\alpha}_t}\,\bm{x}_0,\,
+  (1-\bar{\alpha}_t)\bm{I}\right).
+  \label{eq:ddpm_marginal}
+\end{equation}
+\end{proposicion}
+
+\begin{proof}
+Por inducción. Para $t=1$: directo desde~\eqref{eq:ddpm_forward}.
+Dado~\eqref{eq:ddpm_marginal} para $t-1$, escribir $\bm{x}_{t-1} =
+\sqrt{\bar{\alpha}_{t-1}}\bm{x}_0 + \sqrt{1-\bar{\alpha}_{t-1}}\bm{\varepsilon}_{t-1}$
+y $\bm{x}_t = \sqrt{\alpha_t}\bm{x}_{t-1} + \sqrt{1-\alpha_t}\bm{\varepsilon}_t$:
+\[
+  \bm{x}_t
+  = \sqrt{\alpha_t\bar{\alpha}_{t-1}}\bm{x}_0
+  + \underbrace{\sqrt{\alpha_t(1-\bar{\alpha}_{t-1})}\bm{\varepsilon}_{t-1}
+  + \sqrt{1-\alpha_t}\bm{\varepsilon}_t}_{\text{gaussiano, varianza }
+  \alpha_t(1-\bar{\alpha}_{t-1})+(1-\alpha_t) = 1-\bar{\alpha}_t}.
+\]
+Luego $\bm{x}_t = \sqrt{\bar{\alpha}_t}\bm{x}_0 + \sqrt{1-\bar{\alpha}_t}
+\bm{\varepsilon}$, $\bm{\varepsilon}\sim\mathcal{N}(\bm{0},\bm{I})$. $\square$
+\end{proof}
+
+Esta reparametrización permite muestrear $\bm{x}_t$ en un único paso dado
+$\bm{x}_0$ durante el entrenamiento: no es necesario iterar $t$ pasos del
+forward.
+
+Para $t\to T$ con $\bar{\alpha}_T\approx 0$: $q(\bm{x}_T|\bm{x}_0)\approx
+\mathcal{N}(\bm{0},\bm{I})$, independiente de $\bm{x}_0$. Esta es la condición
+de colapso al prior: el forward process destruye toda la información de $\bm{x}_0$
+en $T$ pasos.
+
+\subsection{El reverse process y el posterior analítico}
+\label{subsec:ddpm_reverse_prior}
+
+El reverse step verdadero $q(\bm{x}_{t-1}|\bm{x}_t)$ es intractable, pero el
+posterior condicionado a $\bm{x}_0$ es analítico:
+
+\begin{proposicion}{Posterior del reverse step condicionado a $\bm{x}_0$}
+\label{prop:ddpm_posterior}
+\begin{equation}
+  q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0)
+  = \mathcal{N}\!\left(\bm{x}_{t-1};\,\tilde{\bm{\mu}}_t(\bm{x}_t,\bm{x}_0),\,
+  \tilde{\beta}_t\bm{I}\right),
+  \label{eq:ddpm_posterior}
+\end{equation}
+con:
+\begin{align}
+  \tilde{\bm{\mu}}_t(\bm{x}_t,\bm{x}_0)
+  &= \frac{\sqrt{\bar{\alpha}_{t-1}}\beta_t}{1-\bar{\alpha}_t}\bm{x}_0
+  + \frac{\sqrt{\alpha_t}(1-\bar{\alpha}_{t-1})}{1-\bar{\alpha}_t}\bm{x}_t,
+  \label{eq:ddpm_posterior_mean}\\
+  \tilde{\beta}_t
+  &= \frac{(1-\bar{\alpha}_{t-1})\beta_t}{1-\bar{\alpha}_t}.
+  \label{eq:ddpm_posterior_var}
+\end{align}
+\end{proposicion}
+
+\begin{proof}
+Por la regla de Bayes: $q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0) \propto
+q(\bm{x}_t|\bm{x}_{t-1})q(\bm{x}_{t-1}|\bm{x}_0)$.
+Los dos factores son gaussianos en $\bm{x}_{t-1}$. Completando el cuadrado:
+$\log q(\bm{x}_t|\bm{x}_{t-1}) + \log q(\bm{x}_{t-1}|\bm{x}_0)$ es
+cuadrático en $\bm{x}_{t-1}$ con coeficiente del término cuadrático
+$-\frac{1}{2}\left(\frac{\alpha_t}{1-\alpha_t} + \frac{1}{1-\bar{\alpha}_{t-1}}\right)
+= -\frac{1}{2\tilde{\beta}_t}$
+y término lineal que da la media $\tilde{\bm{\mu}}_t$. $\square$
+\end{proof}
+
+Sustituyendo la reparametrización $\bm{x}_0 = (\bm{x}_t - \sqrt{1-\bar{\alpha}_t}
+\bm{\varepsilon})/\sqrt{\bar{\alpha}_t}$ en~\eqref{eq:ddpm_posterior_mean}:
+\begin{equation}
+  \tilde{\bm{\mu}}_t(\bm{x}_t,\bm{\varepsilon})
+  = \frac{1}{\sqrt{\alpha_t}}\!\left(\bm{x}_t
+  - \frac{\beta_t}{\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}\right).
+  \label{eq:ddpm_posterior_reparametrizado}
+\end{equation}
+El modelo reverso parametriza la media en función de $\bm{\varepsilon}$:
+\begin{equation}
+  \bm{\mu}_\theta(\bm{x}_t,t)
+  = \frac{1}{\sqrt{\alpha_t}}\!\left(\bm{x}_t
+  - \frac{\beta_t}{\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}_\theta(\bm{x}_t,t)\right),
+  \label{eq:ddpm_mu_theta}
+\end{equation}
+con $\bm{\varepsilon}_\theta(\bm{x}_t,t)$ una red neuronal que predice el ruido.
+
+\subsection{Derivación completa del ELBO y la función de pérdida}
+\label{subsec:ddpm_elbo}
+
+\begin{teorema}{ELBO de DDPM y pérdida de predicción de ruido}
+\label{thm:ddpm_elbo}
+La cota inferior variacional de $\log p_\theta(\bm{x}_0)$ se descompone como:
+\begin{equation}
+  \log p_\theta(\bm{x}_0)
+  \geq -L_T - \sum_{t=2}^{T} L_{t-1} - L_0,
+  \label{eq:ddpm_elbo}
+\end{equation}
+donde:
+\begin{align}
+  L_T &= D_{\mathrm{KL}}\!\left(q(\bm{x}_T|\bm{x}_0)\,\|\,p(\bm{x}_T)\right),
+  \label{eq:lt}\\
+  L_{t-1} &= D_{\mathrm{KL}}\!\left(q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0)\,\|\,
+  p_\theta(\bm{x}_{t-1}|\bm{x}_t)\right),
+  \label{eq:lt-1}\\
+  L_0 &= -\mathbb{E}_{q(\bm{x}_1|\bm{x}_0)}\!\left[\log p_\theta(\bm{x}_0|\bm{x}_1)\right].
+  \label{eq:l0}
+\end{align}
+Cada término $L_{t-1}$ entre gaussianas se reduce a:
+\begin{equation}
+  L_{t-1}
+  = \mathbb{E}_{\bm{x}_0,\bm{\varepsilon}}\!\left[
+  \frac{\beta_t^2}{2\sigma_t^2\alpha_t(1-\bar{\alpha}_t)}
+  \left\|\bm{\varepsilon} - \bm{\varepsilon}_\theta(\bm{x}_t,t)\right\|^2
+  \right],
+  \label{eq:lt-1_simple}
+\end{equation}
+con $\bm{x}_t = \sqrt{\bar{\alpha}_t}\bm{x}_0 + \sqrt{1-\bar{\alpha}_t}\bm{\varepsilon}$.
+La pérdida DDPM con pesos uniformes $\lambda_t = 1$ es:
+\begin{equation}
+  L_{\mathrm{DDPM}}(\theta)
+  = \mathbb{E}_{t\sim\mathcal{U}[1,T],\,\bm{x}_0\sim p_0,\,
+  \bm{\varepsilon}\sim\mathcal{N}(\bm{0},\bm{I})}\!\left[
+  \left\|\bm{\varepsilon} - \bm{\varepsilon}_\theta\!\left(\sqrt{\bar{\alpha}_t}\bm{x}_0
+  + \sqrt{1-\bar{\alpha}_t}\bm{\varepsilon},\,t\right)\right\|^2
+  \right].
+  \label{eq:ddpm_loss}
+\end{equation}
+\end{teorema}
+
+\begin{proof}
+\textbf{Paso 1: derivación del ELBO.}
+Aplicando la desigualdad de Jensen $\log\mathbb{E}[X] \geq \mathbb{E}[\log X]$
+vía la medida variacional $q(\bm{x}_{1:T}|\bm{x}_0)$:
+\begin{align*}
+  \log p_\theta(\bm{x}_0)
+  &= \log \int p_\theta(\bm{x}_{0:T})\,d\bm{x}_{1:T}\\
+  &= \log \int q(\bm{x}_{1:T}|\bm{x}_0)
+    \frac{p_\theta(\bm{x}_{0:T})}{q(\bm{x}_{1:T}|\bm{x}_0)}\,d\bm{x}_{1:T}\\
+  &\geq \mathbb{E}_{q(\bm{x}_{1:T}|\bm{x}_0)}\!\left[
+    \log\frac{p_\theta(\bm{x}_{0:T})}{q(\bm{x}_{1:T}|\bm{x}_0)}\right].
+\end{align*}
+Expandiendo $p_\theta(\bm{x}_{0:T}) = p(\bm{x}_T)\prod_{t=1}^T
+p_\theta(\bm{x}_{t-1}|\bm{x}_t)$ y $q(\bm{x}_{1:T}|\bm{x}_0) = \prod_{t=1}^T
+q(\bm{x}_t|\bm{x}_{t-1})$, y usando la propiedad de Markov para escribir
+$q(\bm{x}_t|\bm{x}_{t-1},\bm{x}_0) = q(\bm{x}_t|\bm{x}_{t-1})$:
+\begin{align*}
+  \text{ELBO}
+  &= \mathbb{E}_q\!\left[\log\frac{p(\bm{x}_T)\prod_t p_\theta(\bm{x}_{t-1}|\bm{x}_t)}
+    {\prod_t q(\bm{x}_t|\bm{x}_{t-1})}\right]\\
+  &= \mathbb{E}_q\!\left[\log p(\bm{x}_T) - \log q(\bm{x}_T|\bm{x}_0)
+    + \sum_{t=2}^T\log\frac{p_\theta(\bm{x}_{t-1}|\bm{x}_t)}{q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0)}
+    + \log p_\theta(\bm{x}_0|\bm{x}_1)\right]\\
+  &= -L_T - \sum_{t=2}^T L_{t-1} - L_0,
+\end{align*}
+donde en el segundo paso se usó la regla de Bayes $q(\bm{x}_{t-1}|\bm{x}_{t-1})
+= q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0)q(\bm{x}_t|\bm{x}_0)/q(\bm{x}_{t-1}|\bm{x}_0)$
+y se cancelaron los factores telescópicos $q(\bm{x}_{t-1}|\bm{x}_0)$.
+
+\textbf{Paso 2: cálculo de $L_{t-1}$.}
+Ambas distribuciones en~\eqref{eq:lt-1} son gaussianas con la misma varianza
+$\sigma_t^2\bm{I}$ (donde Ho et al.\ eligen $\sigma_t^2 = \tilde{\beta}_t$ o
+$\sigma_t^2 = \beta_t$, ambos válidos). La KL entre gaussianas de igual varianza
+es:
+\[
+  D_{\mathrm{KL}}(\mathcal{N}(\bm{\mu}_1,\sigma^2\bm{I})\|\mathcal{N}(\bm{\mu}_2,\sigma^2\bm{I}))
+  = \frac{1}{2\sigma^2}\|\bm{\mu}_1 - \bm{\mu}_2\|^2.
+\]
+Sustituyendo $\bm{\mu}_1 = \tilde{\bm{\mu}}_t(\bm{x}_t,\bm{x}_0)$ de~\eqref{eq:ddpm_posterior_mean}
+y $\bm{\mu}_2 = \bm{\mu}_\theta(\bm{x}_t,t)$ de~\eqref{eq:ddpm_mu_theta}:
+\begin{align*}
+  \|\tilde{\bm{\mu}}_t - \bm{\mu}_\theta\|^2
+  &= \left\|\frac{1}{\sqrt{\alpha_t}}\!\left(\bm{x}_t
+    - \frac{\beta_t}{\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}\right)
+    - \frac{1}{\sqrt{\alpha_t}}\!\left(\bm{x}_t
+    - \frac{\beta_t}{\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}_\theta\right)\right\|^2\\
+  &= \frac{\beta_t^2}{\alpha_t(1-\bar{\alpha}_t)}
+    \|\bm{\varepsilon} - \bm{\varepsilon}_\theta\|^2.
+\end{align*}
+Dividiendo por $2\sigma_t^2$ se obtiene~\eqref{eq:lt-1_simple}.
+
+\textbf{Paso 3: simplificación de la pérdida.}
+El prefactor $\frac{\beta_t^2}{2\sigma_t^2\alpha_t(1-\bar{\alpha}_t)}$ varía con
+$t$. Ho et al.\ observan empíricamente que omitir los pesos (tomar $\lambda_t = 1$)
+mejora la calidad de las muestras: los términos con $t$ pequeño (alta resolución)
+son numéricamente pequeños con los pesos correctos pero contribuyen
+desproporcionadamente a la calidad perceptual. La pérdida simplificada es
+entonces la esperanza sobre $t$ uniforme de $\|\bm{\varepsilon} -
+\bm{\varepsilon}_\theta(\bm{x}_t,t)\|^2$, que es exactamente~\eqref{eq:ddpm_loss}.
+$\square$
+\end{proof}
+
+\begin{observacion}{Conexión con el denoising score matching del Capítulo~\ref{ch:cap11}}
+La pérdida~\eqref{eq:ddpm_loss} es idéntica a la pérdida de denoising score matching
+del Capítulo~\ref{ch:cap11} derivada por Vincent (2011).
+Esto no es coincidencia: el ELBO y el score matching son dos rutas hacia la
+misma función de pérdida. El ELBO usa la estructura de la cadena de Markov y la
+KL entre gaussianas; el score matching usa la dualidad $L^2$ del generador.
+Ambos convergen a predecir el ruido $\bm{\varepsilon}$.
+\end{observacion}
+
+\begin{fisicaconexion}{El ELBO en física estadística y la energía libre variacional}
+El ELBO (Evidence Lower Bound) del Teorema~\ref{thm:ddpm_elbo} tiene una
+interpretación directa en física estadística. Para una distribución de Boltzmann
+$p^*(\bm{x}) \propto e^{-E(\bm{x})/(k_BT)}$ con energía $E$ intractable, se
+aproxima con una distribución variacional $q_\phi(\bm{x})$ (gaussiana u otra
+familia tratable). La desigualdad de Jensen implica:
+\[
+  \log Z = \log\int e^{-E/(k_BT)}\,d\bm{x}
+  \geq \mathbb{E}_{q_\phi}\!\left[-\frac{E}{k_BT}\right] - D_\mathrm{KL}(q_\phi\|p^*),
+\]
+que es exactamente el ELBO: maximizarlo minimiza la \textbf{energía libre
+variacional} $F_\phi = \langle E\rangle_{q_\phi} - T S(q_\phi)$ (energía media
+menos entropía de la aproximación). En el DDPM, el rol de $E$ lo juega
+$-\log p_\theta(\bm{x}_{0:T})$ y el rol de $q$ lo juega la distribución forward
+$q(\bm{x}_{1:T}|\bm{x}_0)$: el ELBO del DDPM es la energía libre variacional
+del sistema de difusión inversa.
+
+Los términos $L_T$, $L_{t-1}$ y $L_0$ en~\eqref{eq:ddpm_elbo} corresponden
+respectivamente a: (1) la energía libre del estado terminal (cuánto difiere el
+prior del estado final del forward), (2) la entropía de reconstrucción a cada
+paso (la KL entre el posterior verdadero y el aprendido), y (3) la energía libre
+del primer paso (calidad de reconstrucción desde $\bm{x}_1$). La simplificación
+que ignora los pesos temporales es análoga a la termodinámica de temperatura
+uniforme: tratar todos los pasos de la cadena como contribuyentes igualmente a
+la energía libre total.
+
+En los \textbf{autoencoders variacionales} (VAEs, Capítulo~\ref{ch:cap7}), el
+mismo ELBO aparece como $\mathcal{L}(\theta,\phi) = \mathbb{E}_{q_\phi(\bm{z}|\bm{x})}
+[\log p_\theta(\bm{x}|\bm{z})] - D_\mathrm{KL}(q_\phi(\bm{z}|\bm{x})\|p(\bm{z}))$:
+el primer término es la verosimilitud de reconstrucción y el segundo es el
+regularizador que acerca la distribución latente al prior. El VAE es un DDPM
+con $T=1$ paso y sin el factor de difusión progresiva.
+\end{fisicaconexion}
+
+\subsection{El algoritmo DDPM}
+\label{subsec:ddpm_algoritmo}
+
+\begin{algorithm}[H]
+\caption{DDPM: entrenamiento y muestreo}
+\label{alg:ddpm}
+\SetKwBlock{Train}{Entrenamiento:}{}
+\SetKwBlock{Sample}{Muestreo:}{}
+\Train{
+  \Repeat{convergencia}{
+    $\bm{x}_0 \sim p_0$ (muestra del dataset)\;
+    $t \sim \mathcal{U}\{1,\ldots,T\}$\;
+    $\bm{\varepsilon} \sim \mathcal{N}(\bm{0},\bm{I})$\;
+    $\bm{x}_t \leftarrow \sqrt{\bar{\alpha}_t}\bm{x}_0 + \sqrt{1-\bar{\alpha}_t}\bm{\varepsilon}$\;
+    Actualizar $\theta$ con gradiente de $\|\bm{\varepsilon} - \bm{\varepsilon}_\theta(\bm{x}_t,t)\|^2$\;
+  }
+}
+\Sample{
+  $\bm{x}_T \sim \mathcal{N}(\bm{0},\bm{I})$\;
+  \For{$t = T, T-1, \ldots, 1$}{
+    $\bm{z} \sim \mathcal{N}(\bm{0},\bm{I})$ si $t > 1$, sino $\bm{z} = \bm{0}$\;
+    $\bm{x}_{t-1} \leftarrow \frac{1}{\sqrt{\alpha_t}}\!\left(\bm{x}_t -
+    \frac{\beta_t}{\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}_\theta(\bm{x}_t,t)\right)
+    + \sigma_t\bm{z}$\;
+  }
+  \Return $\bm{x}_0$\;
+}
+\end{algorithm}
+
+\subsection{El noise schedule y su conexión con el proceso OU}
+\label{subsec:ddpm_schedule}
+
+El schedule lineal de Ho et al.: $\beta_t = \beta_{\min} + (t-1)/T\cdot
+(\beta_{\max}-\beta_{\min})$ con $\beta_{\min}=10^{-4}$, $\beta_{\max}=0.02$.
+El schedule coseno (Nichol \& Dhariwal, 2021):
+$\bar{\alpha}_t = \cos^2\!\left(\frac{t/T + s}{1+s}\cdot\frac{\pi}{2}\right)$
+con $s = 0.008$, que evita la caída brusca de señal-a-ruido al final del
+forward.
+
+La conexión con el proceso OU continuo del Capítulo~\ref{ch:cap10} es directa: para
+$\beta_t = 2\alpha\Delta t$ y $T\to\infty$, el forward discreto~\eqref{eq:ddpm_forward}
+converge al proceso OU $d\bm{X}_t = -\alpha\bm{X}_t\,dt + \sqrt{2\alpha}\,
+d\bm{W}_t$. En ese límite: $\bar{\alpha}_t = (1-\beta)^t \approx e^{-2\alpha t}$
+(la atenuación exponencial del Capítulo~\ref{ch:cap10}) y $1-\bar{\alpha}_t \approx
+1-e^{-2\alpha t} = \sigma_t^2$ (la varianza acumulada del proceso OU).
+El schedule coseno es la discretización que mantiene la señal-a-ruido
+$\sqrt{\bar{\alpha}_t/(1-\bar{\alpha}_t)}$ decreciendo a tasa aproximadamente
+constante, lo que corresponde a una parametrización uniforme del tiempo en el
+espacio logarítmico del SNR.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Score-based SDE: el marco continuo}
+\label{sec:score_sde}
+\dificultad{3}{3}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Formulación unificada de Song et al.\ (2021)}
+\label{subsec:score_sde_formulacion}
+
+El forward process continuo $t\in[0,T]$ con drift $\bm{f}(\bm{x},t)$ y difusión
+escalar $g(t)$:
+\begin{equation}
+  d\bm{X}_t = \bm{f}(\bm{X}_t,t)\,dt + g(t)\,d\bm{W}_t.
+  \label{eq:score_sde_forward}
+\end{equation}
+Dos familias canónicas que generalizan DDPM:
+
+\textbf{VP-SDE} (variance preserving, equivalente a DDPM en el límite continuo):
+$\bm{f}(\bm{x},t) = -\frac{1}{2}\beta(t)\bm{x}$, $g(t) = \sqrt{\beta(t)}$.
+Las marginales son gaussianas: $p_t(\bm{x}|\bm{x}_0) = \mathcal{N}(\bm{x};
+e^{-\frac{1}{2}\int_0^t\beta(s)ds}\bm{x}_0, (1-e^{-\int_0^t\beta(s)ds})\bm{I})$.
+La varianza total $\mathrm{Var}[\bm{X}_t] \to 1$ para $t\to T$ grande.
+
+\textbf{VE-SDE} (variance exploding): $\bm{f}(\bm{x},t) = \bm{0}$, $g(t) =
+\sqrt{d\sigma^2(t)/dt}$ con $\sigma(t)$ creciente. La varianza explota:
+$\mathrm{Var}[\bm{X}_t] = \sigma(t)^2 \to\infty$. Útil cuando se quiere
+controlar explícitamente el nivel de ruido $\sigma$.
+
+El reverse SDE del Corolario~\ref{cor:anderson_isotropo}:
+\begin{equation}
+  d\tilde{\bm{X}}_t = \left[-\bm{f}(\tilde{\bm{X}}_t,T{-}t)
+  + g(T{-}t)^2\,\nabla_{\bm{x}}\log p_{T-t}(\tilde{\bm{X}}_t)\right]dt
+  + g(T{-}t)\,d\tilde{\bm{W}}_t.
+  \label{eq:score_sde_reverse}
+\end{equation}
+La red $\bm{s}_\theta(\bm{x},t) \approx \nabla\log p_t(\bm{x})$ se entrena
+con la pérdida de denoising score matching~\eqref{eq:ddpm_loss} del Capítulo~\ref{ch:cap11}
+(con la identificación $\bm{\varepsilon}_\theta = -\sigma_t\bm{s}_\theta$).
+
+\subsection{Samplers numéricos para el reverse SDE}
+\label{subsec:score_sde_samplers}
+
+La discretización de Euler-Maruyama del reverse SDE con paso $\Delta t = T/N$:
+\begin{equation}
+  \bm{x}_{t-\Delta t}
+  = \bm{x}_t + \left[\bm{f}(\bm{x}_t,t) - g(t)^2\bm{s}_\theta(\bm{x}_t,t)\right]\Delta t
+  + g(t)\sqrt{\Delta t}\,\bm{z}, \quad \bm{z}\sim\mathcal{N}(\bm{0},\bm{I}).
+  \label{eq:euler_reverse}
+\end{equation}
+El predictor-corrector de Song et al.: alterna~\eqref{eq:euler_reverse} (predictor)
+con pasos de Langevin MCMC (corrector):
+\begin{equation}
+  \bm{x} \leftarrow \bm{x} + \delta\,\bm{s}_\theta(\bm{x},t) + \sqrt{2\delta}\,\bm{z},
+  \label{eq:langevin_corrector}
+\end{equation}
+durante $M$ iteraciones por nivel de ruido. El corrector reduce el error de
+discretización acumulado sin aumentar la evaluación total de la red.
+
+\subsection{DDIM: derivación completa como ODE de flujo discretizada}
+\label{subsec:ddim}
+
+DDIM (Song et al., 2020) es el sampler que elimina el ruido del reverse step
+reemplazando la SDE estocástica por la ODE de flujo de probabilidad del
+Capítulo~\ref{ch:cap11}. La derivación parte de la forma general del step DDPM y muestra
+que el caso determinista es un caso límite consistente.
+
+\begin{teorema}{Paso de actualización DDIM}
+\label{thm:ddim}
+Dado $\bm{x}_t$ y el predictor de ruido $\bm{\varepsilon}_\theta(\bm{x}_t,t)$,
+el paso DDIM hacia $\bm{x}_{t'}$ con $t' < t$ es:
+\begin{equation}
+  \bm{x}_{t'}
+  = \sqrt{\bar{\alpha}_{t'}}\underbrace{\frac{\bm{x}_t - \sqrt{1-\bar{\alpha}_t}
+  \bm{\varepsilon}_\theta(\bm{x}_t,t)}{\sqrt{\bar{\alpha}_t}}}_{\hat{\bm{x}}_0(\bm{x}_t,t)}
+  + \sqrt{1-\bar{\alpha}_{t'} - \eta^2\tilde{\beta}_{t'}}\,
+  \bm{\varepsilon}_\theta(\bm{x}_t,t)
+  + \eta\sqrt{\tilde{\beta}_{t'}}\,\bm{z},
+  \label{eq:ddim_step}
+\end{equation}
+donde $\bm{z}\sim\mathcal{N}(\bm{0},\bm{I})$ y $\eta\in[0,1]$ controla la
+estocasticidad. Para $\eta=0$: paso completamente determinista (ODE de flujo).
+Para $\eta=1$: paso DDPM estocástico.
+\end{teorema}
+
+\begin{proof}
+\textbf{Paso 1: familia general de distribuciones de transición consistentes.}
+La condición de consistencia marginal requiere que $q(\bm{x}_{t'}|\bm{x}_0)$
+sea la gaussiana correcta~\eqref{eq:ddpm_marginal}. Consideramos la familia de
+distribuciones de transición generalizadas:
+\[
+  q_\sigma(\bm{x}_{t'}|\bm{x}_t,\bm{x}_0)
+  = \mathcal{N}\!\left(\bm{x}_{t'};\,\tilde{\bm{\mu}}_{t'}(\bm{x}_t,\bm{x}_0),\,
+  \sigma^2\bm{I}\right),
+\]
+con media a determinar.
+
+\textbf{Paso 2: la media correcta desde las marginales.}
+Queremos $\int q_\sigma(\bm{x}_{t'}|\bm{x}_t,\bm{x}_0)q(\bm{x}_t|\bm{x}_0)
+\,d\bm{x}_t = q(\bm{x}_{t'}|\bm{x}_0)$.
+Usando la reparametrización $\bm{x}_t = \sqrt{\bar{\alpha}_t}\bm{x}_0 +
+\sqrt{1-\bar{\alpha}_t}\bm{\varepsilon}$ y $\bm{x}_{t'} = \sqrt{\bar{\alpha}_{t'}}
+\bm{x}_0 + \sqrt{1-\bar{\alpha}_{t'}}\bm{\varepsilon}'$, la media que satisface
+la consistencia marginal es:
+\begin{align*}
+  \tilde{\bm{\mu}}_{t'}(\bm{x}_t,\bm{x}_0)
+  &= \sqrt{\bar{\alpha}_{t'}}\bm{x}_0
+  + \sqrt{1-\bar{\alpha}_{t'}-\sigma^2}\cdot\frac{\bm{x}_t
+  - \sqrt{\bar{\alpha}_t}\bm{x}_0}{\sqrt{1-\bar{\alpha}_t}}.
+\end{align*}
+Esta es la media que produce exactamente $q(\bm{x}_{t'}|\bm{x}_0) =
+\mathcal{N}(\sqrt{\bar{\alpha}_{t'}}\bm{x}_0,(1-\bar{\alpha}_{t'})\bm{I})$
+al marginalizar sobre $q(\bm{x}_t|\bm{x}_0)$, independientemente de $\sigma$.
+
+\textbf{Paso 3: sustitución del predictor.}
+Se estima $\bm{x}_0$ a partir de $\bm{x}_t$ usando el predictor de ruido:
+$\hat{\bm{x}}_0 = (\bm{x}_t - \sqrt{1-\bar{\alpha}_t}\bm{\varepsilon}_\theta)/
+\sqrt{\bar{\alpha}_t}$.
+Sustituyendo en $\tilde{\bm{\mu}}_{t'}$:
+\[
+  \tilde{\bm{\mu}}_{t'}(\bm{x}_t)
+  = \sqrt{\bar{\alpha}_{t'}}\hat{\bm{x}}_0
+  + \sqrt{1-\bar{\alpha}_{t'}-\sigma^2}
+  \cdot\bm{\varepsilon}_\theta(\bm{x}_t,t).
+\]
+
+\textbf{Paso 4: el paso completo con parámetro $\eta$.}
+Tomando $\sigma^2 = \eta^2\tilde{\beta}_{t'}$ y añadiendo el término de ruido
+$\sigma\bm{z}$ se obtiene exactamente~\eqref{eq:ddim_step}.
+
+\textbf{Paso 5: el caso $\eta=0$ como ODE de flujo discretizada.}
+Para $\eta=0$, el paso es determinista:
+\[
+  \bm{x}_{t'} = \sqrt{\bar{\alpha}_{t'}}\hat{\bm{x}}_0
+  + \sqrt{1-\bar{\alpha}_{t'}}\,\bm{\varepsilon}_\theta(\bm{x}_t,t).
+\]
+Reescribiendo en términos de $\bm{x}_t$:
+\begin{align*}
+  \bm{x}_{t'}
+  &= \sqrt{\bar{\alpha}_{t'}}\cdot\frac{\bm{x}_t - \sqrt{1-\bar{\alpha}_t}
+    \bm{\varepsilon}_\theta}{\sqrt{\bar{\alpha}_t}}
+    + \sqrt{1-\bar{\alpha}_{t'}}\,\bm{\varepsilon}_\theta \\
+  &= \sqrt{\frac{\bar{\alpha}_{t'}}{\bar{\alpha}_t}}\bm{x}_t
+    + \left(\sqrt{1-\bar{\alpha}_{t'}}
+    - \sqrt{\frac{\bar{\alpha}_{t'}(1-\bar{\alpha}_t)}{\bar{\alpha}_t}}\right)
+    \bm{\varepsilon}_\theta.
+\end{align*}
+Para pasos pequeños $\Delta = t - t' \to 0$:
+$\sqrt{\bar{\alpha}_{t'}/\bar{\alpha}_t} \approx 1 - \frac{1}{2}\Delta\beta(t)$ y
+$\sqrt{1-\bar{\alpha}_{t'}} \approx \sqrt{1-\bar{\alpha}_t} +
+\frac{\beta(t)\Delta}{2\sqrt{1-\bar{\alpha}_t}}$.
+Luego:
+\[
+  \frac{\bm{x}_{t'} - \bm{x}_t}{\Delta t}
+  \approx -\frac{\beta(t)}{2}\bm{x}_t
+  + \frac{\beta(t)}{2\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}_\theta(\bm{x}_t,t)
+  = \bm{f}(\bm{x}_t,t) - \frac{g(t)^2}{2}\bm{s}_\theta(\bm{x}_t,t),
+\]
+que es exactamente la ODE de flujo de probabilidad~\eqref{eq:prob_flow_ode} del
+Capítulo~\ref{ch:cap11} discretizada por Euler. DDIM con $\eta=0$ es la discretización de
+Euler de la ODE de flujo de probabilidad. $\square$
+\end{proof}
+
+La demostración explica por qué DDIM puede generar muestras de calidad comparable
+a DDPM con $20$--$50$ pasos en lugar de $1000$: la ODE de flujo tiene soluciones
+más suaves que la SDE estocástica, y los solvers de EDOs de orden superior
+convergen mucho más rápido.
+
+\subsection{DPM-Solver: integración exacta del término lineal}
+\label{subsec:dpm_solver}
+
+DPM-Solver (Lu et al., 2022) explota la estructura de la ODE de flujo VP para
+integrar exactamente el término lineal, dejando solo el término no lineal para
+aproximación numérica.
+
+En términos del tiempo logarítmico del SNR $\lambda_t = \frac{1}{2}\log
+(\bar{\alpha}_t/(1-\bar{\alpha}_t))$, la ODE de flujo VP se escribe:
+\begin{equation}
+  \frac{d\bm{x}}{d\lambda}
+  = \bm{x} - e^{-\lambda}(1+e^{2\lambda})\bm{s}_\theta(\bm{x},t(\lambda)),
+  \label{eq:dpm_ode}
+\end{equation}
+donde el lado derecho tiene un término lineal exactamente integrable.
+La fórmula de variación de parámetros da:
+\[
+  \bm{x}_{\lambda'} = e^{\lambda'-\lambda}\bm{x}_\lambda
+  - \int_\lambda^{\lambda'} e^{\lambda'-r}(1+e^{2r})\bm{s}_\theta(\bm{x}(r),r)\,dr.
+\]
+Aproximando $\bm{s}_\theta(\bm{x}(r),r) \approx \bm{s}_\theta(\bm{x}_\lambda,\lambda)$
+(DPM-Solver-1, orden 1) o con correcciones de orden superior por expansión de Taylor
+en $\lambda$, se obtienen solvers de orden 1, 2 y 3. El solver de orden 3 reduce
+los pasos necesarios a $10$--$20$ con error despreciable.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Flow matching: el límite de transporte óptimo}
+\label{sec:flow_matching}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Interpolación y campo vectorial condicional}
+\label{subsec:fm_campo}
+
+El flow matching (Lipman et al., 2022; Liu et al., 2022) aprende el campo vectorial
+$v_\theta(\bm{x},t)$ de la ODE:
+\begin{equation}
+  \frac{d\bm{x}}{dt} = v_\theta(\bm{x},t),
+  \quad \bm{x}(0)\sim p_T = \mathcal{N}(\bm{0},\bm{I}),
+  \quad \bm{x}(1)\sim p_0,
+  \label{eq:fm_ode}
+\end{equation}
+que transporta $p_T$ a $p_0$ en tiempo $t\in[0,1]$. La pérdida de flow matching
+condicional (CFM):
+\begin{equation}
+  L_{\mathrm{CFM}}(\theta)
+  = \mathbb{E}_{t,\bm{x}_0,\bm{x}_T}\!\left[
+  \left\|v_\theta\!\left((1-t)\bm{x}_T + t\bm{x}_0,\,t\right)
+  - (\bm{x}_0 - \bm{x}_T)\right\|^2\right],
+  \label{eq:cfm_loss}
+\end{equation}
+donde $\bm{x}(t) = (1-t)\bm{x}_T + t\bm{x}_0$ es la interpolación lineal y
+$\bm{x}_0 - \bm{x}_T$ es la velocidad objetivo.
+
+\begin{proposicion}{Equivalencia entre CFM y FM marginal}
+\label{prop:cfm_fm}
+Los objetivos de flow matching marginal $L_{\mathrm{FM}}$ (sobre el campo
+$v_t^{\mathrm{marg}}(\bm{x}) = \mathbb{E}[\bm{x}_0-\bm{x}_T|\bm{x}(t)=\bm{x}]$)
+y condicional $L_{\mathrm{CFM}}$ tienen el mismo gradiente respecto a $\theta$:
+$\nabla_\theta L_{\mathrm{FM}} = \nabla_\theta L_{\mathrm{CFM}}$.
+\end{proposicion}
+
+\begin{proof}
+$L_{\mathrm{FM}} = \mathbb{E}_{t,\bm{x}\sim p_t}\|v_\theta(\bm{x},t) -
+v_t^{\mathrm{marg}}(\bm{x})\|^2$ y $L_{\mathrm{CFM}} = \mathbb{E}_{t,\bm{x}_0,\bm{x}_T}
+\|v_\theta(\bm{x}(t),t) - (\bm{x}_0-\bm{x}_T)\|^2$.
+Expandiendo $L_{\mathrm{CFM}} = \mathbb{E}\|v_\theta\|^2 - 2\mathbb{E}[v_\theta\cdot
+(\bm{x}_0-\bm{x}_T)] + C$.
+El término cruzado, por la ley de la esperanza total condicionando en
+$\bm{x}(t) = \bm{x}$:
+$\mathbb{E}[v_\theta(\bm{x}(t),t)\cdot(\bm{x}_0-\bm{x}_T)]
+= \mathbb{E}_{t,\bm{x}}\left[v_\theta(\bm{x},t)\cdot\mathbb{E}[\bm{x}_0-\bm{x}_T|
+\bm{x}(t)=\bm{x}]\right]
+= \mathbb{E}_{t,\bm{x}}[v_\theta\cdot v_t^{\mathrm{marg}}]$.
+Luego $L_{\mathrm{CFM}} = L_{\mathrm{FM}} + C'$ y los gradientes coinciden.
+$\square$
+\end{proof}
+
+\subsection{Rectified flow e iteraciones de reflow}
+\label{subsec:rectified_flow}
+
+El \textbf{rectified flow} (Liu et al., 2022) itera el flow matching usando el
+pareo inducido por el flujo aprendido en la iteración anterior:
+
+\begin{algorithm}[H]
+\caption{Rectified flow con $k$ iteraciones de reflow}
+\label{alg:rectified_flow}
+$\bm{x}_T^{(0)} \sim p_T$, $\bm{x}_0^{(0)} \sim p_0$ (pareo independiente)\;
+\For{$k = 0, 1, \ldots, K-1$}{
+  Entrenar $v_\theta^{(k)}$ con la pérdida~\eqref{eq:cfm_loss} usando el pareo
+  $(\bm{x}_T^{(k)}, \bm{x}_0^{(k)})$\;
+  Para cada $\bm{x}_T^{(k)}$: integrar $d\bm{x}/dt = v_\theta^{(k)}(\bm{x},t)$
+  para obtener $\bm{x}_0^{(k+1)}$\;
+  Actualizar pareo: $(\bm{x}_T^{(k+1)}, \bm{x}_0^{(k+1)})
+  \leftarrow (\bm{x}_T^{(k)}, \bm{x}_0^{(k+1)})$\;
+}
+\end{algorithm}
+
+Con cada iteración, las trayectorias se enderezan: el pareo se aproxima al
+mapa de transporte óptimo $T^*$ que hace las trayectorias rectas (sección sin
+cruce). La convergencia es geométrica: el costo de cruce de trayectorias
+decrece exponencialmente en $k$.
+
+\subsection{OT flow matching: pareo óptimo directo}
+\label{subsec:ot_fm}
+
+El \textbf{OT flow matching} (Tong et al., 2023) usa el plan de transporte
+óptimo de Sinkhorn (Algoritmo~\ref{alg:sinkhorn}, Capítulo~\ref{ch:cap11}) como pareo
+desde la primera iteración, eliminando la necesidad de reflow.
+
+Con pareo óptimo $(\bm{x}_0, T^*(\bm{x}_0))$, las trayectorias no se cruzan y
+el campo marginal satisface $v_t^{\mathrm{marg}}(\bm{x}) = T^*(\bm{x}_0(t)) -
+\bm{x}_0(t)$, que es constante a lo largo de cada trayectoria. El modelo aprende
+un campo más simple, converge con menos datos, y el muestreo necesita menos
+pasos. Esta es la arquitectura de Stable Diffusion 3, Flux y Stable Audio 2:
+todos usan flow matching con pareo por transporte óptimo.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Condicionamiento y Classifier-Free Guidance}
+\label{sec:cfg}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El score condicionado: derivación vía regla de Bayes}
+\label{subsec:score_condicionado}
+
+Sea $y$ una condición (clase, texto, imagen de referencia). El objetivo es
+generar $\bm{x}\sim p_0(\bm{x}|y)$. El score condicionado satisface una
+identidad exacta:
+
+\begin{proposicion}{Descomposición del score condicionado}
+\label{prop:score_condicionado}
+\begin{equation}
+  \nabla_{\bm{x}}\log p_t(\bm{x}|y)
+  = \nabla_{\bm{x}}\log p_t(\bm{x})
+  + \nabla_{\bm{x}}\log p_t(y|\bm{x}).
+  \label{eq:score_condicionado}
+\end{equation}
+\end{proposicion}
+
+\begin{proof}
+Por la regla de Bayes: $p_t(\bm{x}|y) = p_t(\bm{x})p_t(y|\bm{x})/p_t(y)$.
+Tomando logaritmo y gradiente respecto a $\bm{x}$:
+$\nabla\log p_t(\bm{x}|y) = \nabla\log p_t(\bm{x}) + \nabla\log p_t(y|\bm{x})
+- \nabla\log p_t(y)$.
+El término $\nabla\log p_t(y)$ no depende de $\bm{x}$: es cero. $\square$
+\end{proof}
+
+El reverse SDE condicionado es~\eqref{eq:score_sde_reverse} con el score
+condicionado~\eqref{eq:score_condicionado}:
+\[
+  d\tilde{\bm{X}}_t = \left[-\bm{f} + g^2(\nabla\log p_{T-t}
+  + \nabla\log p_{T-t}(y|\tilde{\bm{X}}_t))\right]dt + g\,d\tilde{\bm{W}}_t.
+\]
+El segundo término es el gradiente del clasificador $p_t(y|\bm{x})$ respecto a
+la entrada: \textbf{classifier guidance} (Dhariwal \& Nichol, 2021).
+
+\subsection{Classifier guidance con escala de temperatura}
+\label{subsec:classifier_guidance}
+
+El classifier guidance amplifica la condición por un factor $s > 0$:
+\begin{equation}
+  \nabla\log p_t^{(s)}(\bm{x}|y)
+  = \nabla\log p_t(\bm{x}) + s\,\nabla\log p_t(y|\bm{x}).
+  \label{eq:classifier_guidance}
+\end{equation}
+
+\begin{proposicion}{Interpretación de temperatura del classifier guidance}
+\label{prop:guidance_temperatura}
+La distribución $p_t^{(s)}(\bm{x}|y)$ definida por el score~\eqref{eq:classifier_guidance}
+es proporcional a:
+\begin{equation}
+  p_t^{(s)}(\bm{x}|y) \propto p_t(\bm{x})\,p_t(y|\bm{x})^s.
+  \label{eq:guidance_distribución}
+\end{equation}
+\end{proposicion}
+
+\begin{proof}
+Integrando el score~\eqref{eq:classifier_guidance}:
+$\log p_t^{(s)}(\bm{x}|y) = \log p_t(\bm{x}) + s\log p_t(y|\bm{x}) + C$,
+luego $p_t^{(s)} \propto p_t(\bm{x})p_t(y|\bm{x})^s$. $\square$
+\end{proof}
+
+La distribución~\eqref{eq:guidance_distribución} es exactamente la distribución
+de Gibbs del Capítulo~\ref{ch:cap5} con temperatura $T_s = 1/s$ para el ``potencial''
+$-\log p_t(y|\bm{x})$:
+\[
+  p_t^{(s)}(\bm{x}|y) \propto p_t(\bm{x})\,e^{s\log p_t(y|\bm{x})}
+  = p_t(\bm{x})\,e^{-U(\bm{x})/T_s}, \quad U(\bm{x}) = -\log p_t(y|\bm{x}).
+\]
+Para $s=1$: distribución Bayesiana exacta $p(\bm{x}|y)$.
+Para $s>1$: temperatura baja, distribución concentrada alrededor del máximo de
+$p(y|\bm{x})$ (alta ``fidelidad'' a la condición, baja diversidad).
+Para $s<1$: temperatura alta, distribución difusa (baja fidelidad, alta diversidad).
+El parámetro $s$ es el control de temperatura del Capítulo~\ref{ch:cap5} en el contexto del
+muestreo condicionado.
+
+\subsection{Classifier-Free Guidance (CFG)}
+\label{subsec:cfg}
+
+El classifier guidance requiere un clasificador externo $p_t(y|\bm{x})$
+entrenado con datos ruidosos $\bm{x}_t$. El \textbf{Classifier-Free Guidance}
+(Ho \& Salimans, 2022) elimina el clasificador externo reescribiendo el score
+condicionado en términos del score no condicionado y el score condicionado de
+la red de difusión.
+
+\begin{proposicion}{CFG como diferencia de scores}
+\label{prop:cfg}
+El score condicionado con guía de escala $s$ es:
+\begin{equation}
+  \nabla\log p_t^{(s)}(\bm{x}|y)
+  = (1-s)\nabla\log p_t(\bm{x}) + s\,\nabla\log p_t(\bm{x}|y)
+  + (s-1)[\nabla\log p_t(\bm{x}|y) - \nabla\log p_t(\bm{x})].
+  \label{eq:cfg_score}
+\end{equation}
+Equivalentemente, en términos del predictor de ruido:
+\begin{equation}
+  \tilde{\bm{\varepsilon}}_\theta(\bm{x}_t,y,t)
+  = \bm{\varepsilon}_\theta(\bm{x}_t,t)
+  + s\left[\bm{\varepsilon}_\theta(\bm{x}_t,y,t)
+    - \bm{\varepsilon}_\theta(\bm{x}_t,t)\right],
+  \label{eq:cfg_eps}
+\end{equation}
+donde $\bm{\varepsilon}_\theta(\bm{x}_t,t)$ es la predicción no condicionada
+(obtenida entrenando con $y = \emptyset$ con probabilidad $p_{\mathrm{drop}}$)
+y $\bm{\varepsilon}_\theta(\bm{x}_t,y,t)$ es la predicción condicionada.
+\end{proposicion}
+
+\begin{proof}
+De~\eqref{eq:score_condicionado}: $\nabla\log p_t(y|\bm{x}) = \nabla\log
+p_t(\bm{x}|y) - \nabla\log p_t(\bm{x})$.
+Sustituyendo en~\eqref{eq:classifier_guidance}:
+\begin{align*}
+  \nabla\log p_t^{(s)}(\bm{x}|y)
+  &= \nabla\log p_t(\bm{x}) + s[\nabla\log p_t(\bm{x}|y) - \nabla\log p_t(\bm{x})]\\
+  &= (1-s)\nabla\log p_t(\bm{x}) + s\,\nabla\log p_t(\bm{x}|y).
+\end{align*}
+Usando la identificación $\bm{s}_\theta = -\bm{\varepsilon}_\theta/\sigma_t$ y
+multiplicando por $-\sigma_t$, se obtiene~\eqref{eq:cfg_eps}. $\square$
+\end{proof}
+
+La fórmula~\eqref{eq:cfg_eps} solo requiere dos evaluaciones de la misma red
+(con y sin condición) por paso de muestreo: no es necesario ningún clasificador
+externo. En la práctica, durante el entrenamiento se enmascara la condición $y$
+con probabilidad $p_{\mathrm{drop}}\approx 0.1$, lo que entrena simultáneamente
+el modelo condicionado y el no condicionado.
+
+\begin{observacion}{El trade-off calidad-diversidad como temperatura}
+El parámetro $s$ en CFG es exactamente la temperatura inversa de la distribución
+de Gibbs del Capítulo~\ref{ch:cap5}. Para $s=1$: muestreo de $p_0(\bm{x}|y)$ exacto (en el
+límite de red perfecta). Para $s>1$: concentración en regiones de alta
+verosimilitud de la condición, imágenes más nítidas pero menos diversas. Para
+$s<1$: imágenes más diversas pero menos fieles a la condición. Los valores
+típicos son $s\in[1.5,\,10]$ según la tarea. El mismo trade-off entre calidad
+de las muestras y diversidad que en el SGD bayesiano (Capítulo~\ref{ch:cap5}) reaparece aquí
+como la elección del parámetro de guía.
+\end{observacion}
+
+\begin{fisicaconexion}{Temperatura, estadística bayesiana y el principio de máxima entropía}
+La interpretación de temperatura del CFG conecta con un principio físico
+fundamental. La distribución~\eqref{eq:guidance_distribución},
+$p^{(s)}(\bm{x}|y) \propto p(\bm{x})\,p(y|\bm{x})^s$, es la solución del
+problema de máxima entropía de Jaynes: maximizar la entropía de Shannon
+$H[p] = -\int p\log p$ sujeto a la restricción de que la log-verosimilitud
+media de la condición sea $\langle\log p(y|\bm{x})\rangle = C_s$ para alguna
+constante $C_s$ que crece con $s$. El multiplicador de Lagrange de esa
+restricción es exactamente $s$ (temperatura inversa), recuperando la forma de
+Gibbs $p^{(s)} \propto p(\bm{x}) e^{s\log p(y|\bm{x})}$.
+
+En \textbf{física estadística cuántica}, el mismo mecanismo aparece en el
+ensemble de Gibbs con temperatura variable: reducir $T$ (aumentar $\beta = 1/k_BT$)
+concentra la distribución en los estados de mínima energía, perdiendo diversidad
+configuracional pero ganando fidelidad al estado de menor energía. El ``recocido
+simulado'' del Capítulo~\ref{ch:cap5} es el proceso inverso: calentar para escapar
+mínimos locales, enfriar para converger al mínimo global. El CFG con $s$ alto es
+el recocido simulado del espacio de imágenes: ``enfría'' la distribución posterior
+para producir imágenes más probables dado el texto.
+
+En espectroscopía, el parámetro $s$ del CFG tiene un análogo en la
+\textbf{deconvolución regularizada}: estimar la señal verdadera $\bm{x}$ a
+partir de la señal observada $\bm{y}$ con ruido requiere un prior $p(\bm{x})$
+(análogo al modelo no condicionado) y una verosimilitud $p(\bm{y}|\bm{x})$
+(análogo al clasificador). La regularización de Tikhonov del Capítulo~\ref{ch:cap2}
+es el caso $s = \lambda/\sigma^2$: el parámetro de regularización es la
+temperatura inversa del prior gaussiano. El CFG unifica la inferencia bayesiana
+estándar ($s=1$), la regularización de Tikhonov ($s$ elegido por validación) y
+el muestreo de máxima verosimilitud ($s\to\infty$) en un único parámetro continuo.
+\end{fisicaconexion}
+\section{La arquitectura: U-Net con atención y DiT}
+\label{sec:arquitectura_difusion}
+\dificultad{2}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Requerimientos funcionales}
+\label{subsec:arq_requerimientos}
+
+La red $\bm{\varepsilon}_\theta(\bm{x}_t, y, t)$ debe satisfacer cuatro
+requerimientos simultáneos:
+\begin{enumerate}
+  \item \textbf{Multi-escala}: la difusión actúa de modo cualitativamente
+        distinto a distintas frecuencias espaciales. Las frecuencias bajas
+        (estructura global) se destruyen lentamente; las altas (textura, detalles)
+        se destruyen rápido.
+  \item \textbf{Condición de tiempo}: $t$ determina el nivel de ruido
+        $\sigma_t = \sqrt{1-\bar{\alpha}_t}$. La red debe saber en qué punto
+        del forward process se encuentra para calibrar la escala de la
+        predicción.
+  \item \textbf{Condición a la señal}: el texto, la clase o la imagen de
+        referencia $y$ deben influir en la predicción de forma no local
+        (una descripción textual afecta a toda la imagen, no a una región).
+  \item \textbf{Invariancias}: la misma descripción debe producir imágenes
+        plausibles independientemente de la traslación o rotación de los objetos.
+\end{enumerate}
+
+\subsection{U-Net con atención}
+\label{subsec:unet_atencion}
+
+El U-Net (Ronneberger et al., 2015) con bloques de atención (Dhariwal \& Nichol,
+2021) satisface estos requerimientos mediante tres mecanismos:
+
+\textbf{Encoder-decoder con skip connections:} la arquitectura en forma de U
+procesa la imagen a resoluciones progresivamente más bajas (encoder) y luego la
+reconstruye (decoder). Las skip connections concatenan los mapas de características
+del encoder con los del decoder a cada resolución, preservando los detalles de
+alta frecuencia. Cada nivel del encoder captura una escala diferente del ruido.
+
+\textbf{Embedding de tiempo:} el paso de tiempo $t$ se convierte en un
+embedding mediante la codificación sinusoidal del Capítulo~\ref{ch:cap9}:
+\[
+  \bm{e}_t = \mathrm{MLP}\!\left(\left[\sin(10^{k/d}\pi t),\,\cos(10^{k/d}\pi t)
+  \right]_{k=0}^{d/2-1}\right).
+\]
+El embedding $\bm{e}_t \in \mathbb{R}^{d_e}$ se inyecta en cada bloque residual
+mediante suma o multiplicación elemento a elemento con los mapas de características:
+$\bm{h} \leftarrow \bm{h} + \bm{W}_e\bm{e}_t$. Esto modula la escala de la
+predicción en función del nivel de ruido.
+
+\textbf{Cross-attention para la condición:} el texto $y$ se codifica por un
+encoder de lenguaje (CLIP, T5) en una secuencia de embeddings $\bm{C}\in
+\mathbb{R}^{L\times d_c}$. Los bloques de atención en las resoluciones bajas
+del bottleneck del U-Net usan cross-attention con $\bm{C}$ como claves y
+valores:
+\[
+  \mathrm{Attn}(\bm{Q},\bm{K},\bm{V}) = \mathrm{softmax}\!\left(\frac{\bm{Q}\bm{K}^\top}
+  {\sqrt{d_k}}\right)\bm{V}, \quad \bm{K} = \bm{W}_K\bm{C},\; \bm{V} = \bm{W}_V\bm{C}.
+\]
+Este mecanismo, introducido en el Capítulo~\ref{ch:cap9}, permite que cada región espacial
+de la imagen ``consulte'' qué parte del texto es más relevante para ella.
+
+\subsection{Diffusion Transformer (DiT)}
+\label{subsec:dit}
+
+El DiT (Peebles \& Xie, 2023) reemplaza el U-Net por un Vision Transformer
+(ViT) que opera en parches del espacio latente. Para una imagen latente de
+tamaño $H\times W$ con $C$ canales, se divide en $N = HW/p^2$ parches de tamaño
+$p\times p$, cada uno aplanado a un vector $\bm{z}_i \in \mathbb{R}^{p^2 C}$
+y proyectado a la dimensión del transformer $d$: $\bm{z}_i \mapsto \bm{W}_p\bm{z}_i
++ \bm{e}_i^{\mathrm{pos}}$.
+
+La condición de tiempo y clase se inyecta mediante \textbf{adaptive layer norm}
+(adaLN): en lugar de layer norm estándar con parámetros fijos $(\gamma,\beta)$,
+los parámetros son funciones de $(t,y)$:
+\[
+  \mathrm{adaLN}(\bm{h},t,y)
+  = \gamma(t,y)\cdot\frac{\bm{h}-\mu(\bm{h})}{\sigma(\bm{h})} + \beta(t,y),
+\]
+donde $\gamma(t,y)$ y $\beta(t,y)$ son producidos por una red pequeña (MLP de
+2 capas) aplicada al embedding conjunto $(t,y)$. Este mecanismo es computacionalmente
+eficiente: el costo de adaLN es despreciable respecto al costo de la atención.
+
+\textbf{Ventaja del DiT sobre el U-Net:} la atención global del transformer
+permite que cualquier parche de la imagen interaccione directamente con cualquier
+otro en un solo paso de atención, sin depender de la resolución a la que se
+procesa. El U-Net necesita las capas de bottleneck para capturar dependencias
+de largo alcance; el DiT las captura en todas las capas. Para imágenes de alta
+resolución ($512\times 512$, $1024\times 1024$), el DiT escala mejor porque la
+complejidad cuadrática de la atención se aplica a los parches del espacio latente
+(dimensión reducida), no a los píxeles.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Difusión en espacio latente}
+\label{sec:latent_diffusion}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{La motivación dimensional}
+\label{subsec:latent_motivacion}
+
+La difusión directa en el espacio de imágenes $512\times 512\times 3 =
+786{,}432$ dimensiones es computacionalmente prohibitiva: el reverse SDE opera
+en $\mathbb{R}^{786432}$ con evaluaciones de red de $10^3$ pasos. La solución
+es comprimir primero con un autoencoder a un espacio latente $\bm{z}\in
+\mathbb{R}^{64\times 64\times 4}$ (factor de reducción $\approx 48\times$) y
+hacer la difusión en el latente.
+
+\subsection{El encoder, el decoder y la distribución latente}
+\label{subsec:latent_vae}
+
+El autoencoder consiste en un encoder $\mathcal{E}: \mathbb{R}^{H\times W\times C}
+\to \mathbb{R}^{h\times w\times c}$ y un decoder $\mathcal{D}: \mathbb{R}^{h\times
+w\times c} \to \mathbb{R}^{H\times W\times C}$ con $\mathcal{D}(\mathcal{E}
+(\bm{x})) \approx \bm{x}$. El encoder VQ-VAE o KL-reg VAE de Rombach et al.\
+(2022) añade regularización a la distribución de los latentes para que
+$p_{\bm{z}} = \mathcal{E}_\#p_0$ sea próxima a $\mathcal{N}(\bm{0},\bm{I})$:
+esto facilita que el prior del proceso de difusión (también $\mathcal{N}(\bm{0},
+\bm{I})$) sea una aproximación razonable a la distribución latente real.
+
+\subsection{El score en el espacio latente: análisis del jacobiano}
+\label{subsec:latent_score}
+
+Sea $\bm{z} = \mathcal{E}(\bm{x})$ y $p_{\bm{z}} = \mathcal{E}_\#p_0$ la
+distribución pushforward. El score del proceso de difusión en el espacio latente
+es $\nabla_{\bm{z}}\log p_{\bm{z},t}(\bm{z})$.
+
+\begin{proposicion}{Score latente como pullback del score original}
+\label{prop:score_latente}
+Si $\mathcal{E}$ es invertible (localmente) con jacobiano $\bm{J}_{\mathcal{E}}
+(\bm{x}) = \partial\mathcal{E}/\partial\bm{x} \in \mathbb{R}^{(hwc)\times(HWC)}$,
+entonces el score de $p_{\bm{z},0}$ en $\bm{z} = \mathcal{E}(\bm{x})$ es:
+\begin{equation}
+  \nabla_{\bm{z}}\log p_{\bm{z},0}(\bm{z})
+  = \bm{J}_{\mathcal{E}}(\bm{x})^{-\top}\nabla_{\bm{x}}\log p_0(\bm{x}),
+  \label{eq:score_latente}
+\end{equation}
+donde $\bm{J}_{\mathcal{E}}^{-\top}$ es la transpuesta de la inversa del
+jacobiano del encoder.
+\end{proposicion}
+
+\begin{proof}
+Por la fórmula de cambio de variables para distribuciones:
+$p_{\bm{z},0}(\bm{z}) = p_0(\mathcal{E}^{-1}(\bm{z}))\,|\det\bm{J}_\mathcal{E}^{-1}|$.
+Tomando logaritmo:
+$\log p_{\bm{z},0}(\bm{z}) = \log p_0(\bm{x}) - \log|\det\bm{J}_\mathcal{E}(\bm{x})|$.
+Tomando gradiente respecto a $\bm{z}$ y usando la regla de la cadena con
+$\partial\bm{x}/\partial\bm{z} = \bm{J}_\mathcal{E}^{-1}(\bm{x})$:
+\begin{align*}
+  \nabla_{\bm{z}}\log p_{\bm{z},0}(\bm{z})
+  &= \bm{J}_\mathcal{E}^{-\top}\nabla_{\bm{x}}\log p_0(\bm{x})
+  - \nabla_{\bm{z}}\log|\det\bm{J}_\mathcal{E}(\bm{x})|.
+\end{align*}
+El segundo término es la \textbf{corrección por cambio de volumen}: es cero si
+$\mathcal{E}$ preserva el volumen ($|\det\bm{J}_\mathcal{E}| = 1$) y no nulo
+en general. Para encoders con regularización KL, la distribución latente es
+próxima a $\mathcal{N}(\bm{0},\bm{I})$ y el término de corrección es pequeño
+cuando la regularización es fuerte. En la práctica (LDM, Stable Diffusion),
+se entrena la red de score directamente en $\bm{z}$, absorbiendo implícitamente
+la corrección. $\square$
+\end{proof}
+
+\begin{observacion}{Qué ignora la LDM y por qué funciona}
+La LDM (Latent Diffusion Model) de Rombach et al.\ ignora el término
+$\nabla_{\bm{z}}\log|\det\bm{J}_\mathcal{E}|$ de~\eqref{eq:score_latente}.
+Esta aproximación es válida cuando (1) el encoder es aproximadamente isométrico
+(preserva distancias), o (2) el proceso de difusión en el latente es
+suficientemente largo para que el score en $t$ pequeño esté dominado por la
+geometría de $p_{\bm{z},0}$ y no por la corrección de volumen. La regularización
+KL del VAE es precisamente la herramienta que acerca $p_{\bm{z},0}$ a
+$\mathcal{N}(\bm{0},\bm{I})$, reduciendo el impacto de la corrección en $t$
+grande. El precio es que el decoder introduce un error de reconstrucción
+$\|\bm{x} - \mathcal{D}(\mathcal{E}(\bm{x}))\|$ que no puede ser corregido
+por el proceso de difusión.
+\end{observacion}
+
+\begin{fisicaconexion}{Reducción dimensional y espacios latentes en física experimental}
+La difusión en espacio latente del LDM replica una estrategia ubicua en física
+experimental: comprimir datos de alta dimensión a una representación latente
+de baja dimensión antes de modelar su distribución. En \textbf{física de
+partículas}, los detectores del LHC producen $O(10^8)$ canales por evento, pero
+la física relevante vive en un espacio de variables de mucho menor dimensión
+(momento transverso, multiplicidad de jets, energía faltante). Los autoencoders
+de la Sección~\ref{sec:latent_diffusion} aplicados a eventos del LHC comprimen
+$\bm{x}\in\mathbb{R}^{10^5}$ a $\bm{z}\in\mathbb{R}^{64}$, preservando la
+información física discriminante (análogo al encoder KL-reg que preserva la
+geometría de $p_0$) y descartando el ruido del detector (análogo al error de
+reconstrucción $\|\bm{x}-\mathcal{D}(\mathcal{E}(\bm{x}))\|$).
+
+La corrección del jacobiano~\eqref{eq:score_latente} tiene una interpretación
+directa en este contexto. Si el encoder no preserva volúmenes
+($|\det\bm{J}_\mathcal{E}| \neq 1$), las distancias en el espacio latente no
+reflejan fielmente las distancias en el espacio original: una región de alta
+densidad en $p_0$ puede aparecer como baja densidad en $p_{\bm{z},0}$ si
+$|\det\bm{J}_\mathcal{E}|$ es grande allí. En la práctica de HEP, el equivalente
+es la \textbf{función de aceptancia} del detector: la eficiencia de reconstrucción
+$\epsilon(\bm{x})$ actúa como el jacobiano, y ignorarla produce sesgos
+sistemáticos en las distribuciones modeladas. La regularización KL del VAE es
+el análogo de la corrección por aceptancia: fuerza la distribución latente hacia
+$\mathcal{N}(\bm{0},\bm{I})$, reduciendo la sensibilidad a las inhomogeneidades
+del encoder/detector.
+
+Para la simulación de calorímetros (el contexto del IAN-R1 y del LHC), el
+espacio latente de la difusión puede interpretarse como el espacio de
+\textbf{variables de forma de lluvia}: la distribución lateral, la profundidad
+media y las fluctuaciones de energía son variables de baja dimensión que
+capturan la física esencial de la lluvia electromagnética. Los modelos
+CaloFlow, CaloDiT y CaloScore operan en este espacio latente físicamente
+motivado, logrando una aceleración de $10^4$--$10^6\times$ respecto a GEANT4
+sin sacrificar la fidelidad en las observables de interés.
+\end{fisicaconexion}
+\label{subsec:latent_score_difusion}
+
+Para el proceso de difusión en el latente, la distribución marginal es:
+\[
+  p_{\bm{z},t}(\bm{z})
+  = \int p_{\bm{z},0}(\bm{z}_0)\,q_t(\bm{z}|\bm{z}_0)\,d\bm{z}_0,
+\]
+con kernel de transición $q_t(\bm{z}|\bm{z}_0) = \mathcal{N}(\bm{z};
+\sqrt{\bar{\alpha}_t}\bm{z}_0, (1-\bar{\alpha}_t)\bm{I})$.
+El score es:
+\[
+  \nabla_{\bm{z}}\log p_{\bm{z},t}(\bm{z})
+  = \frac{\mathbb{E}_{\bm{z}_0|{\bm{z},t}}\!\left[
+    \nabla_{\bm{z}}\log q_t(\bm{z}|\bm{z}_0)\,p_{\bm{z},0}(\bm{z}_0)\right]}
+    {p_{\bm{z},t}(\bm{z})}
+  = -\frac{\bm{z} - \sqrt{\bar{\alpha}_t}\mathbb{E}[\bm{z}_0|\bm{z},t]}
+    {1-\bar{\alpha}_t}.
+\]
+Esta expresión es idéntica a la del proceso OU en el espacio original, pero
+ahora $\bm{z}_0$ es el latente del dato. El predictor de ruido $\bm{\varepsilon}_\theta
+(\bm{z}_t, y, t)$ en el espacio latente es funcionalmente idéntico al predictor
+en el espacio de píxeles, pero opera en dimensión $hwc \ll HWC$.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Resumen y cierre del libro}
+\label{sec:resumen12}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{El arco completo}
+\label{subsec:arco_completo}
+
+El libro partió de la pregunta más elemental: ¿qué es una red neuronal y por
+qué funciona? Y llegó, por una cadena de pasos matemáticos rigurosos, a entender
+exactamente por qué Stable Diffusion genera imágenes coherentes y qué aproxima
+cuando lo hace. El camino:
+
+\begin{enumerate}
+  \item \textbf{Caps.\ 1--4} (MLP, backpropagation, optimización): la red
+        neuronal es un aproximador universal entrenado por descenso de gradiente.
+        El gradiente se propaga hacia atrás por la regla de la cadena.
+
+  \item \textbf{Cap.\ 5} (Langevin/SGD): el SGD con ruido de mini-batch es una
+        discretización de la SDE de Langevin $d\bm{\theta} = -\nabla\mathcal{L}
+        \,dt + \sigma\,d\bm{W}$. Su distribución estacionaria es la distribución
+        de Gibbs $p^*\propto e^{-2\mathcal{L}/\sigma^2}$.
+
+  \item \textbf{Cap.\ 6} (Pontryagin): la backpropagation es el caso discreto
+        del principio del máximo de Pontryagin. El estado adjunto son los
+        gradientes de la pérdida respecto a las activaciones.
+
+  \item \textbf{Cap.\ 7} (Probabilidad bayesiana): la distribución de Gibbs
+        del Cap.\ 5 es la distribución posterior en un modelo bayesiano con
+        prior plano y verosimilitud $e^{-\mathcal{L}/(\sigma^2/2)}$.
+
+  \item \textbf{Caps.\ 8--9} (MLP en práctica, arquitecturas): dropout,
+        normalización, transformers, redes equivariantes. Las herramientas que
+        hacen funcionar las redes en alta dimensión.
+
+  \item \textbf{Cap.\ 10} (Itô): el cálculo que hace rigurosas las SDEs. La
+        variación cuadrática $[W,W]_T = T$ explica por qué $(dW)^2 = dt$ y por
+        qué la fórmula de cambio de variables tiene un término de corrección de
+        segundo orden.
+
+  \item \textbf{Cap.\ 11} (Fokker-Planck, Anderson): la ecuación de Fokker-Planck
+        conecta las SDEs con las EDPs. El teorema de Anderson determina la SDE
+        del proceso reverso: el score $\nabla\log p_t$ es el único ingrediente
+        desconocido. El denoising score matching convierte eso en una pérdida
+        computable.
+
+  \item \textbf{Cap.\ 12} (Modelos de difusión): DDPM, score SDE, DDIM, flow
+        matching y CFG son instancias del mismo problema variacional con distintas
+        elecciones de discretización y regularización. La arquitectura U-Net/DiT
+        en el espacio latente implementa la función de score a escala.
+\end{enumerate}
+
+\subsection{La ecuación que sintetiza el libro}
+\label{subsec:ecuacion_central}
+
+Hay una ecuación que aparece en forma distinta en tres capítulos diferentes.
+
+En el \textbf{Capítulo~\ref{ch:cap5}}, como SDE de Langevin del SGD:
+\[
+  d\bm{\theta}_t = -\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}_t)\,dt
+  + \sqrt{\eta c}\,d\bm{W}_t.
+\]
+El drift destruye correlaciones (escapa mínimos locales). El proceso converge
+a la distribución de Gibbs $p^* \propto e^{-2\mathcal{L}/\eta c}$.
+
+En el \textbf{Capítulo~\ref{ch:cap11}}, como reverse SDE de Anderson:
+\[
+  d\tilde{\bm{X}}_t
+  = \left[\tilde{\bm{X}}_t + 2\nabla_{\bm{x}}\log p_{T-t}(\tilde{\bm{X}}_t)
+  \right]dt + \sqrt{2}\,d\tilde{\bm{W}}_t.
+\]
+El drift reconstruye correlaciones (genera datos desde ruido). El proceso lleva
+$\mathcal{N}(\bm{0},\bm{I})$ hacia $p_0$.
+
+En el \textbf{Capítulo~\ref{ch:cap12}}, como pérdida de entrenamiento:
+\[
+  L_{\mathrm{DDPM}}(\theta)
+  = \mathbb{E}\|\bm{\varepsilon} - \bm{\varepsilon}_\theta(\sqrt{\bar{\alpha}_t}
+  \bm{x}_0 + \sqrt{1-\bar{\alpha}_t}\bm{\varepsilon}, t)\|^2.
+\]
+La red aprende el score que invierte la destrucción de correlaciones.
+
+Las tres son la misma ecuación. La SDE de Langevin del SGD y el reverse SDE de
+Anderson difieren solo en el signo del drift y en la interpretación del tiempo.
+Entrenar una red de difusión es encontrar el campo vectorial que invierte la
+dinámica del SGD. Generar una imagen es correr el SGD al revés.
+
+\subsection{Conexiones abiertas}
+\label{subsec:conexiones_abiertas}
+
+El libro cierra el ciclo de los modelos de difusión, pero deja abiertas tres
+conexiones hacia matemáticas más ricas que el lector interesado puede explorar:
+
+\textbf{Ecuaciones de Hamilton-Jacobi y el control estocástico.} El score
+$\nabla\log p_t$ es la solución de la ecuación de Hamilton-Jacobi estocástica
+asociada al problema variacional del puente de Schrödinger. La conexión entre
+modelos de difusión y control óptimo estocástico es un campo activo de
+investigación que extiende el Capítulo~\ref{ch:cap6} al caso estocástico.
+
+\textbf{Geometría de información y la métrica de Fisher.} El score $\nabla\log p$
+es el gradiente en la métrica de Fisher-Rao sobre el espacio de distribuciones.
+El descenso de gradiente natural usa la métrica de Fisher como tensor de
+preacondicionamiento; el flujo de difusión en la métrica de Fisher produce
+géodesicas en el espacio de distribuciones.
+
+\textbf{Física de reactores y difusión heterogénea.} El término $\nabla\cdot\bm{D}$
+del teorema de Anderson generalizado (Sección~11.3) tiene implicaciones directas
+para la simulación de transporte de neutrones en medios heterogéneos. El proceso
+reverso con difusividad variable permite muestrear distribuciones de flujo
+neutrónico con la misma maquinaria de los modelos generativos.
+
+%───────────────────────────────────────────────────────────────────────────────
+\label{sec:estrella12}
+\begin{estrella}{Modelos generativos para simulación de calorímetros}
+
+\textbf{El problema: GEANT4 como cuello de botella computacional.}
+La simulación de lluvia de partículas en el calorímetro electromagnético del
+LHC (ATLAS, CMS) con GEANT4 requiere $O(10^3)$ segundos de CPU por evento a
+alta energía. Para los $10^9$ eventos de la Run 3, la simulación completa
+consumiría $O(10^{12})$ segundos: inviable sin aproximaciones. Los modelos
+generativos del Capítulo~\ref{ch:cap12} son la alternativa que el CERN explora
+sistemáticamente para reemplazar GEANT4 con emuladores $10^4$--$10^6\times$ más
+rápidos.
+
+\textbf{Arquitectura de los modelos de calorímetro.}
+El problema tiene una estructura natural que motiva el diseño del modelo:
+\begin{itemize}
+  \item \textbf{Forward process}: el ruido del forward OU actúa sobre el mapa
+        de energía $\bm{x}\in\mathbb{R}^{N_\eta\times N_\phi\times N_r}$ (cuadrícula
+        de vóxeles $\eta$-$\phi$-radio), llevándolo hacia $\mathcal{N}(\bm{0},\bm{I})$.
+  \item \textbf{Arquitectura}: la simetría de traslación en $\phi$ (el calorímetro
+        es azimutalmente simétrico) justifica el uso de capas convolucionales
+        equivariantes (Sección~\ref{sec:cnn}) en $\phi$; la no uniformidad en
+        $\eta$ y $r$ favorece la atención global (DiT, Sección~\ref{subsec:dit}).
+  \item \textbf{Condicionamiento}: la energía incidente $E_{\mathrm{inc}}$ y el
+        tipo de partícula $\pi/e/\gamma$ se inyectan como condición $y$ vía CFG
+        o cross-attention, produciendo lluvias condicionadas físicamente correctas.
+\end{itemize}
+
+\textbf{Modelos específicos y su posición en el marco unificador.}
+La Tabla~\ref{tab:unificacion} organiza los modelos de calorímetro según $\epsilon$:
+CaloScore (Song et al., adaptado) usa el score SDE; CaloDiT y CaloFlow usan el
+DiT con flow matching (OT, $\epsilon\to 0$); FastCaloGAN usa GANs (fuera del
+marco de Schrödinger). La transición de DDPM a flow matching reduce los pasos
+de muestreo de $10^3$ a $O(10)$, lo que es crítico para la producción: a
+$10^9$ eventos, cada paso de evaluación de red adicional cuesta horas de CPU.
+
+\textbf{El reverse SDE con difusividad variable para el IAN-R1.}
+Para el reactor de investigación IAN-R1, el flujo neutrónico $\Phi(\bm{r})$
+tiene simetría cilíndrica $\mathrm{SO}(2)\times\mathbb{Z}_2$ y difusividad
+$D(\bm{r})$ variable entre el combustible y el reflector de berilio (factor
+$\sim 6$). El reverse SDE general~\eqref{eq:reverse_general} del
+Teorema~\ref{thm:anderson_general}, con el término $\nabla\cdot\bm{D}$ no nulo,
+genera distribuciones de flujo que respetan la heterogeneidad del medio:
+\begin{itemize}
+  \item El forward process lleva $\Phi(\bm{r})$ hacia $\mathcal{N}(\bm{0},\bm{I})$
+        en tiempo $T$ suficientemente largo (comparable al tiempo de difusión
+        de neutrones sobre la escala del núcleo).
+  \item El score network $\bm{s}_\theta(\bm{z}_t, E_{\mathrm{barras}}, t)$ se
+        entrena con $N\sim 10^4$ simulaciones de MCNP o difusión de dos grupos,
+        condicionado a la configuración de barras de control
+        $E_{\mathrm{barras}}\in\mathbb{R}^d$.
+  \item El muestreo con flow matching (trayectorias rectas, $O(10)$ pasos)
+        genera en milisegundos distribuciones de flujo para nuevas configuraciones
+        de barras, reemplazando horas de MCNP.
+\end{itemize}
+El modelo completo es un emulador físicamente consistente del reactor:
+respeta la simetría cilíndrica (via CNN equivariante en $\phi$), la
+heterogeneidad del medio (via $\nabla\cdot\bm{D}\neq\bm{0}$ en el reverse SDE),
+y las condiciones de contorno (flujo cero en la frontera del reflector,
+implementada como restricción en el espacio latente del encoder).
+\end{estrella}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Implementación completa de DDPM y DDIM en 1D}
+\textbf{Objetivo:} implementar el Algoritmo~\ref{alg:ddpm} completo y verificar
+que DDIM con $\eta=0$ genera muestras de igual calidad con menos pasos.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Usar $p_0 = \frac{1}{2}\mathcal{N}(-2,0.3^2)+\frac{1}{2}\mathcal{N}(2,0.3^2)$
+        (bimodal). Implementar el forward process con $T=500$ pasos y schedule
+        coseno. Verificar que $q(\bm{x}_T|\bm{x}_0)\approx\mathcal{N}(0,1)$.
+  \item Entrenar un MLP $(2, 128, 128, 128, 1)$ con entradas $(x_t, t_{\mathrm{embed}})$
+        y pérdida~\eqref{eq:ddpm_loss}, con $t$ inyectado como embedding
+        sinusoidal de dimensión 32. Usar Adam con $\eta=3\times10^{-4}$,
+        $5\times10^4$ iteraciones.
+  \item Muestrear $10^3$ puntos con DDPM ($T=500$ pasos) y con DDIM ($\eta=0$)
+        para $N\in\{5,10,20,50,100,500\}$ pasos. Calcular la distancia de
+        Wasserstein $W_1$ entre las muestras y $p_0$ en cada caso.
+  \item Verificar el Teorema~\ref{thm:ddim}: que DDIM con $\eta=0$ produce
+        trayectorias deterministas (misma muestra inicial $\to$ misma imagen
+        final) y DDIM con $\eta=1$ produce trayectorias estocásticas.
+\end{enumerate}
+\medskip\noindent\textbf{Verificación:} DDIM con $N=50$ debe alcanzar
+$W_1 < 0.05$; DDPM necesita $N\geq 200$ para el mismo umbral.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Classifier-Free Guidance: verificación de la interpretación de temperatura}
+\textbf{Objetivo:} verificar empíricamente la Proposición~\ref{prop:guidance_temperatura}
+— que CFG con escala $s$ muestrea de $p(\bm{x})\,p(y|\bm{x})^s$.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Usar $p_0(\bm{x}|y=1)=\mathcal{N}(-3,0.5^2)$ y $p_0(\bm{x}|y=2)=
+        \mathcal{N}(3,0.5^2)$ con prior uniforme $p(y=1)=p(y=2)=0.5$.
+        Entrenar un modelo DDPM condicionado ($T=200$, mismo MLP del ejercicio
+        anterior), enmascarando $y$ con probabilidad $0.1$.
+  \item Para $s\in\{0.5, 1, 2, 5, 10\}$, generar $2\times10^3$ muestras con
+        CFG para $y=1$ usando la fórmula~\eqref{eq:cfg_eps}.
+  \item Para cada $s$, estimar la distribución de muestras con KDE. Verificar
+        que la media y varianza se aproximan a $\mu_s\approx -3$ y
+        $\sigma_s^2\approx 0.25/s$ (predicción de la
+        Proposición~\ref{prop:guidance_temperatura}).
+  \item Trazar la curva \textit{calidad vs.\ diversidad}: en el eje $x$,
+        la fracción de muestras en $(-5,-0.5)$ (probabilidad de moda correcta);
+        en el eje $y$, la varianza de las muestras. ¿En qué $s$ se maximiza
+        un score $F_1$ balanceado entre ambos?
+\end{enumerate}
+\end{ejerciciocomp}
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+El modelo DDPM fue introducido por Ho et al.\ (2020)~\cite{ho2020denoising},
+citado en el Capítulo~\ref{ch:cap11}. El noise schedule coseno es de Nichol y
+Dhariwal (2021)~\cite{nichol2021improved}. El marco unificado score-based SDE,
+incluyendo la VP-SDE y VE-SDE, es de Song et al.\ (2021)~\cite{song2021score},
+citado en el Capítulo~\ref{ch:cap11}. El sampler DPM-Solver es de Lu et al.\
+(2022)~\cite{lu2022dpm}.
+
+DDIM fue introducido por Song, Meng y Ermon (2020)~\cite{song2020denoising}. La
+demostración del Teorema~\ref{thm:ddim} presentada aquí, mostrando que DDIM con
+$\eta=0$ es la discretización de Euler de la ODE de flujo de probabilidad del
+Capítulo~\ref{ch:cap11}, sigue la presentación de Karras et al.\
+(2022)~\cite{karras2022elucidating}, que también unifica múltiples samplers bajo
+un mismo marco.
+
+El flow matching y el rectified flow son de Lipman et al.\
+(2022)~\cite{lipman2022flow} y Liu et al.\ (2022)~\cite{liu2022flow},
+ambos citados en el Capítulo~\ref{ch:cap11}. El OT flow matching es de Tong et
+al.\ (2023)~\cite{tong2023improving}, también citado allí.
+
+El classifier guidance fue introducido por Dhariwal y Nichol
+(2021)~\cite{dhariwal2021diffusion}. El Classifier-Free Guidance (CFG) fue
+introducido por Ho y Salimans (2022)~\cite{ho2022classifier}. La interpretación
+de CFG como temperatura del posterior bayesiano~\eqref{eq:guidance_distribución}
+es estándar; la conexión con el principio de máxima entropía de Jaynes y la
+regularización de Tikhonov presentada en la \textsf{Conexión física} sigue a
+la perspectiva de Chung et al.\ (2022)~\cite{chung2022diffusion}.
+
+El U-Net original es de Ronneberger, Fischer y Brox (2015)~\cite{ronneberger2015unet}.
+La versión con bloques de atención para difusión es de Dhariwal y Nichol
+(2021)~\cite{dhariwal2021diffusion}. El Diffusion Transformer (DiT) es de
+Peebles y Xie (2023)~\cite{peebles2023scalable}; la adaptive layer norm fue
+introducida en ese trabajo. El mecanismo de cross-attention para condicionamiento
+por texto es de Rombach et al.\ (2022)~\cite{rombach2022high}, que también
+introdujo el Latent Diffusion Model (LDM) y Stable Diffusion. La Proposición
+sobre el score latente como pullback~\eqref{eq:score_latente} sigue a la
+discusión de Pidstrigach (2022)~\cite{pidstrigach2022score}.
+
+Para la aplicación a simulación de calorímetros (Sección~\ref{sec:estrella12}),
+los modelos de referencia son CaloFlow (Kruse et al., 2021), CaloScore (Mikuni
+y Nachman, 2022)~\cite{mikuni2022score}, y CaloDiT (Acosta et al., 2023). Una
+revisión comparativa de los modelos generativos para calorímetros es Paganini et
+al.\ (2018)~\cite{paganini2018calogan} y el Fast Calorimeter Simulation Challenge
+(Faucci Giannelli et al., 2022)~\cite{faucci2022fast}.
+\end{notasbib}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios resueltos}
+\addcontentsline{toc}{section}{Ejercicios resueltos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\label{ej:ddpm_posterior}
+\textbf{(Verificación del posterior condicionado a $\bm{x}_0$).}
+Verificar que $q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0)$ es gaussiana con la media
+y varianza de la Proposición~\ref{prop:ddpm_posterior}, y que cuando $\beta_t\to 0$
+la varianza $\tilde{\beta}_t\to 0$ y la media $\tilde{\bm{\mu}}_t\to\bm{x}_{t-1}$
+(el proceso es casi determinista para pasos pequeños).
+
+\medskip\noindent\textit{Solución.}
+Aplicando Bayes: $q(\bm{x}_{t-1}|\bm{x}_t,\bm{x}_0)\propto q(\bm{x}_t|\bm{x}_{t-1})
+q(\bm{x}_{t-1}|\bm{x}_0)$. Las densidades son:
+\[
+  -2\log q(\bm{x}_t|\bm{x}_{t-1})
+  = \frac{\|\bm{x}_t-\sqrt{\alpha_t}\bm{x}_{t-1}\|^2}{\beta_t} + \text{cte},
+  \quad
+  -2\log q(\bm{x}_{t-1}|\bm{x}_0)
+  = \frac{\|\bm{x}_{t-1}-\sqrt{\bar{\alpha}_{t-1}}\bm{x}_0\|^2}
+    {1-\bar{\alpha}_{t-1}} + \text{cte}.
+\]
+La suma es cuadrática en $\bm{x}_{t-1}$ con coeficiente de $\|\bm{x}_{t-1}\|^2$:
+$\frac{\alpha_t}{\beta_t} + \frac{1}{1-\bar{\alpha}_{t-1}} = \frac{\alpha_t(1-\bar{\alpha}_{t-1})
++\beta_t}{\beta_t(1-\bar{\alpha}_{t-1})} = \frac{1-\bar{\alpha}_t}{\beta_t(1-\bar{\alpha}_{t-1})}
+= \frac{1}{\tilde{\beta}_t}$.
+El coeficiente de $\bm{x}_{t-1}$ da la media $\tilde{\bm{\mu}}_t$.
+Para $\beta_t\to 0$: $\alpha_t\to 1$, $\bar{\alpha}_{t-1}\approx\bar{\alpha}_t$,
+luego $\tilde{\beta}_t = \beta_t(1-\bar{\alpha}_{t-1})/(1-\bar{\alpha}_t)\approx\beta_t\to 0$
+y $\tilde{\bm{\mu}}_t \approx \bm{x}_{t-1}$. $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:ddim_determinismo}
+\textbf{(DDIM con $\eta=0$ como ODE de flujo).}
+Para el VP-SDE con $\bar{\alpha}_t = e^{-t^2/2}$ (schedule cuadrático):
+\textbf{(a)} calcular el paso DDIM con $\eta=0$ de $t=1.0$ a $t'=0.9$
+para un $\bm{x}_t$ dado con predictor de ruido constante $\bm{\varepsilon}_\theta =
+\bm{e}$ (vector unitario).
+\textbf{(b)} Verificar que coincide con el paso Euler de la ODE de flujo.
+
+\medskip\noindent\textit{Solución.}
+\textbf{(a)} $\bar{\alpha}_1 = e^{-1/2}\approx 0.6065$, $\bar{\alpha}_{0.9} =
+e^{-0.405}\approx 0.6670$. Paso DDIM:
+\[
+  \bm{x}_{0.9} = \sqrt{0.667}\hat{\bm{x}}_0 + \sqrt{1-0.667}\,\bm{e},
+  \quad \hat{\bm{x}}_0 = \frac{\bm{x}_1 - \sqrt{1-0.6065}\,\bm{e}}{\sqrt{0.6065}}.
+\]
+
+\textbf{(b)} ODE de flujo VP: $d\bm{x}/dt = -\frac{\beta(t)}{2}\bm{x}_t
++ \frac{\beta(t)}{2\sqrt{1-\bar{\alpha}_t}}\bm{\varepsilon}_\theta$
+con $\beta(t) = t$ (derivada del schedule cuadrático). Euler de $t=1$ a $0.9$:
+$\bm{x}_{0.9} = \bm{x}_1 + 0.1\cdot(-\frac{1}{2}\bm{x}_1 + \frac{1}{2\sqrt{0.3935}}
+\bm{e})$. Verificando numéricamente: ambos valores coinciden hasta $O((\Delta t)^2)$.
+$\square$
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios propuestos}
+\addcontentsline{toc}{section}{Ejercicios propuestos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\textbf{(Implementación completa de DDPM en 1D).}
+Sea $p_0 = \frac{1}{3}\mathcal{N}(-3,0.5) + \frac{1}{3}\mathcal{N}(0,0.5)
++ \frac{1}{3}\mathcal{N}(3,0.5)$ (mezcla trimodal).
+\begin{enumerate}[label=(\alph*)]
+  \item Implementar el forward process con $T=200$ pasos y schedule lineal.
+        Verificar que $q(\bm{x}_T|\bm{x}_0)\approx\mathcal{N}(0,1)$ para
+        $T=200$.
+  \item Entrenar un MLP de 3 capas con $256$ neuronas para predecir
+        $\bm{\varepsilon}$ con la pérdida~\eqref{eq:ddpm_loss}.
+        El tiempo $t$ se inyecta como embedding sinusoidal.
+  \item Implementar el muestreo del Algoritmo~\ref{alg:ddpm}. Comparar
+        el histograma de $10^4$ muestras con $p_0$.
+  \item Repetir con schedule coseno. ¿Mejora la calidad de las muestras?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(DDIM vs.\ DDPM: calidad en función del número de pasos).}
+Usando la red $\bm{\varepsilon}_\theta$ entrenada en el ejercicio anterior:
+\begin{enumerate}[label=(\alph*)]
+  \item Implementar el paso DDIM~\eqref{eq:ddim_step} con $\eta=0$ y $\eta=1$.
+  \item Para $N\in\{5, 10, 20, 50, 200\}$ pasos, comparar la distancia de
+        Wasserstein $W_1$ entre las muestras y $p_0$ para DDPM, DDIM ($\eta=0$)
+        y DDIM ($\eta=1$).
+  \item ¿Para qué valor de $N$ DDIM ($\eta=0$) alcanza la misma calidad que
+        DDPM con $N=200$?
+  \item Graficar las trayectorias de muestreo para $5$ puntos: ¿son
+        deterministas con $\eta=0$?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Classifier-Free Guidance en una mezcla bimodal condicionada).}
+Sea $p_0(x|y=1) = \mathcal{N}(-3,0.5)$ y $p_0(x|y=2) = \mathcal{N}(3,0.5)$
+con $p_0(y=1) = p_0(y=2) = 0.5$.
+\begin{enumerate}[label=(\alph*)]
+  \item Entrenar un modelo DDPM condicionado a $y$, enmascarando $y$ con
+        probabilidad $0.1$ durante el entrenamiento.
+  \item Para $s\in\{0.5, 1, 2, 5, 10\}$, generar $10^3$ muestras con CFG
+        para $y=1$. Calcular $\mathbb{P}(\text{muestra}\in[-5,0])$ para cada $s$.
+  \item Verificar la interpretación de temperatura: mostrar que la distribución
+        de muestras se aproxima a $\mathcal{N}(-3, 0.5/s)$ para $s$ grande.
+  \item ¿Para qué valor de $s$ el trade-off calidad-diversidad es óptimo
+        según la métrica FID (Fréchet Inception Distance) discreta?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Difusión con difusividad variable: el caso del reactor esférico).}
+Retomar el ejercicio del reactor esférico del Capítulo~\ref{ch:cap11} (Ejercicio propuesto 4)
+con $D(r) = D_0(1-r^2/R^2)$ y $p^*(r)$ la distribución estacionaria calculada.
+\begin{enumerate}[label=(\alph*)]
+  \item Usar el reverse SDE del Teorema~\ref{thm:anderson_general} para generar
+        muestras de $p^*(r)$ partiendo de $p_T = \mathcal{N}(0,\sigma^2)$.
+        Verificar que la distribución generada coincide con $p^*(r)$.
+  \item Entrenar una red para predecir el score $\nabla\log p_t^*(r)$ usando
+        denoising score matching con el kernel de transición del forward process
+        con $D(r)$.
+  \item Comparar el reverse SDE con $D(r)$ variable (que incluye $\nabla\cdot\bm{D}
+        = 2D_0(-2r/R^2) = -4D_0 r/R^2$) con el reverse SDE isótropo (que ignora
+        ese término). ¿Qué error introduce ignorar $\nabla\cdot\bm{D}$?
+  \item Interpretar el resultado en términos del transporte de neutrones: el
+        forward process simula la dispersión de neutrones en el reactor, y el
+        reverse process los ``enfoca'' de vuelta a la distribución de equilibrio.
+\end{enumerate}
+\end{ejercicio}

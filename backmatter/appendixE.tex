@@ -1,0 +1,424 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{El diccionario ML--física}
+\label{ap:glosario}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Este apéndice tiene un propósito doble. Primero, lista las siglas y términos
+técnicos del aprendizaje automático tal como aparecen en el libro, con una
+definición operacional de dos líneas para consulta rápida. Segundo, y más
+importante, muestra el análogo físico de cada concepto: la columna derecha
+es el argumento central del libro comprimido en una tabla.
+
+Cada entrada tiene el formato: \textbf{sigla o término} --- definición
+operacional --- \emph{análogo físico}. Las entradas están agrupadas
+temáticamente, no alfabéticamente, para que el lector vea las familias de
+conceptos en lugar de una lista plana.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Optimización y entrenamiento}
+\addcontentsline{toc}{section}{Optimización y entrenamiento}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{description}[leftmargin=0pt, labelwidth=!, labelsep=1em,
+  font=\normalfont\bfseries, style=nextline]
+
+\item[SGD --- \textit{Stochastic Gradient Descent}]
+Descenso de gradiente con gradiente estimado sobre un mini-lote de $B$
+muestras. En cada paso: $\bm{\theta} \leftarrow \bm{\theta} - \eta\,
+\hat{\nabla}\mathcal{L}$.\\
+\emph{Análogo físico}: partícula de Langevin en el paisaje de energía
+$U = \mathcal{L}$ a temperatura $T_{\mathrm{eff}} = \eta c/2$. La distribución
+estacionaria del SGD es la distribución de Gibbs
+$p^*\propto e^{-2\mathcal{L}/(\eta c)}$.
+
+\item[Mini-lote (\textit{mini-batch})]
+Subconjunto de $B$ muestras del dataset usado para estimar el gradiente.
+El ruido de la estimación tiene varianza $\propto 1/B$.\\
+\emph{Análogo físico}: las fluctuaciones térmicas en la ecuación de Langevin.
+El tamaño del lote controla la temperatura efectiva del SGD.
+
+\item[Época (\textit{epoch})]
+Una pasada completa sobre el dataset de entrenamiento.\\
+\emph{Análogo físico}: una unidad de tiempo en la dinámica de Langevin
+discreta. No tiene análogo físico directo: la noción de ``ciclo completo
+sobre los datos'' es específica del aprendizaje automático.
+
+\item[Adam --- \textit{Adaptive Moment Estimation}]
+Optimizador que mantiene medias exponenciales del gradiente (momento de
+primer orden) y de su cuadrado (segundo orden) para adaptar la tasa de
+aprendizaje por parámetro.\\
+\emph{Análogo físico}: precondicionamiento diagonal del descenso de gradiente
+por la raíz cuadrada de la varianza local del gradiente. Aproxima el método
+de Newton con costo $O(p)$ en lugar de $O(p^2)$.
+
+\item[Tasa de aprendizaje (\textit{learning rate}) $\eta$]
+Tamaño del paso en cada actualización de parámetros.\\
+\emph{Análogo físico}: paso temporal $\Delta t$ del integrador de Euler
+para la SDE de Langevin. Determina la temperatura efectiva del SGD y la
+condición de estabilidad del integrador: $\eta < 2/\lambda_{\max}(\bm{H})$.
+
+\item[Noise schedule $\{\beta_t\}$]
+Secuencia de varianzas del ruido inyectado en cada paso del forward process
+de DDPM. Define cómo se destruye progresivamente la señal.\\
+\emph{Análogo físico}: protocolo de recocido (\textit{annealing}).
+Un schedule coseno es un recocido suave que mantiene la SNR decreciendo a
+tasa aproximadamente constante en escala logarítmica.
+
+\item[Weight decay / regularización $\ell_2$]
+Penalización $\lambda\|\bm{\theta}\|_2^2$ añadida a la pérdida.\\
+\emph{Análogo físico}: potencial cuadrático (resorte) que confina los
+parámetros cerca del origen. Equivale a usar un prior gaussiano
+$p(\bm{\theta}) \propto e^{-\lambda\|\bm{\theta}\|_2^2}$ sobre los pesos.
+
+\item[Gradient clipping]
+Limitar la norma del gradiente a $\|\nabla\mathcal{L}\|_2 \leq C$ antes
+de cada actualización.\\
+\emph{Análogo físico}: limitación de la fuerza máxima en la dinámica de
+Langevin. Previene pasos del integrador de Euler que violarían la condición
+de estabilidad.
+
+\item[Early stopping / parada temprana]
+Detener el entrenamiento cuando el error de validación no mejora en $P$
+épocas y devolver los parámetros del mínimo de validación.\\
+\emph{Análogo físico}: filtro espectral sobre la SVD de los datos.
+Parar en la iteración $k$ equivale a la regularización de Tikhonov con
+$\lambda \approx 1/(\eta k)$: suprime las componentes de baja varianza.
+
+\end{description}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Arquitecturas}
+\addcontentsline{toc}{section}{Arquitecturas}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{description}[leftmargin=0pt, labelwidth=!, labelsep=1em,
+  font=\normalfont\bfseries, style=nextline]
+
+\item[MLP --- \textit{Multilayer Perceptron}]
+Red neuronal densa de capas totalmente conectadas con activaciones no
+lineales. El aproximador universal del Capítulo~\ref{ch:cap4}.\\
+\emph{Análogo físico}: discretización de una ODE autónoma por el método
+de Euler. Una ResNet es el límite de paso pequeño de este integrador.
+
+\item[CNN --- \textit{Convolutional Neural Network}]
+Red con capas de convolución discreta. Comparte pesos entre posiciones
+espaciales.\\
+\emph{Análogo físico}: filtro lineal invariante en el tiempo (LTI) discreto.
+Su existencia es la única consecuencia algebraica de imponer equivarianza
+de traslación (Teorema~\ref{thm:conv_equivar}). Análogo a un sistema
+óptico isoplanático.
+
+\item[ResNet --- \textit{Residual Network}]
+Red con conexiones residuales: $\bm{a}^{(l+1)} = \bm{a}^{(l)} +
+F(\bm{a}^{(l)})$.\\
+\emph{Análogo físico}: integrador de Euler para una ODE autónoma
+$\dot{\bm{a}} = F(\bm{a})$. La profundidad $L$ es el número de pasos
+de Euler y el tiempo final es $T = L$.
+
+\item[GNN --- \textit{Graph Neural Network}]
+Red que opera sobre grafos mediante paso de mensajes entre nodos vecinos.\\
+\emph{Análogo físico}: operador de difusión en un grafo. El agregador
+de suma implementa exactamente el test de isomorfismo de Weisfeiler-Leman
+de primer orden (Teorema~\ref{thm:gnn_wl}).
+
+\item[Transformer]
+Arquitectura basada en mecanismo de atención sobre secuencias. Sin
+codificación posicional es una GNN completamente conectada.\\
+\emph{Análogo físico}: campo de fuerza de largo alcance: cada elemento
+de la secuencia puede interaccionar directamente con cualquier otro sin
+intermediarios, a diferencia del MLP (interacciones locales por capa).
+
+\item[DiT --- \textit{Diffusion Transformer}]
+Transformer que opera sobre parches del espacio latente como arquitectura
+del score network. Usa \textit{adaptive layer norm} para condicionar en
+$(t, y)$.\\
+\emph{Análogo físico}: score network global con simetría de permutación
+sobre los parches de la imagen latente. La condición de tiempo $t$ modula
+la escala de ruido como la temperatura modula la distribución de Gibbs.
+
+\item[U-Net]
+Arquitectura encoder-decoder con skip connections entre resoluciones
+simétricas.\\
+\emph{Análogo físico}: filtro multirresolución (análogo a la transformada
+wavelet). Procesa el ruido a distintas escalas espaciales simultáneamente:
+las frecuencias altas se destruyen primero en el forward process.
+
+\item[Neural ODE]
+Red neuronal donde la profundidad es continua: $\dot{\bm{a}} =
+F(\bm{a},t;\bm{\theta})$, resuelto con un solver numérico.\\
+\emph{Análogo físico}: sistema dinámico continuo. El método adjunto
+para calcular gradientes es el principio del mínimo de Pontryagin.
+
+\end{description}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Regularización e incertidumbre}
+\addcontentsline{toc}{section}{Regularización e incertidumbre}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{description}[leftmargin=0pt, labelwidth=!, labelsep=1em,
+  font=\normalfont\bfseries, style=nextline]
+
+\item[Dropout]
+Apagar aleatoriamente neuronas con probabilidad $p_d$ durante el
+entrenamiento. En evaluación, todas las neuronas activas (inverted dropout).\\
+\emph{Análogo físico}: inferencia variacional aproximada en una red neuronal
+bayesiana (BNN). MC Dropout activa dropout en evaluación para muestrear la
+distribución posterior de pesos.
+
+\item[MC Dropout --- \textit{Monte Carlo Dropout}]
+Realizar $K$ forward passes con dropout activo y promediar las predicciones.\\
+\emph{Análogo físico}: estimación de Monte Carlo de la distribución posterior.
+La varianza entre predicciones es la incertidumbre epistémica (del modelo);
+la varianza del ruido del modelo es la incertidumbre aleatoria (de los datos).
+
+\item[BN --- \textit{Batch Normalization}]
+Normalizar pre-activaciones por la media y varianza del mini-lote, con
+parámetros $(\gamma, \beta)$ aprendibles.\\
+\emph{Análogo físico}: estandarización de variables con escalas
+heterogéneas (e.g., variables de un detector con distintas unidades).
+Reduce el número de condición efectivo del hessiano de la pérdida.
+
+\item[LN --- \textit{Layer Normalization}]
+Normalizar por la media y varianza de las activaciones de un solo ejemplo
+(no del lote).\\
+\emph{Análogo físico}: igual que BN pero invariante al tamaño del lote.
+Estándar en transformers donde $B$ puede ser pequeño o variable.
+
+\item[BNN --- \textit{Bayesian Neural Network}]
+Red neuronal donde los pesos son distribuciones de probabilidad en lugar
+de valores escalares. La inferencia exacta es intractable; se usa
+aproximación variacional.\\
+\emph{Análogo físico}: mecánica estadística de los pesos. La distribución
+posterior $p(\bm{\theta}|\mathcal{D}) \propto p(\mathcal{D}|\bm{\theta})
+p(\bm{\theta})$ es la distribución de Gibbs con energía
+$-\log p(\mathcal{D}|\bm{\theta})$ y prior $p(\bm{\theta})$.
+
+\end{description}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Inferencia y aprendizaje probabilístico}
+\addcontentsline{toc}{section}{Inferencia y aprendizaje probabilístico}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{description}[leftmargin=0pt, labelwidth=!, labelsep=1em,
+  font=\normalfont\bfseries, style=nextline]
+
+\item[ELBO --- \textit{Evidence Lower Bound}]
+Cota inferior de $\log p_\theta(\bm{x})$ obtenida por la desigualdad de
+Jensen sobre la distribución variacional $q_\phi$:
+$\log p_\theta(\bm{x}) \geq \mathbb{E}_{q_\phi}[\log p_\theta(\bm{x}|\bm{z})]
+- D_{\mathrm{KL}}(q_\phi\|p)$.\\
+\emph{Análogo físico}: energía libre de Helmholtz variacional $F_q =
+\langle U\rangle_q - TH[q]$. Maximizar el ELBO equivale a minimizar $F_q$.
+La brecha ELBO$-\log p$ es la divergencia KL entre el posterior aproximado
+y el verdadero.
+
+\item[KL --- \textit{Kullback-Leibler divergence}]
+$D_{\mathrm{KL}}(p\|q) = \mathbb{E}_p[\log(p/q)] \geq 0$. No es simétrica.\\
+\emph{Análogo físico}: diferencia de energía libre entre dos distribuciones.
+$D_{\mathrm{KL}}(p\|p^*) = \beta(F_p - F^*)$ donde $F^*$ es la energía
+libre de la distribución de Gibbs de equilibrio. El H-teorema establece que
+$\frac{d}{dt}D_{\mathrm{KL}}(p_t\|p^*) \leq 0$ en la dinámica de Langevin.
+
+\item[VAE --- \textit{Variational Autoencoder}]
+Modelo generativo con encoder $q_\phi(\bm{z}|\bm{x})$ y decoder
+$p_\theta(\bm{x}|\bm{z})$ entrenado maximizando el ELBO.\\
+\emph{Análogo físico}: DDPM con un solo paso de difusión ($T=1$). El
+espacio latente $\bm{z}$ juega el rol del estado ruidoso $\bm{x}_1$; el
+prior $p(\bm{z})=\mathcal{N}(\bm{0},\bm{I})$ es la distribución de ruido.
+
+\item[Función de score / \textit{score function}]
+$\bm{s}(\bm{x},t) = \nabla_{\bm{x}}\log p_t(\bm{x})$: gradiente del
+logaritmo de la densidad.\\
+\emph{Análogo físico}: fuerza termodinámica normalizada por temperatura.
+Para la distribución de Gibbs: $\bm{s}(\bm{x}) = -\nabla U(\bm{x})/(k_BT)$.
+Apunta hacia las regiones de mayor probabilidad, como la fuerza
+apunta hacia los mínimos de energía.
+
+\item[Información de Fisher $\mathcal{I}(\theta)$]
+$\mathbb{E}_p[\|\nabla_\theta\log p_\theta\|^2]$: norma cuadrática media
+del score respecto a los parámetros.\\
+\emph{Análogo físico}: curvatura de la log-verosimilitud. Aparece en:
+(1) la cota de Cramér-Rao $\mathrm{Var}[\hat\theta]\geq\mathcal{I}^{-1}$,
+(2) el H-teorema $\frac{d}{dt}D_{\mathrm{KL}} = -k_BT\,\mathcal{I}(p_t\|p^*)$,
+(3) el gradiente natural como precondicionador por $\mathcal{I}^{-1}$.
+
+\end{description}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Modelos de difusión}
+\addcontentsline{toc}{section}{Modelos de difusión}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{description}[leftmargin=0pt, labelwidth=!, labelsep=1em,
+  font=\normalfont\bfseries, style=nextline]
+
+\item[DDPM --- \textit{Denoising Diffusion Probabilistic Model}]
+Modelo generativo basado en una cadena de Markov gaussiana forward
+$q(\bm{x}_t|\bm{x}_{t-1})$ y una cadena reversa paramétrica
+$p_\theta(\bm{x}_{t-1}|\bm{x}_t)$ entrenada minimizando el ELBO.\\
+\emph{Análogo físico}: discretización del proceso OU como forward y del
+reverse SDE de Anderson como reverse. El límite continuo con $T\to\infty$
+es la VP-SDE.
+
+\item[DDIM --- \textit{Denoising Diffusion Implicit Model}]
+Sampler para la misma red entrenada con DDPM que reemplaza el paso
+estocástico por un paso determinista ($\eta=0$).\\
+\emph{Análogo físico}: ODE de flujo de probabilidad discretizada por
+el método de Euler. Permite muestreo con $10$--$50$ pasos en lugar de
+$10^3$.
+
+\item[VP-SDE --- \textit{Variance Preserving SDE}]
+Forward SDE $d\bm{X}_t = -\frac{1}{2}\beta(t)\bm{X}_t\,dt +
+\sqrt{\beta(t)}\,d\bm{W}_t$: versión continua de DDPM. La varianza total
+se conserva en $\sim 1$.\\
+\emph{Análogo físico}: proceso OU con tasa de retorno $\alpha(t) =
+\beta(t)/2$ variable en el tiempo. La distribución marginal es gaussiana
+para todo $t$ si $p_0$ es gaussiana.
+
+\item[VE-SDE --- \textit{Variance Exploding SDE}]
+Forward SDE $d\bm{X}_t = \sqrt{d\sigma^2(t)/dt}\,d\bm{W}_t$: la varianza
+crece sin límite.\\
+\emph{Análogo físico}: movimiento browniano con difusividad variable en el
+tiempo. No hay término de deriva: el proceso solo difunde.
+
+\item[Score matching]
+Método para estimar $\nabla\log p$ sin conocer $p$ explícitamente, usando
+la identidad $J_{\mathrm{implícito}} = J_{\mathrm{explícito}} + C$.\\
+\emph{Análogo físico}: estimación de la fuerza termodinámica $-\nabla U/
+(k_BT)$ directamente desde posiciones de partículas (muestras de $p$),
+sin necesidad de resolver la ecuación de Poisson para $U$.
+
+\item[Denoising score matching (DSM)]
+Variante de score matching que estima el score de $p_t$ como predictor
+del ruido añadido: $\bm{s} \approx -\bm{\varepsilon}/\sigma_t$.\\
+\emph{Análogo físico}: inversión de la ecuación de Langevin local.
+En lugar de medir la fuerza directamente, se mide cuánto ruido se añadió
+para llegar al estado actual.
+
+\item[CFG scale $s$ --- \textit{Classifier-Free Guidance scale}]
+Parámetro que amplifica la condición en el muestreo:
+$\tilde{\bm{s}} = (1-s)\bm{s}_\theta(\bm{x}) + s\,\bm{s}_\theta(\bm{x}|y)$.\\
+\emph{Análogo físico}: temperatura inversa del posterior bayesiano.
+$s=1$: muestreo de $p(\bm{x}|y)$ exacto. $s>1$: temperatura baja,
+distribución concentrada en el máximo de $p(y|\bm{x})$ (alta fidelidad,
+baja diversidad). $s<1$: temperatura alta (baja fidelidad, alta diversidad).
+
+\item[NFE --- \textit{Number of Function Evaluations}]
+Número de evaluaciones de la red por muestra generada.\\
+\emph{Análogo físico}: número de pasos del integrador numérico. DDPM
+necesita NFE $\sim 10^3$; DDIM determinista necesita NFE $\sim 20$--$50$;
+OT flow matching necesita NFE $\sim 1$--$10$.
+
+\item[Latent diffusion (LDM)]
+Difusión en el espacio latente de un autoencoder en lugar del espacio
+de píxeles.\\
+\emph{Análogo físico}: reducción dimensional física. El espacio latente
+es el subespacio de ``variables lentas'' del sistema; el autoencoder
+integra las ``variables rápidas''. Análogo a la proyección sobre modos
+normales lentos en un sistema con escalas de tiempo separadas.
+
+\end{description}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Transporte óptimo y flow matching}
+\addcontentsline{toc}{section}{Transporte óptimo y flow matching}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{description}[leftmargin=0pt, labelwidth=!, labelsep=1em,
+  font=\normalfont\bfseries, style=nextline]
+
+\item[OT --- \textit{Optimal Transport}]
+Mapa $T^*$ que transporta $p_0$ a $p_T$ minimizando el costo cuadrático
+$\mathbb{E}[\|\bm{x} - T^*(\bm{x})\|^2]$. Para gaussianas es un mapa
+afín.\\
+\emph{Análogo físico}: flujo de masa incompresible de mínima energía
+cinética. El mapa de Monge-Kantorovich es la versión determinista del
+problema de Schrödinger en el límite $\epsilon\to 0$.
+
+\item[Puente de Schrödinger]
+Proceso de Markov con marginales $p_T$ y $p_0$ fijas que minimiza la KL
+respecto al proceso de referencia (forward process).\\
+\emph{Análogo físico}: el problema que Schrödinger formuló en 1931:
+encontrar la distribución de trayectorias brownianas más probable
+compatible con distribuciones marginales fijas en $t=0$ y $t=T$.
+
+\item[FM / CFM --- \textit{(Conditional) Flow Matching}]
+Aprendizaje del campo vectorial $v_\theta(\bm{x},t)$ de la ODE
+$\dot{\bm{x}} = v_\theta$ que transporta $p_T$ a $p_0$ con trayectorias
+interpoladas $(1-t)\bm{x}_T + t\bm{x}_0$.\\
+\emph{Análogo físico}: aprendizaje del campo de velocidades de un fluido
+incompresible. El CFM con pareo OT produce trayectorias rectas: el
+campo de velocidades es constante a lo largo de cada línea de corriente.
+
+\item[Rectified flow]
+Iteración del flow matching que enderezan las trayectorias usando el pareo
+inducido por el flujo de la iteración anterior.\\
+\emph{Análogo físico}: método de punto fijo para encontrar las geodésicas
+del espacio de distribuciones en la métrica de Wasserstein.
+
+\item[Sinkhorn]
+Algoritmo iterativo para resolver el transporte óptimo regularizado por
+entropía: $\bm{u} \leftarrow \bm{a}\oslash(K\bm{v})$,
+$\bm{v}\leftarrow\bm{b}\oslash(K^\top\bm{u})$.\\
+\emph{Análogo físico}: proyección alternada sobre dos conjuntos de
+restricciones lineales en el espacio de potenciales termodinámicos
+duales. El kernel $K_{ij} = e^{-C_{ij}/\epsilon}$ es la densidad de
+transición del movimiento browniano a temperatura $\epsilon$.
+
+\end{description}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Tabla de siglas}
+\addcontentsline{toc}{section}{Tabla de siglas}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{center}
+\small
+\begin{tabular}{ll p{8cm}}
+\toprule
+\textbf{Sigla} & \textbf{Expansión} & \textbf{Capítulo(s)} \\
+\midrule
+Adam   & Adaptive Moment Estimation          & \ref{ch:cap5}, \ref{ch:cap8} \\
+BN     & Batch Normalization                 & \ref{ch:cap8} \\
+BNN    & Bayesian Neural Network             & \ref{ch:cap7} \\
+CFG    & Classifier-Free Guidance            & \ref{ch:cap12} \\
+CFM    & Conditional Flow Matching           & \ref{ch:cap11}, \ref{ch:cap12} \\
+CNN    & Convolutional Neural Network        & \ref{ch:cap9} \\
+DDIM   & Denoising Diffusion Implicit Model  & \ref{ch:cap12} \\
+DDPM   & Denoising Diffusion Probabilistic Model & \ref{ch:cap11}, \ref{ch:cap12} \\
+DiT    & Diffusion Transformer               & \ref{ch:cap12} \\
+DSM    & Denoising Score Matching            & \ref{ch:cap11} \\
+ELBO   & Evidence Lower Bound                & \ref{ch:cap7}, \ref{ch:cap12} \\
+FM     & Flow Matching                       & \ref{ch:cap11}, \ref{ch:cap12} \\
+GNN    & Graph Neural Network                & \ref{ch:cap9} \\
+GIN    & Graph Isomorphism Network           & \ref{ch:cap9} \\
+IAN-R1 & Instituto de Asuntos Nucleares, Reactor 1 & Estrellas Polares \\
+KL     & Kullback-Leibler (divergencia)      & \ref{ch:cap7}, \ref{ch:cap11} \\
+LDM    & Latent Diffusion Model              & \ref{ch:cap12} \\
+LN     & Layer Normalization                 & \ref{ch:cap8} \\
+MC     & Monte Carlo                         & \ref{ch:cap7} \\
+MHA    & Multi-Head Attention                & \ref{ch:cap9} \\
+MLP    & Multilayer Perceptron               & \ref{ch:cap4} \\
+MPNN   & Message Passing Neural Network      & \ref{ch:cap9} \\
+MSE    & Mean Squared Error                  & \ref{ch:cap2} \\
+NFE    & Number of Function Evaluations      & \ref{ch:cap12} \\
+ODE    & Ordinary Differential Equation      & \ref{ch:cap9}, \ref{ch:cap11} \\
+OT     & Optimal Transport                   & \ref{ch:cap11}, \ref{ch:cap12} \\
+OU     & Ornstein-Uhlenbeck (proceso)        & \ref{ch:cap10}, \ref{ch:cap11} \\
+PCA    & Principal Component Analysis        & \ref{ch:cap2} \\
+ReLU   & Rectified Linear Unit               & \ref{ch:cap4} \\
+ResNet & Residual Network                    & \ref{ch:cap9} \\
+SDE    & Stochastic Differential Equation    & \ref{ch:cap5}, \ref{ch:cap10} \\
+SGD    & Stochastic Gradient Descent         & \ref{ch:cap5} \\
+SNR    & Signal-to-Noise Ratio               & \ref{ch:cap12} \\
+SVD    & Singular Value Decomposition        & \ref{ch:cap2}, \ref{ch:cap8} \\
+VAE    & Variational Autoencoder             & \ref{ch:cap7} \\
+VC     & Vapnik-Chervonenkis (dimensión)     & \ref{ch:cap7} \\
+VE-SDE & Variance Exploding SDE              & \ref{ch:cap12} \\
+VP-SDE & Variance Preserving SDE             & \ref{ch:cap12} \\
+WL     & Weisfeiler-Leman (test)             & \ref{ch:cap9} \\
+\bottomrule
+\end{tabular}
+\end{center}

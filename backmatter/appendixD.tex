@@ -1,0 +1,521 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{Algoritmos de referencia}
+\label{ap:algoritmos}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Este apéndice consolida los algoritmos que los ejercicios computacionales del
+libro requieren implementar. No repite los algoritmos que ya aparecen completos
+en el cuerpo del texto (Algoritmos~\ref{alg:ciclo}, \ref{alg:adj_ode},
+\ref{alg:sinkhorn}, \ref{alg:ddpm}, \ref{alg:rectified_flow}), sino los que se
+mencionan en los ejercicios sin estar escritos explícitamente.
+
+Para cada algoritmo se proporciona: pseudocódigo autocontenido, los parámetros
+con sus valores por defecto recomendados, y una nota sobre las trampas numéricas
+más frecuentes en la implementación.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Optimizadores}
+\label{sec:ap_optimizadores}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Adam}
+\label{subsec:ap_adam}
+
+\textit{Definido en: Capítulo~\ref{ch:cap5} (Definición~\ref{def:adam}).
+Usado en: todos los ejercicios computacionales con entrenamiento de redes.}
+
+\medskip
+Adam combina momento de primer orden (media exponencial del gradiente) y
+segundo orden (media exponencial del cuadrado del gradiente) con corrección
+de sesgo de arranque.
+
+\begin{algorithm}[H]
+\caption{Adam -- paso de actualización}
+\label{alg:ap_adam}
+\KwIn{Gradiente $\bm{g}^{(k)}$; estado $({\bm{m}}^{(k-1)}, {\bm{v}}^{(k-1)}, k)$;
+      parámetros $(\eta, \beta_1, \beta_2, \varepsilon)$}
+\KwOut{Actualización $\Delta\bm{\theta}^{(k)}$; nuevo estado}
+
+$\bm{m}^{(k)} \leftarrow \beta_1\bm{m}^{(k-1)} + (1-\beta_1)\bm{g}^{(k)}$\;
+$\bm{v}^{(k)} \leftarrow \beta_2\bm{v}^{(k-1)} + (1-\beta_2)(\bm{g}^{(k)})^2$\;
+$\hat{\bm{m}} \leftarrow \bm{m}^{(k)}/(1-\beta_1^k)$\tcp*{corrección de sesgo}
+$\hat{\bm{v}} \leftarrow \bm{v}^{(k)}/(1-\beta_2^k)$\tcp*{corrección de sesgo}
+$\Delta\bm{\theta}^{(k)} \leftarrow -\eta\,\hat{\bm{m}}/(\sqrt{\hat{\bm{v}}}+\varepsilon)$\;
+\Return $\Delta\bm{\theta}^{(k)}$, $(\bm{m}^{(k)}, \bm{v}^{(k)}, k+1)$\;
+\end{algorithm}
+
+\medskip
+\noindent\textbf{Parámetros por defecto:}
+$\beta_1 = 0.9$, $\beta_2 = 0.999$, $\varepsilon = 10^{-8}$.
+La tasa $\eta$ es el único hiperparámetro que requiere búsqueda; el rango
+típico es $[10^{-4}, 10^{-2}]$.
+
+\medskip
+\noindent\textbf{Trampas numéricas:}
+\begin{itemize}
+  \item Inicializar el estado con $\bm{m}^{(0)} = \bm{v}^{(0)} = \bm{0}$ y
+        $k = 1$ antes del primer paso. Olvidar la inicialización produce un
+        estado indefinido.
+  \item El denominador $\sqrt{\hat{\bm{v}}} + \varepsilon$ puede volverse
+        numéricamente cero si $\varepsilon$ es demasiado pequeño para la
+        precisión usada. En \texttt{float32}, usar $\varepsilon \geq 10^{-7}$.
+  \item El error más frecuente: llamar al paso de Adam sin incrementar $k$.
+        Sin la corrección de sesgo correcta, las primeras iteraciones producen
+        pasos exageradamente grandes.
+\end{itemize}
+
+\subsection{Scheduler coseno con warmup lineal}
+\label{subsec:ap_scheduler}
+
+\textit{Usado en: Capítulos~\ref{ch:cap8} (entrenamiento de MLPs en HEP),
+\ref{ch:cap12} (entrenamiento de score networks).}
+
+\medskip
+El scheduler coseno decrece $\eta$ suavemente desde $\eta_{\max}$ hasta
+$\eta_{\min}$ con una fase inicial de warmup lineal:
+
+\begin{algorithm}[H]
+\caption{Scheduler coseno con warmup lineal}
+\label{alg:ap_scheduler}
+\KwIn{Paso actual $k$; total de pasos $K$; fracción de warmup $w\in(0,1)$;
+      $\eta_{\min}$, $\eta_{\max}$}
+\KwOut{Tasa de aprendizaje $\eta^{(k)}$}
+
+$k_w \leftarrow \lfloor wK \rfloor$\tcp*{pasos de warmup}
+\eIf{$k \leq k_w$}{
+  $\eta^{(k)} \leftarrow \eta_{\max}\cdot k/k_w$\tcp*{rampa lineal}
+}{
+  $t \leftarrow (k - k_w)/(K - k_w)$\;
+  $\eta^{(k)} \leftarrow \eta_{\min} +
+  \frac{1}{2}(\eta_{\max}-\eta_{\min})(1 + \cos(\pi t))$\tcp*{coseno}
+}
+\Return $\eta^{(k)}$\;
+\end{algorithm}
+
+\noindent\textbf{Parámetros típicos:} $w = 0.05$--$0.10$, $\eta_{\min} =
+\eta_{\max}/100$.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Integración numérica de SDEs}
+\label{sec:ap_sdes}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulos~\ref{ch:cap10} (simulación del proceso OU,
+estimación de parámetros), \ref{ch:cap11} (reverse SDE de Anderson),
+\ref{ch:cap12} (muestreo de DDPM/DDIM).}
+
+\subsection{Euler-Maruyama}
+\label{subsec:ap_euler_maruyama}
+
+El método de Euler-Maruyama es la discretización más simple de la SDE
+$dX_t = \mu(X_t,t)\,dt + \sigma(X_t,t)\,dW_t$:
+
+\begin{algorithm}[H]
+\caption{Euler-Maruyama para una SDE escalar o vectorial}
+\label{alg:ap_em}
+\KwIn{Condición inicial $X_0$; coeficientes $\mu(\cdot,\cdot)$,
+      $\sigma(\cdot,\cdot)$; intervalo $[0,T]$; paso $\Delta t$}
+\KwOut{Trayectoria $\{X_{k\Delta t}\}_{k=0}^{T/\Delta t}$}
+
+$X \leftarrow X_0$\;
+\For{$k = 0, 1, \ldots, T/\Delta t - 1$}{
+  $t \leftarrow k\Delta t$\;
+  $\xi \leftarrow \mathcal{N}(\bm{0}, \bm{I})$\tcp*{ruido estándar}
+  $X \leftarrow X + \mu(X,t)\,\Delta t + \sigma(X,t)\sqrt{\Delta t}\,\xi$\;
+}
+\Return trayectoria\;
+\end{algorithm}
+
+\noindent\textbf{Orden de convergencia:} fuerte $1/2$, débil $1$.
+Esto significa: el error en la trayectoria individual (norma $L^2$ de la
+diferencia) decrece como $O(\sqrt{\Delta t})$; el error en las estadísticas
+(esperanza, varianza) decrece como $O(\Delta t)$.
+
+\medskip
+\noindent\textbf{Trampas numéricas:}
+\begin{itemize}
+  \item El incremento estocástico es $\sigma(X,t)\sqrt{\Delta t}\,\xi$ con
+        $\xi\sim\mathcal{N}(0,1)$, \textbf{no} $\sigma(X,t)\Delta W$ con
+        $\Delta W\sim\mathcal{N}(0,\Delta t)$: son equivalentes pero la primera
+        forma es numericamente más estable al evitar muestrear con varianza
+        pequeña.
+  \item Para el proceso OU ($\mu(X) = -\alpha X$), la condición de estabilidad
+        requiere $\Delta t < 2/\alpha$. Para $\alpha = 1$: $\Delta t < 2$. En
+        la práctica usar $\Delta t \leq 0.1/\alpha$.
+  \item En la vectorial, $\xi\in\mathbb{R}^d$ debe tener componentes
+        \textbf{independientes}. Usar \texttt{np.random.randn(d)} y no
+        \texttt{np.random.multivariate\_normal} (más lento sin ganancia).
+\end{itemize}
+
+\subsection{Milstein}
+\label{subsec:ap_milstein}
+
+Milstein añade una corrección de orden 2 en el incremento estocástico que
+mejora el orden fuerte a 1:
+
+\begin{algorithm}[H]
+\caption{Método de Milstein (caso escalar)}
+\label{alg:ap_milstein}
+\KwIn{Igual que Euler-Maruyama}
+\KwOut{Trayectoria con orden fuerte 1}
+
+$X \leftarrow X_0$\;
+\For{$k = 0, 1, \ldots$}{
+  $t \leftarrow k\Delta t$\;
+  $\xi \leftarrow \mathcal{N}(0,1)$\;
+  $X \leftarrow X + \mu(X,t)\,\Delta t + \sigma(X,t)\sqrt{\Delta t}\,\xi$
+  $\quad+ \tfrac{1}{2}\sigma(X,t)\partial_x\sigma(X,t)\,(\xi^2-1)\Delta t$\;
+}
+\end{algorithm}
+
+\noindent\textbf{Cuándo usarlo:} cuando se necesita precisión en trayectorias
+individuales (e.g., estimación de funcionales de la trayectoria) y el costo
+de calcular $\partial_x\sigma$ es manejable. Para los ejercicios de los
+Capítulos~\ref{ch:cap10}--\ref{ch:cap11}, Euler-Maruyama con $\Delta t$
+suficientemente pequeño es adecuado.
+
+\noindent\textbf{Nota:} para $\sigma$ constante (proceso OU, browniano puro),
+$\partial_x\sigma = 0$ y Milstein = Euler-Maruyama. La corrección solo actúa
+cuando $\sigma$ depende del estado.
+
+\subsection{Reverse SDE de Anderson: discretización de Euler}
+\label{subsec:ap_reverse_sde}
+
+\textit{Usado en: Capítulo~\ref{ch:cap11} (Ejercicio computacional 1),
+Capítulo~\ref{ch:cap12} (muestreo con score network).}
+
+\medskip
+El reverse SDE~\eqref{eq:score_sde_reverse} con score $\bm{s}_\theta(\bm{x},t)$
+aprendido se discretiza hacia atrás en tiempo:
+
+\begin{algorithm}[H]
+\caption{Muestreo con reverse SDE (discretización de Euler)}
+\label{alg:ap_reverse_sde}
+\KwIn{Score network $\bm{s}_\theta$; forward drift $\bm{f}$ y difusión $g$;
+      número de pasos $N$; horizonte $T$}
+\KwOut{Muestra aproximada de $p_0$}
+
+$\bm{x} \leftarrow \mathcal{N}(\bm{0}, \bm{I})$\tcp*{muestra del prior}
+$\Delta t \leftarrow T/N$\;
+\For{$k = N, N-1, \ldots, 1$}{
+  $t \leftarrow k\Delta t$\;
+  $\bm{d} \leftarrow [-\bm{f}(\bm{x},t) + g(t)^2\,\bm{s}_\theta(\bm{x},t)]
+  \cdot\Delta t + g(t)\sqrt{\Delta t}\,\mathcal{N}(\bm{0},\bm{I})$\;
+  $\bm{x} \leftarrow \bm{x} + \bm{d}$\;
+}
+\Return $\bm{x}$\;
+\end{algorithm}
+
+\noindent\textbf{Nota sobre el signo:} el tiempo corre hacia atrás ($k=N,\ldots,1$)
+y el drift del reverse SDE tiene el signo opuesto al del forward más el término
+de score. El error más frecuente es confundir el signo del drift o el orden de
+los pasos.
+
+\noindent\textbf{Para el proceso OU} ($\bm{f}(\bm{x}) = -\bm{x}$, $g = \sqrt{2}$):
+el drift del reverse es $\bm{x} + 2\bm{s}_\theta(\bm{x},t)$.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Noise schedules para DDPM}
+\label{sec:ap_schedules}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap12} (Ejercicios computacionales 1 y 2).}
+
+\medskip
+Los schedules determinan $\{\beta_t\}_{t=1}^T$ y por tanto
+$\bar{\alpha}_t = \prod_{s=1}^t(1-\beta_s)$.
+
+\begin{algorithm}[H]
+\caption{Noise schedules lineales y coseno}
+\label{alg:ap_schedule}
+\KwIn{$T$ (número de pasos); tipo: \texttt{lineal} o \texttt{coseno};
+      $\beta_{\min}=10^{-4}$, $\beta_{\max}=0.02$, $s=0.008$}
+\KwOut{Arrays $\{\beta_t\}$, $\{\alpha_t\}$, $\{\bar\alpha_t\}$,
+       $\{\sqrt{\bar\alpha_t}\}$, $\{\sqrt{1-\bar\alpha_t}\}$}
+
+\If{\texttt{tipo == 'lineal'}}{
+  $\beta_t \leftarrow \beta_{\min} + (t-1)/(T-1)\cdot(\beta_{\max}-\beta_{\min})$
+  para $t=1,\ldots,T$\;
+}
+\If{\texttt{tipo == 'coseno'}}{
+  $f(t) \leftarrow \cos^2\!\left(\frac{t/T + s}{1+s}\cdot\frac{\pi}{2}\right)$\;
+  $\bar\alpha_t \leftarrow f(t)/f(0)$ para $t=0,1,\ldots,T$\;
+  $\beta_t \leftarrow 1 - \bar\alpha_t/\bar\alpha_{t-1}$,
+  clippeado a $[0,\, 0.999]$\;
+}
+$\alpha_t \leftarrow 1 - \beta_t$;
+$\bar\alpha_t \leftarrow \prod_{s=1}^t\alpha_s$\tcp*{producto acumulado}
+\Return arrays derivados\;
+\end{algorithm}
+
+\noindent\textbf{Nota importante:} calcular $\bar\alpha_t$ como producto
+acumulado directo en \texttt{float32} produce underflow numérico para
+$T\gtrsim 200$ con el schedule lineal. Usar en su lugar:
+$\log\bar\alpha_t = \sum_{s=1}^t\log\alpha_s$, y exponenciar solo cuando
+sea necesario.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Métricas de evaluación}
+\label{sec:ap_metricas}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: múltiples ejercicios computacionales para comparar
+distribuciones empíricas.}
+
+\subsection{Distancia de Wasserstein $W_1$ empírica (1D)}
+\label{subsec:ap_wasserstein}
+
+Para muestras 1D $\{x_i\}_{i=1}^N$ de $p$ y $\{y_j\}_{j=1}^M$ de $q$,
+la distancia $W_1$ se calcula eficientemente por la fórmula de los cuantiles:
+
+\begin{algorithm}[H]
+\caption{$W_1$ empírica en 1D}
+\label{alg:ap_w1}
+\KwIn{Muestras $\{x_i\}$ de $p$, $\{y_j\}$ de $q$}
+\KwOut{$\hat{W}_1(p,q)$}
+
+Ordenar: $x_{(1)}\leq\cdots\leq x_{(N)}$,
+$y_{(1)}\leq\cdots\leq y_{(M)}$\;
+Interpolar a grilla común $z_1\leq\cdots\leq z_K$ con $K=\max(N,M)$\;
+$F_p(z_k) \leftarrow$ CDF empírica de $\{x_i\}$ en $z_k$\;
+$F_q(z_k) \leftarrow$ CDF empírica de $\{y_j\}$ en $z_k$\;
+$\hat{W}_1 \leftarrow \sum_{k=1}^{K-1}|F_p(z_k)-F_q(z_k)|\cdot(z_{k+1}-z_k)$\;
+\Return $\hat{W}_1$\;
+\end{algorithm}
+
+\noindent\textbf{Alternativa directa:} en \texttt{scipy},
+\texttt{scipy.stats.wasserstein\_distance(x, y)} implementa esto exactamente.
+
+\subsection{KL empírica por estimación con histograma}
+\label{subsec:ap_kl_empirica}
+
+Para estimar $D_{\mathrm{KL}}(p\|q)$ a partir de muestras:
+
+\begin{algorithm}[H]
+\caption{KL empírica (histograma)}
+\label{alg:ap_kl_emp}
+\KwIn{Muestras $\{x_i\}$ de $p$, $\{y_j\}$ de $q$; número de bins $B$}
+\KwOut{$\hat{D}_{\mathrm{KL}}(p\|q)$}
+
+Calcular rango común $[a,b]$ que contenga todas las muestras\;
+Construir histogramas normalizados $\hat{p}_k$, $\hat{q}_k$ sobre $B$ bins en $[a,b]$\;
+Sumar $1/N$ (suavizado de Laplace) para evitar bins vacíos: $\hat{p}_k \leftarrow
+(\hat{p}_k N + 1)/(N + B)$, ídem para $\hat{q}_k$\;
+$\hat{D}_{\mathrm{KL}} \leftarrow \sum_{k=1}^B \hat{p}_k\log(\hat{p}_k/\hat{q}_k)$\;
+\Return $\hat{D}_{\mathrm{KL}}$\;
+\end{algorithm}
+
+\noindent\textbf{Trampas:}
+\begin{itemize}
+  \item Sin suavizado, bins con $\hat{q}_k = 0$ producen $\log(0)$ indefinido.
+  \item El suavizado de Laplace introduce sesgo que decrece con $N$: para
+        $N < 100$ el estimador tiene varianza alta; usar $B \leq \sqrt{N}$ bins.
+  \item Para comparaciones entre distribuciones conocidas (gaussiana, OU
+        estacionario), calcular la KL analíticamente cuando sea posible en
+        lugar de estimarla.
+\end{itemize}
+
+\subsection{Estimación de densidad por KDE}
+\label{subsec:ap_kde}
+
+Para visualizar la distribución de muestras en los ejercicios de difusión:
+
+\[
+  \hat{p}(x) = \frac{1}{Nh}\sum_{i=1}^N K\!\left(\frac{x-x_i}{h}\right),
+\]
+con kernel gaussiano $K(u) = e^{-u^2/2}/\sqrt{2\pi}$ y ancho de banda óptimo
+de Silverman: $h = 1.06\,\hat\sigma\,N^{-1/5}$, donde $\hat\sigma$ es la
+desviación estándar de la muestra.
+
+\noindent En \texttt{scipy}: \texttt{scipy.stats.gaussian\_kde(samples)}.
+El ancho de banda puede ajustarse con \texttt{bw\_method='silverman'} o
+especificando un escalar.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Denoising score matching: bucle de entrenamiento}
+\label{sec:ap_dsm}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap11} (Ejercicio computacional 2),
+Capítulo~\ref{ch:cap12} (Ejercicios computacionales 1 y 2).}
+
+\medskip
+El bucle de entrenamiento del score network no está escrito de forma compacta
+en el cuerpo del texto. Se presenta aquí para los ejercicios que requieren
+entrenarlo desde cero.
+
+\begin{algorithm}[H]
+\caption{Entrenamiento por denoising score matching (DDPM)}
+\label{alg:ap_dsm}
+\KwIn{Dataset $\{\bm{x}_0^{(i)}\}$; score network $\bm{\varepsilon}_\theta$;
+      schedule $\{\bar\alpha_t\}_{t=1}^T$; optimizador Adam; iteraciones $K$}
+\KwOut{Parámetros $\theta$ entrenados}
+
+Inicializar $\theta$, estado de Adam\;
+\For{$k = 1, \ldots, K$}{
+  $\bm{x}_0 \leftarrow$ muestra aleatoria del dataset\;
+  $t \leftarrow \mathcal{U}\{1,\ldots,T\}$\tcp*{nivel de ruido aleatorio}
+  $\bm{\varepsilon} \leftarrow \mathcal{N}(\bm{0},\bm{I})$\;
+  $\bm{x}_t \leftarrow \sqrt{\bar\alpha_t}\,\bm{x}_0 +
+  \sqrt{1-\bar\alpha_t}\,\bm{\varepsilon}$\tcp*{forward de un paso}
+  $\hat{\bm{\varepsilon}} \leftarrow \bm{\varepsilon}_\theta(\bm{x}_t, t)$\;
+  $\mathcal{L} \leftarrow \|\hat{\bm{\varepsilon}} - \bm{\varepsilon}\|^2$\;
+  Paso de Adam sobre $\nabla_\theta\mathcal{L}$\;
+}
+\end{algorithm}
+
+\noindent\textbf{El tiempo $t$ como entrada a la red.} La red necesita saber
+en qué nivel de ruido opera. La forma estándar es inyectar un \textbf{embedding
+sinusoidal} del tiempo:
+\[
+  \bm{e}(t) = \left[\sin\!\left(\frac{t}{10^{4k/d}}\right),
+  \cos\!\left(\frac{t}{10^{4k/d}}\right)\right]_{k=0}^{d/2-1}\in\mathbb{R}^d,
+\]
+que luego se proyecta con una capa densa y se suma a los mapas de características
+de la red. Para los ejercicios 1D, concatenar simplemente el escalar $t/T$
+normalizado a la entrada es suficiente.
+
+\medskip
+\noindent\textbf{Trampas:}
+\begin{itemize}
+  \item Muestrear $t$ \textbf{uniformemente} sobre $\{1,\ldots,T\}$, no usar
+        un valor fijo ni un orden secuencial. El entrenamiento necesita ver todos
+        los niveles de ruido por igual.
+  \item La pérdida no está ponderada (pesos $\lambda_t = 1$): esto es una
+        simplificación válida que empíricamente mejora la calidad perceptual
+        pero es una desviación del ELBO exacto del Teorema~\ref{thm:ddpm_elbo}.
+  \item Para datos 1D, el score network puede ser tan simple como un MLP de 3
+        capas con 128 neuronas. No es necesario un U-Net hasta que la dimensión
+        supere $\sim 100$.
+\end{itemize}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Tabla de correspondencia: función $\to$ librería}
+\label{sec:ap_librerias}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Referencia rápida para los ejercicios computacionales. Los tres
+frameworks son equivalentes para los propósitos del libro; la elección es
+personal. NumPy/SciPy es el punto de partida natural para físicos; JAX
+comparte la API de NumPy y añade diferenciación automática; PyTorch es el
+estándar en investigación de ML.}
+
+\medskip
+Las listas se organizan por framework. Cada entrada tiene el formato
+\emph{operación}: \texttt{llamada}.
+
+\subsubsection*{NumPy / SciPy}
+\begin{itemize}[leftmargin=*, nosep]
+  \item Pseudoinversa $\bm{A}^\dagger$:
+        \texttt{np.linalg.pinv(A)}
+  \item SVD $\bm{A}=\bm{U}\bm{\Sigma}\bm{V}^\top$:
+        \texttt{np.linalg.svd(A)}
+  \item Norma espectral $\|\bm{A}\|_2$:
+        \texttt{np.linalg.norm(A, 2)}
+  \item Norma de Frobenius $\|\bm{A}\|_F$:
+        \texttt{np.linalg.norm(A, 'fro')}
+  \item Mínimos cuadrados $\min\|\bm{A}\bm{x}-\bm{b}\|$:
+        \texttt{np.linalg.lstsq(A, b)}
+  \item Producto acumulado $\bar\alpha_t = \prod_s\alpha_s$:
+        \texttt{np.cumprod(alpha)}
+  \item Ruido $\bm{\varepsilon}\sim\mathcal{N}(\bm{0},\bm{I})$:
+        \texttt{np.random.randn(d)}
+  \item Distancia $W_1$ en 1D:
+        \texttt{scipy.stats.wasserstein\_distance(x, y)}
+  \item KDE gaussiana:
+        \texttt{scipy.stats.gaussian\_kde(samples)}
+  \item Gradiente por diferencias finitas:
+        \texttt{scipy.optimize.approx\_fprime(x, f, eps)}
+\end{itemize}
+
+\subsubsection*{PyTorch}
+\begin{itemize}[leftmargin=*, nosep]
+  \item Pseudoinversa:
+        \texttt{torch.linalg.pinv(A)}
+  \item SVD:
+        \texttt{torch.linalg.svd(A)}
+  \item Norma espectral:
+        \texttt{torch.linalg.matrix\_norm(A, 2)}
+  \item Norma de Frobenius:
+        \texttt{torch.linalg.matrix\_norm(A, 'fro')}
+  \item Mínimos cuadrados:
+        \texttt{torch.linalg.lstsq(A, b)}
+  \item Producto acumulado:
+        \texttt{torch.cumprod(alpha, dim=0)}
+  \item Ruido gaussiano:
+        \texttt{torch.randn(d)}
+  \item Backward pass (gradiente de la pérdida):
+        \texttt{loss.backward()}
+  \item Gradiente explícito:
+        \texttt{torch.autograd.grad(loss, params)}
+  \item Jacobiano:
+        \texttt{torch.autograd.functional.jacobian(f, x)}
+  \item Hessiano:
+        \texttt{torch.autograd.functional.hessian(f, x)}
+\end{itemize}
+
+\subsubsection*{JAX}
+\begin{itemize}[leftmargin=*, nosep]
+  \item Pseudoinversa:
+        \texttt{jnp.linalg.pinv(A)}
+  \item SVD:
+        \texttt{jnp.linalg.svd(A)}
+  \item Norma espectral:
+        \texttt{jnp.linalg.norm(A, 2)}
+  \item Norma de Frobenius:
+        \texttt{jnp.linalg.norm(A, 'fro')}
+  \item Mínimos cuadrados:
+        \texttt{jnp.linalg.lstsq(A, b)}
+  \item Producto acumulado:
+        \texttt{jnp.cumprod(alpha)}
+  \item Ruido gaussiano \emph{(requiere clave explícita)}:
+        \texttt{jax.random.normal(key, (d,))}
+  \item Gradiente $\nabla_\theta\mathcal{L}$:
+        \texttt{jax.grad(loss)(theta)}
+  \item Jacobiano:
+        \texttt{jax.jacobian(f)(x)}
+  \item Hessiano:
+        \texttt{jax.hessian(f)(x)}
+  \item JVP (modo forward):
+        \texttt{jax.jvp(f, (x,), (v,))}
+  \item VJP (modo reverse):
+        \texttt{jax.vjp(f, x)}
+\end{itemize}
+
+\medskip
+\noindent\textbf{Nota sobre la aleatoriedad en JAX.} A diferencia de NumPy y
+PyTorch, JAX no tiene estado aleatorio global. Cada llamada aleatoria requiere
+una clave explícita: \texttt{key = jax.random.PRNGKey(0)}. Para generar
+múltiples muestras independientes en un bucle, dividir la clave en cada paso:
+\texttt{key, subkey = jax.random.split(key)}.
+
+\medskip
+\noindent\textbf{Cuándo usar cada uno.}
+Para los ejercicios de SDEs (Caps.~\ref{ch:cap10}--\ref{ch:cap11}),
+NumPy es suficiente. Para entrenamiento de redes (Caps.~\ref{ch:cap8},
+\ref{ch:cap12}), los tres son equivalentes; PyTorch tiene la ventaja de que
+el código de los papers citados (DDPM, score SDE, flow matching) está
+publicado en ese framework. JAX es superior para diferenciación de segundo
+orden (hessianos, JVPs): su API es más directa y su sistema de
+compilación JIT hace los bucles de simulación más rápidos.
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+Los métodos numéricos para SDEs se presentan en detalle en Kloeden y Platen
+(1992)~\cite{kloeden1992numerical}: la referencia estándar del campo. El orden
+de convergencia fuerte y débil de Euler-Maruyama y Milstein está demostrado en
+los Capítulos 9 y 14 de esa referencia. Para una presentación más accesible
+orientada a simulaciones estocásticas en física y biología, Higham
+(2001)~\cite{higham2001algorithmic} es un tutorial conciso.
+
+El ancho de banda óptimo de Silverman para KDE está demostrado en Silverman
+(1986)~\cite{silverman1986density}. La distancia de Wasserstein $W_1$ y su
+cálculo por cuantiles en 1D están en Villani (2009)~\cite{villani2009optimal},
+Capítulo 2. El estimador de KL por histograma con suavizado de Laplace y sus
+propiedades de convergencia se discuten en Poczos y Schneider (2011).
+
+El embedding sinusoidal para el tiempo en los modelos de difusión fue introducido
+por Vaswani et al.\ (2017)~\cite{vaswani2017attention} para codificación
+posicional y adoptado por Ho et al.\ (2020)~\cite{ho2020denoising} para el
+condicionamiento temporal en DDPM.
+\end{notasbib}

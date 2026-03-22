@@ -1,0 +1,451 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{Teoría de la Información y Mecánica Estadística}
+\label{ap:info_mecanica}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Este apéndice es el argumento central del libro expuesto en una sola pieza.
+La tesis —que el aprendizaje automático moderno es física estadística en
+dimensiones altas— descansa sobre un conjunto de identidades matemáticas
+precisas, no sobre una analogía. El objetivo aquí es presentar esas identidades
+de forma autocontenida, de modo que el lector pueda leer este apéndice
+independientemente del resto del texto y entender por qué la tesis es verdadera.
+
+Cada sección indica los capítulos del libro donde el resultado aparece en uso.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La identidad entre entropía física y entropía de la información}
+\label{sec:ap_entropia}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap7} (entropía como medida de incertidumbre),
+Capítulo~\ref{ch:cap11} (H-teorema), Capítulo~\ref{ch:cap12} (ELBO como
+energía libre).}
+
+\medskip
+Hay dos entropías en la ciencia moderna. La primera es la de Boltzmann (1877):
+\begin{equation}
+  S = k_B\log\Omega,
+  \label{eq:ap_boltzmann}
+\end{equation}
+donde $\Omega$ es el número de microestados compatibles con un macroestado dado.
+La segunda es la de Shannon (1948): para una distribución discreta
+$\{p_i\}_{i=1}^n$,
+\begin{equation}
+  H = -\sum_{i=1}^n p_i\log p_i.
+  \label{eq:ap_shannon}
+\end{equation}
+Son la misma función.
+
+Para verlo, sea un sistema con $\Omega$ microestados equiprobables. Cada uno
+tiene probabilidad $p_i = 1/\Omega$. La entropía de Shannon es:
+\[
+  H = -\sum_{i=1}^\Omega \frac{1}{\Omega}\log\frac{1}{\Omega} = \log\Omega.
+\]
+Salvo el factor $k_B$ (que es una elección de unidades, no un contenido físico),
+$H = S/k_B$. La entropía de Boltzmann es el caso especial de la entropía de
+Shannon cuando todos los microestados son equiprobables. La generalización de
+Shannon a distribuciones arbitrarias permite hablar de entropía para sistemas
+fuera del equilibrio, con distribuciones no uniformes.
+
+Para densidades continuas $p(\bm{x})$ sobre $\mathbb{R}^d$, la
+\textbf{entropía diferencial} es:
+\begin{equation}
+  H[p] = -\int p(\bm{x})\log p(\bm{x})\,d\bm{x} = -\mathbb{E}_p[\log p].
+  \label{eq:ap_entropia_cont}
+\end{equation}
+
+\begin{proposicion}{Entropía máxima bajo restricciones de momento}
+\label{prop:ap_maxent}
+La distribución de máxima entropía sobre $\mathbb{R}^d$ sujeta a
+$\mathbb{E}[\bm{x}] = \bm{\mu}$ y $\mathbb{E}[\bm{x}\bm{x}^\top] = \bm{\Sigma}
++ \bm{\mu}\bm{\mu}^\top$ (media y covarianza fijas) es la gaussiana
+$\mathcal{N}(\bm{\mu},\bm{\Sigma})$.
+\end{proposicion}
+
+\begin{proof}
+Por multiplicadores de Lagrange: maximizar $H[p] = -\int p\log p$ sujeto a
+$\int p = 1$, $\int p\,x_i = \mu_i$ y $\int p\,x_ix_j = \Sigma_{ij}+\mu_i\mu_j$.
+La condición de optimalidad $\delta H/\delta p = 0$ da
+$\log p(\bm{x}) = -1 + \lambda_0 + \bm{\lambda}_1^\top\bm{x} +
+\bm{x}^\top\bm{\Lambda}_2\bm{x}$, que es cuadrático en $\bm{x}$: precisamente
+una gaussiana. Los multiplicadores $\lambda_0, \bm{\lambda}_1, \bm{\Lambda}_2$
+se determinan imponiendo las restricciones de momento. $\square$
+\end{proof}
+
+Esta proposición explica por qué la gaussiana aparece en tantos contextos: no
+es un supuesto arbitrario sino la distribución de máxima incertidumbre dado
+el conocimiento de media y varianza. Es la distribución más honesta posible
+cuando solo se conocen esos momentos.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El principio de máxima entropía de Jaynes}
+\label{sec:ap_jaynes}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap7} (distribución de Gibbs como máxima
+entropía, temperatura como multiplicador de Lagrange), Capítulo~\ref{ch:cap12}
+(CFG scale como temperatura inversa).}
+
+\medskip
+Jaynes (1957) reformuló la mecánica estadística como un problema de inferencia:
+dada la información disponible sobre un sistema, la distribución de probabilidad
+que asignarle es aquella que maximiza la entropía sujeta a las restricciones
+que impone la información conocida. El resultado no es un modelo del sistema
+físico sino el estado de conocimiento más honesto compatible con los datos.
+
+\begin{teorema}{Distribución de Gibbs-Boltzmann como máxima entropía}
+\label{thm:ap_jaynes}
+La distribución de máxima entropía sobre $\mathbb{R}^d$ sujeta a
+$\int p(\bm{x})\,d\bm{x} = 1$ y $\mathbb{E}_p[U(\bm{x})] = \langle U\rangle$
+(valor medio de la energía $U$ fijo) es la \textbf{distribución de
+Gibbs-Boltzmann}:
+\begin{equation}
+  p^*(\bm{x}) = \frac{1}{Z(\beta)}\,e^{-\beta U(\bm{x})},
+  \qquad Z(\beta) = \int e^{-\beta U(\bm{x})}\,d\bm{x},
+  \label{eq:ap_gibbs}
+\end{equation}
+donde $\beta$ es el multiplicador de Lagrange asociado a la restricción de
+energía media, y $Z(\beta)$ es la \textbf{función de partición}.
+\end{teorema}
+
+\begin{proof}
+Funcional de Lagrange con multiplicadores $\alpha$ (normalización) y $\beta$
+(energía media):
+\[
+  \frac{\delta}{\delta p}\left[-\int p\log p - \alpha\!\int p - \beta\!\int pU\right]
+  = -\log p - 1 - \alpha - \beta U = 0.
+\]
+Luego $p^*(\bm{x}) = e^{-1-\alpha}e^{-\beta U(\bm{x})} =: Z^{-1}e^{-\beta U(\bm{x})}$,
+donde $Z = e^{1+\alpha}$ se determina por la normalización. $\square$
+\end{proof}
+
+El multiplicador de Lagrange $\beta$ tiene interpretación física directa. De la
+termodinámica: $\beta = 1/(k_BT)$, donde $T$ es la temperatura. Cuanto mayor es
+$T$ (menor $\beta$), más difusa es la distribución; cuanto menor es $T$ (mayor
+$\beta$), más concentrada en los mínimos de $U$.
+
+\medskip\noindent\textbf{La función de partición como objeto central.}
+Todo se deriva de $Z(\beta)$:
+\begin{align}
+  \text{Energía libre de Helmholtz:}&\quad
+    F(\beta) = -\frac{1}{\beta}\log Z(\beta). \label{eq:ap_helmholtz}\\
+  \text{Energía media:}&\quad
+    \langle U\rangle = -\frac{\partial\log Z}{\partial\beta}. \label{eq:ap_U}\\
+  \text{Entropía:}&\quad
+    S = k_B(\log Z + \beta\langle U\rangle) = k_B\beta^2\frac{\partial F}{\partial\beta}.
+    \label{eq:ap_S}
+\end{align}
+La relación fundamental $F = \langle U\rangle - TS$ (en unidades donde $k_B=1$)
+conecta la energía libre con la energía y la entropía. En el
+Capítulo~\ref{ch:cap12}, el ELBO de DDPM es precisamente $-F$: maximizar el
+ELBO equivale a minimizar la energía libre variacional.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Energía libre variacional y el ELBO}
+\label{sec:ap_elbo_helmholtz}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap7} (VAE como minimización de energía libre),
+Capítulo~\ref{ch:cap12} (DDPM como energía libre variacional).}
+
+\medskip
+La función de partición $Z = \int e^{-\beta U(\bm{x})}\,d\bm{x}$ no es computable
+directamente cuando $U$ es compleja (alta dimensión, múltiples mínimos). La
+aproximación variacional de la energía libre introduce una distribución
+$q(\bm{x})$ tratable y acota $F$ por abajo.
+
+\begin{proposicion}{Energía libre variacional}
+\label{prop:ap_flv}
+Para cualquier distribución $q(\bm{x})$ con soporte en el soporte de $p^*$:
+\begin{equation}
+  F = -\frac{1}{\beta}\log Z
+  \leq \mathbb{E}_q[U(\bm{x})] - \frac{1}{\beta}H[q]
+  =: F_q,
+  \label{eq:ap_flv}
+\end{equation}
+con igualdad si y solo si $q = p^*$.
+\end{proposicion}
+
+\begin{proof}
+$F_q - F = \mathbb{E}_q[U] + \frac{1}{\beta}\mathbb{E}_q[\log q] + \frac{1}{\beta}
+\log Z = \frac{1}{\beta}\mathbb{E}_q[\log q + \beta U + \log Z]
+= \frac{1}{\beta}\mathbb{E}_q[\log(q/p^*)] = \frac{1}{\beta}D_{\mathrm{KL}}(q\|p^*)
+\geq 0$.
+La igualdad requiere $q = p^*$. $\square$
+\end{proof}
+
+La energía libre variacional $F_q = \langle U\rangle_q - T H[q]$ tiene dos
+términos que compiten: el primer término minimiza la energía (favorece regiones
+de bajo $U$) y el segundo maximiza la entropía (favorece distribuciones difusas).
+El balance entre ellos depende de la temperatura $T = 1/\beta$.
+
+\medskip\noindent\textbf{Traducción al ELBO del Capítulo~\ref{ch:cap7}.}
+Identificando $U(\bm{z}) = -\log p_\theta(\bm{x}|\bm{z}) - \log p(\bm{z})$
+(la energía negativa del modelo generativo) y $q = q_\phi(\bm{z}|\bm{x})$
+(el encoder del VAE), con $\beta = 1$:
+\begin{align*}
+  F_q &= \mathbb{E}_{q_\phi}[-\log p_\theta(\bm{x}|\bm{z}) - \log p(\bm{z})]
+         + \mathbb{E}_{q_\phi}[\log q_\phi(\bm{z}|\bm{x})] \\
+      &= -\mathbb{E}_{q_\phi}[\log p_\theta(\bm{x}|\bm{z})]
+         + D_{\mathrm{KL}}(q_\phi(\bm{z}|\bm{x})\|p(\bm{z})).
+\end{align*}
+Minimizar $F_q$ es equivalente a maximizar el ELBO:
+$\mathrm{ELBO} = -F_q = \mathbb{E}_{q_\phi}[\log p_\theta(\bm{x}|\bm{z})]
+- D_{\mathrm{KL}}(q_\phi\|p)$.
+El primer término es la energía de reconstrucción; el segundo es la entropía
+relativa que regulariza el espacio latente. El VAE minimiza exactamente la
+energía libre de Helmholtz.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La ecuación de Langevin y la distribución de Gibbs del SGD}
+\label{sec:ap_langevin_gibbs}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap5} (SDE del SGD, distribución estacionaria),
+Capítulo~\ref{ch:cap11} (Proposición sobre la distribución de Gibbs,
+decrecimiento de la KL).}
+
+\medskip
+La ecuación de Langevin es la SDE de un sistema físico bajo la acción de una
+fuerza derivada de un potencial $U(\bm{x})$ y ruido térmico:
+\begin{equation}
+  d\bm{x}_t = -\nabla U(\bm{x}_t)\,dt + \sqrt{2k_BT}\,d\bm{W}_t.
+  \label{eq:ap_langevin}
+\end{equation}
+El coeficiente del ruido es $\sqrt{2k_BT}$ por la relación de fluctuación-disipación:
+la misma temperatura que determina la amplitud del ruido determina la distribución
+estacionaria. La distribución de Gibbs~\eqref{eq:ap_gibbs} con $\beta = 1/(k_BT)$
+y potencial $U = \mathcal{L}$ es la distribución estacionaria de esta SDE.
+
+La SDE del SGD del Capítulo~\ref{ch:cap5} es la ecuación de Langevin con:
+\[
+  U(\bm{\theta}) = \mathcal{L}(\bm{\theta}), \qquad k_BT = \frac{\eta c}{2},
+\]
+donde $\mathcal{L}$ es la función de pérdida, $\eta$ la tasa de aprendizaje y
+$c$ la varianza del gradiente estocástico. La distribución estacionaria del SGD
+es la distribución de Gibbs $p^*\propto e^{-2\mathcal{L}/(\eta c)}$: el SGD
+explora el paisaje de pérdida como un sistema físico a temperatura efectiva
+$T_{\mathrm{eff}} = \eta c/2$.
+
+\begin{observacion}{La tabla de correspondencias Langevin--SGD}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Física estadística} & \textbf{Aprendizaje automático} \\
+\midrule
+Potencial $U(\bm{x})$ & Función de pérdida $\mathcal{L}(\bm{\theta})$ \\
+Temperatura $k_BT$ & Temperatura efectiva $\eta c/2$ \\
+Fuerza $-\nabla U$ & Gradiente negativo $-\nabla\mathcal{L}$ \\
+Distribución de Gibbs $e^{-U/(k_BT)}/Z$ & Distribución estacionaria del SGD \\
+Energía libre $F = \langle U\rangle - TS$ & ELBO del modelo variacional \\
+Recocido simulado: $T\to 0$ & Learning rate decay: $\eta\to 0$ \\
+Mínimo de energía global & Parámetros óptimos $\bm{\theta}^*$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El H-teorema de Boltzmann y el decrecimiento de la KL}
+\label{sec:ap_hteorema}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap11} (decrecimiento de $D_{\mathrm{KL}}$
+hacia el equilibrio, tasa de producción de entropía).}
+
+\medskip
+El H-teorema de Boltzmann (1872) afirma que la función $H(t) = \int p_t\log p_t$
+decrece monótonamente hacia su mínimo en el equilibrio. En el lenguaje moderno,
+es el enunciado de que la divergencia KL respecto a la distribución de equilibrio
+decrece a lo largo de la dinámica.
+
+\begin{teorema}{H-teorema cuantitativo}
+\label{thm:ap_h}
+Para la SDE de Langevin~\eqref{eq:ap_langevin} con distribución estacionaria
+$p^*\propto e^{-\beta U}$ y distribución marginal $p_t$ en el tiempo $t$:
+\begin{equation}
+  \frac{d}{dt}D_{\mathrm{KL}}(p_t\|p^*)
+  = -k_BT\,\mathcal{I}(p_t\|p^*),
+  \label{eq:ap_h_cuantitativo}
+\end{equation}
+donde $\mathcal{I}(p_t\|p^*) = \mathbb{E}_{p_t}[\|\nabla\log p_t -
+\nabla\log p^*\|^2]$ es la \textbf{información de Fisher relativa}
+(o disipación de entropía).
+\end{teorema}
+
+\begin{proof}
+Sea $\phi_t = \log(p_t/p^*)$. Por la ecuación de Fokker-Planck
+(Capítulo~\ref{ch:cap11}, ecuación~\eqref{eq:fp}) con $\bm{\mu} = -\nabla U$
+y $\bm{D} = k_BT\bm{I}$:
+\begin{align*}
+  \frac{d}{dt}D_{\mathrm{KL}}(p_t\|p^*)
+  &= \int\partial_t p_t\,\phi_t\,d\bm{x} \\
+  &= \int\phi_t\left[\nabla\cdot(\nabla U\,p_t) + k_BT\Delta p_t\right]\,d\bm{x}.
+\end{align*}
+Integrando por partes dos veces y usando que $p^*\propto e^{-\beta U}$ (luego
+$\nabla\log p^* = -\beta\nabla U = -\nabla U/(k_BT)$):
+\begin{align*}
+  \frac{d}{dt}D_{\mathrm{KL}}
+  &= -\int p_t\,\nabla\phi_t\cdot(\nabla U + k_BT\nabla\phi_t)\,d\bm{x}\\
+  &= -k_BT\int p_t\|\nabla\phi_t\|^2\,d\bm{x}\\
+  &= -k_BT\,\mathbb{E}_{p_t}[\|\nabla\log p_t - \nabla\log p^*\|^2].
+\end{align*}
+Donde usamos $\nabla U = -k_BT\nabla\log p^*$ y que el término cruzado
+$-\int p_t\nabla\phi_t\cdot\nabla U\,d\bm{x} = k_BT\int p_t\nabla\phi_t\cdot
+\nabla\log p^*\,d\bm{x}$ se cancela al completar el cuadrado. $\square$
+\end{proof}
+
+La información de Fisher relativa $\mathcal{I}(p_t\|p^*)$ mide cuánto difieren
+los campos vectoriales $\nabla\log p_t$ y $\nabla\log p^*$: en el equilibrio
+$p_t = p^*$, ambos coinciden y $\mathcal{I} = 0$, consistente con $d(\mathrm{KL})/dt
+= 0$. Fuera del equilibrio, la disipación es positiva y la KL decrece. Este es
+el H-teorema de Boltzmann en forma exacta.
+
+\medskip\noindent\textbf{Conexión con el score del Capítulo~\ref{ch:cap11}.}
+El campo $\nabla\log p_t$ es exactamente el score $\bm{s}_t$ de los modelos de
+difusión. La ecuación~\eqref{eq:ap_h_cuantitativo} dice que cuanto más se aleja
+el score actual del score de equilibrio, más rápido decrece la KL. El reverse
+SDE de Anderson mueve el sistema en la dirección de mayor disipación.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Entropía mutua, información y el cuello de botella de la información}
+\label{sec:ap_info_mutua}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap7} (representaciones internas de las redes
+y el principio del cuello de botella de la información).}
+
+\medskip
+La \textbf{entropía mutua} entre dos variables $X$ e $Y$ mide cuánta información
+comparten:
+\begin{equation}
+  I(X;Y) = D_{\mathrm{KL}}(p(X,Y)\|p(X)p(Y))
+  = H(X) - H(X|Y) = H(Y) - H(Y|X),
+  \label{eq:ap_mutua}
+\end{equation}
+donde $H(X|Y) = -\mathbb{E}_{p(X,Y)}[\log p(X|Y)]$ es la entropía condicional.
+
+La entropía mutua es simétrica: $I(X;Y) = I(Y;X)$. Es cero si y solo si $X$
+e $Y$ son independientes. Su interpretación: $I(X;Y)$ es la reducción promedio
+de incertidumbre sobre $X$ al conocer $Y$.
+
+\subsection*{La cadena de Markov y las desigualdades de procesado de datos}
+
+Si $X \to Y \to Z$ forman una cadena de Markov ($Z$ es condicionalmente
+independiente de $X$ dado $Y$):
+\begin{equation}
+  I(X;Z) \leq I(X;Y), \qquad I(X;Z) \leq I(Y;Z).
+  \label{eq:ap_dpi}
+\end{equation}
+Estas son las \textbf{desigualdades de procesado de datos}: aplicar cualquier
+función a los datos no puede crear información nueva. Cada capa de una red
+neuronal es un procesamiento que solo puede reducir la información sobre la
+entrada.
+
+\subsection*{El principio del cuello de botella de la información}
+
+El principio de Tishby et al.\ (2000) afirma que una representación interna
+$T$ de una red para la tarea de predecir $Y$ a partir de $X$ óptima maximiza
+$I(T;Y)$ sujeta a minimizar $I(T;X)$: comprime la información irrelevante
+sobre $X$ (la que no predice $Y$) mientras preserva la relevante.
+
+El problema variacional correspondiente es:
+\begin{equation}
+  \min_{p(T|X)}\; I(T;X) - \beta\, I(T;Y),
+  \label{eq:ap_ib}
+\end{equation}
+donde $\beta > 0$ controla el balance compresión-preservación. Para $\beta$
+grande, la representación preserva casi toda la información relevante; para
+$\beta$ pequeño, comprime agresivamente. El parámetro $\beta$ es la temperatura
+del Capítulo~\ref{ch:cap5}: el cuello de botella de la información es la
+energía libre variacional del espacio de representaciones.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El dualismo completo: la tabla de correspondencias del libro}
+\label{sec:ap_tabla_completa}
+%───────────────────────────────────────────────────────────────────────────────
+
+El siguiente cuadro condensa las identidades matemáticas que sostienen la tesis
+del libro. No son analogías: son igualdades.
+
+\begin{center}
+\begin{tabular}{p{6.2cm}p{6.2cm}}
+\toprule
+\textbf{Física estadística} & \textbf{Aprendizaje automático} \\
+\midrule
+Entropía de Boltzmann $S = k_B\log\Omega$ &
+Entropía de Shannon $H = -\sum p_i\log p_i$ \\[4pt]
+
+Distribución de Gibbs $p^*\propto e^{-\beta U}$ &
+Distribución estacionaria del SGD $p^*\propto e^{-2\mathcal{L}/(\eta c)}$ \\[4pt]
+
+Temperatura $k_BT$ &
+Temperatura efectiva del SGD $\eta c/2$ \\[4pt]
+
+Energía libre de Helmholtz $F = \langle U\rangle - TS$ &
+ELBO $= -\langle\text{reconstrucción}\rangle + D_\mathrm{KL}$ \\[4pt]
+
+Principio de máx.\ entropía de Jaynes &
+Inferencia bayesiana variacional \\[4pt]
+
+H-teorema: $\dot{H}\leq 0$ en la dinámica de Langevin &
+Decrecimiento de la KL hacia $p^*$ \\[4pt]
+
+Información de Fisher $\mathcal{I}$ como tasa de disipación &
+Gradiente natural = preacondicionamiento por $\bm{I}^{-1}$ \\[4pt]
+
+Función de partición $Z = \int e^{-\beta U}$ &
+Evidencia $p(\bm{x}) = \int p(\bm{x}|\bm{z})p(\bm{z})\,d\bm{z}$ \\[4pt]
+
+Score $\nabla\log p$ como fuerza termodinámica $-\nabla U/(k_BT)$ &
+Score $\nabla\log p_t$ en el reverse SDE de Anderson \\[4pt]
+
+Recocido simulado: $T(t)\to 0$ &
+Learning rate schedule: $\eta(t)\to 0$ \\[4pt]
+
+Temperatura inversa $\beta = 1/(k_BT)$ &
+Guidance scale $s$ en CFG \\[4pt]
+
+Puente de Schrödinger: proceso de mínima KL con marginales fijas &
+Proceso reverso de Anderson como OT óptimo \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+Cada fila de esta tabla es una identidad matemática demostrada en el texto o
+en este apéndice, no una metáfora. La diferencia entre la columna izquierda y
+la derecha es el dominio de aplicación y la escala dimensional, no la matemática.
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La entropía de Shannon fue introducida en Shannon (1948)~\cite{shannon1948mathematical}.
+La conexión entre entropía de Shannon y entropía de Boltzmann, y el principio de
+máxima entropía como fundamento de la mecánica estadística, es el programa de
+Jaynes (1957)~\cite{jaynes1957information}. La presentación más completa del
+programa de Jaynes está en Jaynes (2003)~\cite{jaynes2003probability}.
+
+La teoría de la información en el sentido moderno, incluyendo la entropía mutua
+y las desigualdades de procesado de datos, está en Cover y Thomas
+(2006)~\cite{cover2006elements}: el texto de referencia estándar del campo. El
+principio del cuello de botella de la información es de Tishby, Pereira y Bialek
+(2000)~\cite{tishby2000information}, citado en el Capítulo~\ref{ch:cap7}.
+
+La energía libre variacional y su relación con el ELBO de los modelos de variable
+latente están en Kingma y Welling (2013)~\cite{kingma2013auto}, con la conexión
+con la termodinámica discutida en detalle en Hinton y Zemel (1994), que
+introdujeron el nombre ``energía libre'' en el contexto del aprendizaje
+automático.
+
+El H-teorema de Boltzmann en su forma cuantitativa~\eqref{eq:ap_h_cuantitativo},
+expresando la tasa de decrecimiento de la KL como la información de Fisher
+relativa, es un resultado clásico de la teoría de procesos de difusión. Está
+demostrado en Risken (1989)~\cite{risken1989fokker} para la ecuación de
+Fokker-Planck, y en el contexto de la teoría de la información en
+Villani (2009)~\cite{villani2009optimal}. La conexión con el score de los
+modelos de difusión sigue a Song et al.\ (2021)~\cite{song2021score}.
+
+La identidad entre el gradiente natural y el preacondicionamiento por la
+información de Fisher, mencionada en la tabla de la Sección~\ref{sec:ap_tabla_completa},
+es de Amari (1998)~\cite{amari1998natural}, citado en el Capítulo~\ref{ch:cap7}.
+\end{notasbib}

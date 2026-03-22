@@ -1,54 +1,195 @@
-%───────────────────────────────────────────────────────────────────────────────
-% REFERENCES.BIB — Referencias para la plantilla Catppuccin LaTeX
-% Incluye las citas usadas en el capítulo demo y apéndice demo,
-% más algunas referencias clásicas relevantes.
-%───────────────────────────────────────────────────────────────────────────────
+% referencias.bib — La máquina estocástica
+% Bibliografía centralizada. Todos los \cite{} del texto apuntan aquí.
 
-@book{reed1980functional,
-  title     = {Methods of Modern Mathematical Physics I: Functional Analysis},
-  author    = {Reed, Michael and Simon, Barry},
-  year      = {1980},
-  publisher = {Academic Press},
-  address   = {New York},
-  isbn      = {9780125850506}
+%═══════════════════════════════════════════════════════════════════════════════
+% MODELOS DE DIFUSIÓN Y SCORE MATCHING
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{ho2020ddpm,
+  author  = {Ho, Jonathan and Jain, Ajay and Abbeel, Pieter},
+  title   = {Denoising Diffusion Probabilistic Models},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {33},
+  pages   = {6840--6851},
+  year    = {2020}
 }
 
-@book{kloeden1992numerical,
-  title     = {Numerical Solution of Stochastic Differential Equations},
-  author    = {Kloeden, Peter E. and Platen, Eckhard},
-  year      = {1992},
-  publisher = {Springer},
-  series    = {Applications of Mathematics},
-  volume    = {23},
-  address   = {Berlin},
-  doi       = {10.1007/978-3-662-12616-5}
+@article{song2021score,
+  author  = {Song, Yang and Sohl-Dickstein, Jascha and Kingma, Diederik P.
+             and Kumar, Abhishek and Ermon, Stefano and Poole, Ben},
+  title   = {Score-Based Generative Modeling through Stochastic Differential Equations},
+  journal = {International Conference on Learning Representations},
+  year    = {2021}
 }
 
 @article{hyvarinen2005estimation,
-  title   = {Estimation of non-normalized statistical models by score matching},
-  author  = {Hyvärinen, Aapo},
+  author  = {Hyv{\"a}rinen, Aapo},
+  title   = {Estimation of Non-Normalized Statistical Models by Score Matching},
   journal = {Journal of Machine Learning Research},
   volume  = {6},
-  number  = {Apr},
   pages   = {695--709},
   year    = {2005}
 }
 
 @article{vincent2011connection,
-  title   = {A connection between score matching and denoising autoencoders},
   author  = {Vincent, Pascal},
+  title   = {A Connection Between Score Matching and Denoising Autoencoders},
   journal = {Neural Computation},
   volume  = {23},
   number  = {7},
   pages   = {1661--1674},
-  year    = {2011},
-  publisher = {MIT Press}
+  year    = {2011}
 }
 
-% Referencias clásicas adicionales (opcionales, pero útiles)
+@article{song2020ddim,
+  author  = {Song, Jiaming and Meng, Chenlin and Ermon, Stefano},
+  title   = {Denoising Diffusion Implicit Models},
+  journal = {International Conference on Learning Representations},
+  year    = {2021}
+}
+
+@article{lu2022dpm,
+  author  = {Lu, Cheng and Zhou, Yuhao and Bao, Fan and Chen, Jianfei
+             and Li, Chongxuan and Zhu, Jun},
+  title   = {{DPM-Solver}: A Fast {ODE} Solver for Diffusion Probabilistic
+             Model Sampling in Around 10 Steps},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {35},
+  year    = {2022}
+}
+
+@article{nichol2021improved,
+  author  = {Nichol, Alexander Quinn and Dhariwal, Prafulla},
+  title   = {Improved Denoising Diffusion Probabilistic Models},
+  journal = {International Conference on Machine Learning},
+  pages   = {8162--8171},
+  year    = {2021}
+}
+
+@article{dhariwal2021diffusion,
+  author  = {Dhariwal, Prafulla and Nichol, Alexander},
+  title   = {Diffusion Models Beat {GAN}s on Image Synthesis},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {34},
+  pages   = {8780--8794},
+  year    = {2021}
+}
+
+@article{ho2022cfg,
+  author  = {Ho, Jonathan and Salimans, Tim},
+  title   = {Classifier-Free Diffusion Guidance},
+  journal = {NeurIPS Workshop on Deep Generative Models and Downstream Applications},
+  year    = {2022}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% FLOW MATCHING Y TRANSPORTE ÓPTIMO
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{lipman2022flow,
+  author  = {Lipman, Yaron and Chen, Ricky T. Q. and Ben-Hamu, Heli
+             and Nickel, Maximilian and Le, Matt},
+  title   = {Flow Matching for Generative Modeling},
+  journal = {International Conference on Learning Representations},
+  year    = {2023}
+}
+
+@article{liu2022flow,
+  author  = {Liu, Xingchao and Gong, Chengyue and Liu, Qiang},
+  title   = {Flow Straight and Fast: Learning to Generate and Transfer Data
+             with Rectified Flow},
+  journal = {International Conference on Learning Representations},
+  year    = {2023}
+}
+
+@article{tong2023improving,
+  author  = {Tong, Alexander and Malkin, Nikolay and Huguet, Guillaume
+             and Zhang, Yanlei and Rector-Brooks, Jarrid and Fatras, Kilian
+             and Wolf, Guy and Bengio, Yoshua},
+  title   = {Improving and Generalizing Flow-Matching for Conditional Generation},
+  journal = {ICML Workshop on New Frontiers in Learning, Control, and Dynamical Systems},
+  year    = {2023}
+}
+
+@book{villani2009optimal,
+  author    = {Villani, C{\'e}dric},
+  title     = {Optimal Transport: Old and New},
+  publisher = {Springer},
+  year      = {2009}
+}
+
+@article{cuturi2013sinkhorn,
+  author  = {Cuturi, Marco},
+  title   = {Sinkhorn Distances: Lightspeed Computation of Optimal Transport},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {26},
+  year    = {2013}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% REVERSIÓN TEMPORAL Y PROCESOS ESTOCÁSTICOS
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{anderson1982reverse,
+  author  = {Anderson, Brian D. O.},
+  title   = {Reverse-time diffusion equation models},
+  journal = {Stochastic Processes and their Applications},
+  volume  = {12},
+  number  = {3},
+  pages   = {313--326},
+  year    = {1982}
+}
+
+@book{oksendal2003sde,
+  author    = {{\O}ksendal, Bernt},
+  title     = {Stochastic Differential Equations: An Introduction with Applications},
+  edition   = {6th},
+  publisher = {Springer},
+  year      = {2003}
+}
+
+@book{gardiner2009handbook,
+  author    = {Gardiner, Crispin},
+  title     = {Stochastic Methods: A Handbook for the Natural and Social Sciences},
+  edition   = {4th},
+  publisher = {Springer},
+  year      = {2009}
+}
+
+@book{risken1989fokker,
+  author    = {Risken, Hannes},
+  title     = {The {Fokker-Planck} Equation: Methods of Solution and Applications},
+  edition   = {2nd},
+  publisher = {Springer},
+  year      = {1989}
+}
+
+@article{follmer1988random,
+  author  = {F{\"o}llmer, Hans},
+  title   = {Random fields and diffusion processes},
+  journal = {Lecture Notes in Mathematics},
+  volume  = {1362},
+  pages   = {101--203},
+  year    = {1988}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% REDES NEURONALES Y ARQUITECTURAS
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{hornik1989multilayer,
+  author  = {Hornik, Kurt and Stinchcombe, Maxwell and White, Halbert},
+  title   = {Multilayer feedforward networks are universal approximators},
+  journal = {Neural Networks},
+  volume  = {2},
+  number  = {5},
+  pages   = {359--366},
+  year    = {1989}
+}
+
 @article{cybenko1989approximation,
-  title   = {Approximation by superpositions of a sigmoidal function},
   author  = {Cybenko, George},
+  title   = {Approximation by superpositions of a sigmoidal function},
   journal = {Mathematics of Control, Signals and Systems},
   volume  = {2},
   number  = {4},
@@ -56,31 +197,1407 @@
   year    = {1989}
 }
 
-@article{hornik1989multilayer,
-  title   = {Multilayer feedforward networks are universal approximators},
-  author  = {Hornik, Kurt and Stinchcombe, Maxwell and White, Halbert},
-  journal = {Neural Networks},
-  volume  = {2},
-  number  = {5},
-  pages   = {359--366},
-  year    = {1989},
-  publisher = {Elsevier}
+@article{vaswani2017attention,
+  author  = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and
+             Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N.
+             and Kaiser, Łukasz and Polosukhin, Illia},
+  title   = {Attention Is All You Need},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {30},
+  year    = {2017}
 }
+
+@article{he2016deep,
+  author  = {He, Kaiming and Zhang, Xiangyu and Ren, Shaoqing and Sun, Jian},
+  title   = {Deep Residual Learning for Image Recognition},
+  journal = {IEEE Conference on Computer Vision and Pattern Recognition},
+  pages   = {770--778},
+  year    = {2016}
+}
+
+@article{ronneberger2015unet,
+  author  = {Ronneberger, Olaf and Fischer, Philipp and Brox, Thomas},
+  title   = {{U-Net}: Convolutional Networks for Biomedical Image Segmentation},
+  journal = {Medical Image Computing and Computer-Assisted Intervention},
+  pages   = {234--241},
+  year    = {2015}
+}
+
+@article{rombach2022ldm,
+  author  = {Rombach, Robin and Blattmann, Andreas and Lorenz, Dominik
+             and Esser, Patrick and Ommer, Bj{\"o}rn},
+  title   = {High-Resolution Image Synthesis with Latent Diffusion Models},
+  journal = {IEEE Conference on Computer Vision and Pattern Recognition},
+  pages   = {10684--10695},
+  year    = {2022}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% OPTIMIZACIÓN Y SGD
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{robbins1951stochastic,
+  author  = {Robbins, Herbert and Monro, Sutton},
+  title   = {A Stochastic Approximation Method},
+  journal = {The Annals of Mathematical Statistics},
+  volume  = {22},
+  number  = {3},
+  pages   = {400--407},
+  year    = {1951}
+}
+
+@article{kingma2014adam,
+  author  = {Kingma, Diederik P. and Ba, Jimmy},
+  title   = {Adam: A Method for Stochastic Optimization},
+  journal = {International Conference on Learning Representations},
+  year    = {2015}
+}
+
+@article{welling2011bayesian,
+  author  = {Welling, Max and Teh, Yee Whye},
+  title   = {Bayesian Learning via Stochastic Gradient Langevin Dynamics},
+  journal = {International Conference on Machine Learning},
+  pages   = {681--688},
+  year    = {2011}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% FÍSICA DE REACTORES Y CINÉTICA NEUTRÓNICA
+%═══════════════════════════════════════════════════════════════════════════════
 
 @book{duderstadt1976nuclear,
-  title     = {Nuclear Reactor Analysis},
   author    = {Duderstadt, James J. and Hamilton, Louis J.},
-  year      = {1976},
-  publisher = {Wiley},
-  address   = {New York},
-  isbn      = {9780471223634}
+  title     = {Nuclear Reactor Analysis},
+  publisher = {John Wiley \& Sons},
+  year      = {1976}
 }
 
-% Referencia a la paleta Catppuccin (por si quieres documentar el tema)
-@misc{catppuccin2024,
-  title  = {Catppuccin — Soothing pastel theme},
-  author = {{Catppuccin contributors}},
-  year   = {2024},
-  url    = {https://catppuccin.com},
-  note   = {Visitado el \the\year}
+@book{hetrick1971dynamics,
+  author    = {Hetrick, David L.},
+  title     = {Dynamics of Nuclear Reactors},
+  publisher = {University of Chicago Press},
+  year      = {1971}
+}
+
+@book{bell1970nuclear,
+  author    = {Bell, George I. and Glasstone, Samuel},
+  title     = {Nuclear Reactor Theory},
+  publisher = {Van Nostrand Reinhold},
+  year      = {1970}
+}
+
+@article{hayes2005stochastic,
+  author  = {Hayes, J. G. and Allen, E. J.},
+  title   = {Stochastic point-kinetics equations in nuclear reactor dynamics},
+  journal = {Annals of Nuclear Energy},
+  volume  = {32},
+  number  = {6},
+  pages   = {572--587},
+  year    = {2005}
+}
+
+@article{sjenitzer2013dynamic,
+  author  = {Sjenitzer, B. L. and Hoogenboom, J. E.},
+  title   = {Dynamic Monte Carlo method for nuclear reactor kinetics calculations},
+  journal = {Nuclear Science and Engineering},
+  volume  = {175},
+  number  = {1},
+  pages   = {94--107},
+  year    = {2013}
+}
+
+@article{introini2021meshless,
+  author  = {Introini, Carolina and Lorenzi, Stefano and Cammi, Antonio},
+  title   = {A mass conservative Kalman filter algorithm for computational
+             thermo-fluid dynamics},
+  journal = {Mathematics},
+  volume  = {9},
+  number  = {19},
+  pages   = {2384},
+  year    = {2021}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% FÍSICA DE ALTAS ENERGÍAS Y CALORIMETRÍA
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{paganini2018calogan,
+  author  = {Paganini, Michela and de Oliveira, Luke and Nachman, Benjamin},
+  title   = {Accelerating Science with Generative Adversarial Networks:
+             An Application to 3D Particle Showers in Multilayer Calorimeters},
+  journal = {Physical Review Letters},
+  volume  = {120},
+  number  = {4},
+  pages   = {042003},
+  year    = {2018}
+}
+
+@article{mikuni2022score,
+  author  = {Mikuni, Vinicius and Nachman, Benjamin},
+  title   = {Score-based generative models for calorimeter shower simulation},
+  journal = {Physical Review D},
+  volume  = {106},
+  number  = {9},
+  pages   = {092009},
+  year    = {2022}
+}
+
+@article{calochallenge2022,
+  author  = {Kruse, Michele and others},
+  title   = {CaloChallenge 2022: A Community Challenge for Fast Calorimeter Simulation},
+  journal = {arXiv preprint arXiv:2310.05537},
+  year    = {2023}
+}
+
+@article{amram2023calodiffusion,
+  author  = {Amram, Oz and Mastandrea, Raghav},
+  title   = {{CaloDiffusion} with Spherical Projections for High Fidelity
+             Calorimeter Simulation},
+  journal = {Physical Review D},
+  volume  = {108},
+  number  = {7},
+  pages   = {072016},
+  year    = {2023}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% MÉTODOS NUMÉRICOS Y ANÁLISIS
+%═══════════════════════════════════════════════════════════════════════════════
+
+@book{kloeden1992numerical,
+  author    = {Kloeden, Peter E. and Platen, Eckhard},
+  title     = {Numerical Solution of Stochastic Differential Equations},
+  publisher = {Springer},
+  year      = {1992}
+}
+
+@book{press2007numerical,
+  author    = {Press, William H. and Teukolsky, Saul A. and Vetterling, William T.
+               and Flannery, Brian P.},
+  title     = {Numerical Recipes: The Art of Scientific Computing},
+  edition   = {3rd},
+  publisher = {Cambridge University Press},
+  year      = {2007}
+}
+
+@article{fasshauer2007meshfree,
+  author  = {Fasshauer, Gregory E.},
+  title   = {Meshfree Approximation Methods with MATLAB},
+  journal = {Interdisciplinary Mathematical Sciences},
+  volume  = {6},
+  year    = {2007}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% CONTROL ÓPTIMO Y PONTRYAGIN
+%═══════════════════════════════════════════════════════════════════════════════
+
+@book{pontryagin1962mathematical,
+  author    = {Pontryagin, Lev S. and Boltyanskii, Vladimir G.
+               and Gamkrelidze, Revaz V. and Mishchenko, Evgenii F.},
+  title     = {The Mathematical Theory of Optimal Processes},
+  publisher = {Interscience Publishers},
+  year      = {1962}
+}
+
+@book{lewis2012optimal,
+  author    = {Lewis, Frank L. and Vrabie, Draguna and Syrmos, Vassilis L.},
+  title     = {Optimal Control},
+  edition   = {3rd},
+  publisher = {John Wiley \& Sons},
+  year      = {2012}
+}
+
+%═══════════════════════════════════════════════════════════════════════════════
+% FILTRADO Y ESTIMACIÓN
+%═══════════════════════════════════════════════════════════════════════════════
+
+@article{kalman1960new,
+  author  = {Kalman, Rudolf E.},
+  title   = {A New Approach to Linear Filtering and Prediction Problems},
+  journal = {Journal of Basic Engineering},
+  volume  = {82},
+  number  = {1},
+  pages   = {35--45},
+  year    = {1960}
+}
+
+@book{jazwinski1970stochastic,
+  author    = {Jazwinski, Andrew H.},
+  title     = {Stochastic Processes and Filtering Theory},
+  publisher = {Academic Press},
+  year      = {1970}
+}
+
+@article{savitzky1964smoothing,
+  author  = {Savitzky, Abraham and Golay, Marcel J. E.},
+  title   = {Smoothing and Differentiation of Data by Simplified Least Squares Procedures},
+  journal = {Analytical Chemistry},
+  volume  = {36},
+  number  = {8},
+  pages   = {1627--1639},
+  year    = {1964}
+}
+% ── Sección: MÉTODOS NUMÉRICOS Y ANÁLISIS ────────────────────────────────────
+
+@book{hansen1998rank,
+  author    = {Hansen, Per Christian},
+  title     = {Rank-Deficient and Discrete Ill-Posed Problems:
+               Numerical Aspects of Linear Inversion},
+  publisher = {SIAM},
+  address   = {Philadelphia},
+  year      = {1998}
+}
+% Referencia canónica para SVD, curva L y regularización de Tikhonov
+% en problemas inversos. Contiene las aplicaciones a tomografía sísmica,
+% deconvolución espectral y PET citadas en el fisicaconexion de la Sec. 2.5.
+
+@article{tikhonov1963solution,
+  author  = {Tikhonov, Andrei Nikolaevich},
+  title   = {Solution of incorrectly formulated problems and the
+             regularization method},
+  journal = {Soviet Mathematics Doklady},
+  volume  = {4},
+  pages   = {1035--1038},
+  year    = {1963}
+}
+% Artículo original de Tikhonov (1963). Citado en notasbib del Cap. 2.
+
+% ── Sección: APRENDIZAJE AUTOMÁTICO (nueva subsección si se desea) ────────────
+
+@book{hastie2009elements,
+  author    = {Hastie, Trevor and Tibshirani, Robert and Friedman, Jerome},
+  title     = {The Elements of Statistical Learning: Data Mining, Inference,
+               and Prediction},
+  edition   = {2nd},
+  publisher = {Springer},
+  address   = {New York},
+  year      = {2009},
+  note      = {Disponible libremente en \url{https://hastie.su.domains/ElemStatLearn/}}
+}
+% Referencia estándar para sesgo-varianza, validación cruzada y LASSO.
+% Citado en notasbib del Cap. 2. La 2a edición es la versión correcta a citar.
+
+@article{tibshirani1996regression,
+  author  = {Tibshirani, Robert},
+  title   = {Regression Shrinkage and Selection via the Lasso},
+  journal = {Journal of the Royal Statistical Society: Series B},
+  volume  = {58},
+  number  = {1},
+  pages   = {267--288},
+  year    = {1996}
+}
+% Artículo original del LASSO. Citado en notasbib del Cap. 2.
+
+@book{wainwright2019high,
+  author    = {Wainwright, Martin J.},
+  title     = {High-Dimensional Statistics: A Non-Asymptotic Viewpoint},
+  publisher = {Cambridge University Press},
+  address   = {Cambridge},
+  year      = {2019}
+}
+% Citado en notasbib Cap. 2 para la demostración de dispersidad del LASSO.
+
+% ── Sección: FÍSICA DE REACTORES (ya existente) ──────────────────────────────
+
+@article{reginatto2010overview,
+  author  = {Reginatto, Marcel},
+  title   = {Overview of spectral unfolding: principles, methods and
+             uncertainty estimation},
+  journal = {Radiation Measurements},
+  volume  = {45},
+  number  = {10},
+  pages   = {1323--1329},
+  year    = {2010}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter03_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: OPTIMIZACIÓN Y SGD (ya existente) ───────────────────────────────
+
+@book{nesterov2004introductory,
+  author    = {Nesterov, Yurii},
+  title     = {Introductory Lectures on Stochastic Optimization},
+  publisher = {Kluwer Academic Publishers},
+  address   = {Dordrecht},
+  year      = {2004}
+}
+
+@book{nocedal2006numerical,
+  author    = {Nocedal, Jorge and Wright, Stephen J.},
+  title     = {Numerical Optimization},
+  edition   = {2nd},
+  publisher = {Springer},
+  address   = {New York},
+  year      = {2006}
+}
+
+% ── Sección: REDES NEURONALES Y ARQUITECTURAS (ya existente) ─────────────────
+
+@inproceedings{dauphin2014identifying,
+  author    = {Dauphin, Yann N. and Ganguli, Surya and Ganguli, Surya
+               and Vinyals, Oriol and Bengio, Yoshua},
+  title     = {Identifying and Attacking the Saddle Point Problem in
+               High-Dimensional Non-Convex Optimization},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {27},
+  year      = {2014}
+}
+
+@inproceedings{goodfellow2015qualitatively,
+  author    = {Goodfellow, Ian J. and Vinyals, Oriol and Saxe, Andrew M.},
+  title     = {Qualitatively Characterizing Neural Network Optimization Problems},
+  booktitle = {International Conference on Learning Representations},
+  year      = {2015}
+}
+
+@article{belkin2019reconciling,
+  author  = {Belkin, Mikhail and Hsu, Daniel and Ma, Siyuan and Mandal, Soumik},
+  title   = {Reconciling Modern Machine-Learning Practice and the
+             Classical Bias--Variance Trade-Off},
+  journal = {Proceedings of the National Academy of Sciences},
+  volume  = {116},
+  number  = {32},
+  pages   = {15849--15854},
+  year    = {2019}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter04_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: REDES NEURONALES — HISTORIA Y FUNDAMENTOS ───────────────────────
+
+@article{mcculloch1943logical,
+  author  = {McCulloch, Warren S. and Pitts, Walter},
+  title   = {A Logical Calculus of the Ideas Immanent in Nervous Activity},
+  journal = {The Bulletin of Mathematical Biophysics},
+  volume  = {5},
+  number  = {4},
+  pages   = {115--133},
+  year    = {1943}
+}
+
+@article{rosenblatt1958perceptron,
+  author  = {Rosenblatt, Frank},
+  title   = {The Perceptron: A Probabilistic Model for Information Storage
+             and Organization in the Brain},
+  journal = {Psychological Review},
+  volume  = {65},
+  number  = {6},
+  pages   = {386--408},
+  year    = {1958}
+}
+
+% ── Sección: REDES NEURONALES — ARQUITECTURAS Y ENTRENAMIENTO ────────────────
+
+@inproceedings{nair2010rectified,
+  author    = {Nair, Vinod and Hinton, Geoffrey E.},
+  title     = {Rectified Linear Units Improve Restricted Boltzmann Machines},
+  booktitle = {Proceedings of the 27th International Conference on Machine Learning},
+  pages     = {807--814},
+  year      = {2010}
+}
+
+@inproceedings{krizhevsky2012imagenet,
+  author    = {Krizhevsky, Alex and Sutskever, Ilya and Hinton, Geoffrey E.},
+  title     = {{ImageNet} Classification with Deep Convolutional Neural Networks},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {25},
+  year      = {2012}
+}
+
+@article{hinton2006fast,
+  author  = {Hinton, Geoffrey E. and Osindero, Simon and Teh, Yee-Whye},
+  title   = {A Fast Learning Algorithm for Deep Belief Nets},
+  journal = {Neural Computation},
+  volume  = {18},
+  number  = {7},
+  pages   = {1527--1554},
+  year    = {2006}
+}
+
+% ── Sección: FÍSICA DE REACTORES — MODELOS SUSTITUTOS ────────────────────────
+
+@article{kozlowski2003pwr,
+  author  = {Kozlowski, Tomasz and Downar, Thomas J.},
+  title   = {{PWR} MOX/{UO$_2$} Core Transient Benchmark},
+  journal = {Nuclear Engineering and Design},
+  volume  = {225},
+  pages   = {217--230},
+  year    = {2003}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter05_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: OPTIMIZACIÓN Y SGD ──────────────────────────────────────────────
+
+
+@inproceedings{goyal2017accurate,
+  author    = {Goyal, Priya and Doll{\'a}r, Piotr and Girshick, Ross and
+               Noordhuis, Pieter and Wesolowski, Lukasz and Kyrola, Aapo and
+               Tulloch, Andrew and Jia, Yangqing and He, Kaiming},
+  title     = {Accurate, Large Minibatch {SGD}: Training {ImageNet} in 1 Hour},
+  booktitle = {arXiv preprint arXiv:1706.02677},
+  year      = {2017}
+}
+
+@inproceedings{duchi2011adaptive,
+  author    = {Duchi, John and Hazan, Elad and Singer, Yoram},
+  title     = {Adaptive Subgradient Methods for Online Learning and Stochastic
+               Optimization},
+  booktitle = {Journal of Machine Learning Research},
+  volume    = {12},
+  pages     = {2121--2159},
+  year      = {2011}
+}
+
+@inproceedings{kingma2015adam,
+  author    = {Kingma, Diederik P. and Ba, Jimmy},
+  title     = {Adam: A Method for Stochastic Optimization},
+  booktitle = {Proceedings of the 3rd International Conference on Learning
+               Representations ({ICLR})},
+  year      = {2015}
+}
+
+% ── Sección: INICIALIZACIÓN ──────────────────────────────────────────────────
+
+@inproceedings{glorot2010understanding,
+  author    = {Glorot, Xavier and Bengio, Yoshua},
+  title     = {Understanding the Difficulty of Training Deep Feedforward
+               Neural Networks},
+  booktitle = {Proceedings of the 13th International Conference on Artificial
+               Intelligence and Statistics ({AISTATS})},
+  pages     = {249--256},
+  year      = {2010}
+}
+
+@inproceedings{he2015delving,
+  author    = {He, Kaiming and Zhang, Xiangyu and Ren, Shaoqing and Sun, Jian},
+  title     = {Delving Deep into Rectifiers: Surpassing Human-Level Performance
+               on {ImageNet} Classification},
+  booktitle = {Proceedings of the {IEEE} International Conference on Computer
+               Vision ({ICCV})},
+  pages     = {1026--1034},
+  year      = {2015}
+}
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter06_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: DIFERENCIACIÓN AUTOMÁTICA Y BACKPROPAGATION ─────────────────────
+
+
+@book{griewank2008evaluating,
+  author    = {Griewank, Andreas and Walther, Andrea},
+  title     = {Evaluating Derivatives: Principles and Techniques of Algorithmic
+               Differentiation},
+  edition   = {2nd},
+  publisher = {SIAM},
+  year      = {2008}
+}
+
+% ── Sección: NORMALIZACIÓN Y ARQUITECTURAS ───────────────────────────────────
+
+@inproceedings{ioffe2015batch,
+  author    = {Ioffe, Sergey and Szegedy, Christian},
+  title     = {Batch Normalization: Accelerating Deep Network Training by
+               Reducing Internal Covariate Shift},
+  booktitle = {Proceedings of the 32nd International Conference on Machine
+               Learning ({ICML})},
+  pages     = {448--456},
+  year      = {2015}
+}
+
+@inproceedings{chen2016training,
+  author    = {Chen, Tianqi and Xu, Bing and Zhang, Chiyuan and Guestrin, Carlos},
+  title     = {Training Deep Nets with Sublinear Memory Cost},
+  booktitle = {arXiv preprint arXiv:1604.06174},
+  year      = {2016}
+}
+
+% ── Sección: MÉTODO ADJUNTO Y NEURAL ODEs ────────────────────────────────────
+
+@article{tarantola1984inversion,
+  author  = {Tarantola, Albert},
+  title   = {Inversion of Seismic Reflection Data in the Acoustic Approximation},
+  journal = {Geophysics},
+  volume  = {49},
+  number  = {8},
+  pages   = {1259--1266},
+  year    = {1984}
+}
+
+@inproceedings{chen2018neural,
+  author    = {Chen, Ricky T. Q. and Rubanova, Yulia and Bettencourt, Jesse and
+               Duvenaud, David},
+  title     = {Neural Ordinary Differential Equations},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {31},
+  year      = {2018}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter07_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: MLE Y ESTADÍSTICA CLÁSICA ───────────────────────────────────────
+
+@article{fisher1922mathematical,
+  author  = {Fisher, Ronald A.},
+  title   = {On the Mathematical Foundations of Theoretical Statistics},
+  journal = {Philosophical Transactions of the Royal Society A},
+  volume  = {222},
+  pages   = {309--368},
+  year    = {1922}
+}
+
+@book{lehmann1998theory,
+  author    = {Lehmann, Erich L. and Casella, George},
+  title     = {Theory of Point Estimation},
+  edition   = {2nd},
+  publisher = {Springer},
+  year      = {1998}
+}
+
+% ── Sección: ENTROPÍA Y MÁXIMA ENTROPÍA ──────────────────────────────────────
+
+@article{jaynes1957information,
+  author  = {Jaynes, Edwin T.},
+  title   = {Information Theory and Statistical Mechanics},
+  journal = {Physical Review},
+  volume  = {106},
+  number  = {4},
+  pages   = {620--630},
+  year    = {1957}
+}
+
+@book{cover2006elements,
+  author    = {Cover, Thomas M. and Thomas, Joy A.},
+  title     = {Elements of Information Theory},
+  edition   = {2nd},
+  publisher = {Wiley},
+  year      = {2006}
+}
+
+@article{tishby2000information,
+  author  = {Tishby, Naftali and Pereira, Fernando C. and Bialek, William},
+  title   = {The Information Bottleneck Method},
+  journal = {arXiv preprint physics/0004057},
+  year    = {2000}
+}
+
+% ── Sección: INFERENCIA VARIACIONAL ──────────────────────────────────────────
+
+@inproceedings{kingma2013auto,
+  author    = {Kingma, Diederik P. and Welling, Max},
+  title     = {Auto-Encoding Variational {Bayes}},
+  booktitle = {Proceedings of the 2nd International Conference on Learning
+               Representations ({ICLR})},
+  year      = {2014}
+}
+
+@inproceedings{gal2016dropout,
+  author    = {Gal, Yarin and Ghahramani, Zoubin},
+  title     = {Dropout as a {Bayesian} Approximation: Representing Model
+               Uncertainty in Deep Learning},
+  booktitle = {Proceedings of the 33rd International Conference on Machine
+               Learning ({ICML})},
+  pages     = {1050--1059},
+  year      = {2016}
+}
+
+% ── Sección: TEORÍA DE GENERALIZACIÓN ────────────────────────────────────────
+
+@article{vapnik1971uniform,
+  author  = {Vapnik, Vladimir N. and Chervonenkis, Alexey Ya.},
+  title   = {On the Uniform Convergence of Relative Frequencies of Events to
+             Their Probabilities},
+  journal = {Theory of Probability and Its Applications},
+  volume  = {16},
+  number  = {2},
+  pages   = {264--280},
+  year    = {1971}
+}
+
+@inproceedings{bartlett2017spectrally,
+  author    = {Bartlett, Peter L. and Foster, Dylan J. and Telgarsky, Matus},
+  title     = {Spectrally-Normalized Margin Bounds for Neural Networks},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {30},
+  year      = {2017}
+}
+
+% ── Sección: GRADIENTE NATURAL Y K-FAC ───────────────────────────────────────
+
+@article{amari1998natural,
+  author  = {Amari, Shun-ichi},
+  title   = {Natural Gradient Works Efficiently in Learning},
+  journal = {Neural Computation},
+  volume  = {10},
+  number  = {2},
+  pages   = {251--276},
+  year    = {1998}
+}
+
+@inproceedings{martens2015optimizing,
+  author    = {Martens, James and Grosse, Roger},
+  title     = {Optimizing Neural Networks with {Kronecker}-Factored Approximate
+               Curvature},
+  booktitle = {Proceedings of the 32nd International Conference on Machine
+               Learning ({ICML})},
+  pages     = {2408--2417},
+  year      = {2015}
+}
+
+@article{bartlett2020benign,
+  author  = {Bartlett, Peter L. and Montanari, Andrea and Rakhlin, Alexander},
+  title   = {Benign Overfitting in Linear Regression},
+  journal = {Proceedings of the National Academy of Sciences},
+  volume  = {117},
+  number  = {48},
+  pages   = {30063--30070},
+  year    = {2020}
+}
+
+@article{rumelhart1986learning,
+  author  = {Rumelhart, David E. and Hinton, Geoffrey E. and Williams, Ronald J.},
+  title   = {Learning Representations by Back-Propagating Errors},
+  journal = {Nature},
+  volume  = {323},
+  pages   = {533--536},
+  year    = {1986}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter08_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: PARADA TEMPRANA Y REGULARIZACIÓN ────────────────────────────────
+
+@book{engl1996regularization,
+  author    = {Engl, Heinz W. and Hanke, Martin and Neubauer, Andreas},
+  title     = {Regularization of Inverse Problems},
+  publisher = {Kluwer Academic Publishers},
+  year      = {1996}
+}
+
+% ── Sección: DROPOUT ─────────────────────────────────────────────────────────
+
+@article{srivastava2014dropout,
+  author  = {Srivastava, Nitish and Hinton, Geoffrey and Krizhevsky, Alex
+             and Sutskever, Ilya and Salakhutdinov, Ruslan},
+  title   = {Dropout: A Simple Way to Prevent Neural Networks from Overfitting},
+  journal = {Journal of Machine Learning Research},
+  volume  = {15},
+  pages   = {1929--1958},
+  year    = {2014}
+}
+
+% ── Sección: NORMALIZACIÓN ───────────────────────────────────────────────────
+
+@inproceedings{santurkar2018how,
+  author    = {Santurkar, Shibani and Tsipras, Dimitris and Ilyas, Andrew
+               and Madry, Aleksander},
+  title     = {How Does Batch Normalization Help Optimization?},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {31},
+  year      = {2018}
+}
+
+@article{ba2016layer,
+  author  = {Ba, Jimmy Lei and Kiros, Jamie Ryan and Hinton, Geoffrey E.},
+  title   = {Layer Normalization},
+  journal = {arXiv preprint arXiv:1607.06450},
+  year    = {2016}
+}
+
+% ── Sección: DOUBLE DESCENT ──────────────────────────────────────────────────
+
+@article{nakkiran2021deep,
+  author  = {Nakkiran, Preetum and Kaplun, Gal and Bansal, Yamini
+             and Yang, Tristan and Barak, Boaz and Sutskever, Ilya},
+  title   = {Deep Double Descent: Where Bigger Models and More Data Hurt},
+  journal = {Journal of Statistical Mechanics: Theory and Experiment},
+  volume  = {2021},
+  number  = {12},
+  pages   = {124003},
+  year    = {2021}
+}
+
+@article{marchenko1967distribution,
+  author  = {Marchenko, Vladimir A. and Pastur, Leonid A.},
+  title   = {Distribution of Eigenvalues for Some Sets of Random Matrices},
+  journal = {Mathematics of the {USSR-Sbornik}},
+  volume  = {1},
+  number  = {4},
+  pages   = {457--483},
+  year    = {1967}
+}
+
+@article{hastie2022surprises,
+  author  = {Hastie, Trevor and Montanari, Andrea and Rosset, Saharon
+             and Tibshirani, Ryan J.},
+  title   = {Surprises in High-Dimensional Ridgeless Least Squares Interpolation},
+  journal = {Annals of Statistics},
+  volume  = {50},
+  number  = {2},
+  pages   = {949--986},
+  year    = {2022}
+}
+
+@inproceedings{keskar2017large,
+  author    = {Keskar, Nitish Shirish and Mudigere, Dheevatsa and Nocedal, Jorge
+               and Smelyanskiy, Mikhail and Tang, Ping Tak Peter},
+  title     = {On Large-Batch Training for Deep Learning: Generalization Gap
+               and Sharp Minima},
+  booktitle = {Proceedings of the 5th International Conference on Learning
+               Representations ({ICLR})},
+  year      = {2017}
+}
+
+% ── Sección: BÚSQUEDA DE HIPERPARÁMETROS ─────────────────────────────────────
+
+@article{bergstra2012random,
+  author  = {Bergstra, James and Bengio, Yoshua},
+  title   = {Random Search for Hyper-Parameter Optimization},
+  journal = {Journal of Machine Learning Research},
+  volume  = {13},
+  pages   = {281--305},
+  year    = {2012}
+}
+
+@article{smith2017cyclical,
+  author  = {Smith, Leslie N.},
+  title   = {Cyclical Learning Rates for Training Neural Networks},
+  journal = {Proceedings of the {IEEE} Winter Conference on Applications of
+             Computer Vision ({WACV})},
+  pages   = {464--472},
+  year    = {2017}
+}
+
+@inproceedings{snoek2012practical,
+  author    = {Snoek, Jasper and Larochelle, Hugo and Adams, Ryan P.},
+  title     = {Practical {Bayesian} Optimization of Machine Learning Algorithms},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {25},
+  year      = {2012}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter09_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Sección: INDUCTIVE BIAS Y MARCO GENERAL ──────────────────────────────────
+
+@inproceedings{cohen2016group,
+  author    = {Cohen, Taco S. and Welling, Max},
+  title     = {Group Equivariant Convolutional Networks},
+  booktitle = {Proceedings of the 33rd International Conference on Machine
+               Learning ({ICML})},
+  pages     = {2990--2999},
+  year      = {2016}
+}
+
+@inproceedings{kondor2018clebsch,
+  author    = {Kondor, Risi and Trivedi, Shubhendu},
+  title     = {On the Generalization of Equivariance and Convolution in Neural
+               Networks to the Action of Compact Groups},
+  booktitle = {Proceedings of the 35th International Conference on Machine
+               Learning ({ICML})},
+  pages     = {2747--2755},
+  year      = {2018}
+}
+
+@article{weiler2019general,
+  author  = {Weiler, Maurice and Geiger, Mario and Welling, Max and
+             Boomsma, Wouter and Cohen, Taco S.},
+  title   = {3D Steerable {CNNs}: Learning Rotationally Equivariant Features
+             in Volumetric Data},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {32},
+  year    = {2019}
+}
+
+@article{bronstein2021geometric,
+  author  = {Bronstein, Michael M. and Bruna, Joan and Cohen, Taco and
+             Veličković, Petar},
+  title   = {Geometric Deep Learning: Grids, Groups, Graphs, Geodesics, and
+             Gauges},
+  journal = {arXiv preprint arXiv:2104.13478},
+  year    = {2021}
+}
+
+% ── Sección: GNNs ────────────────────────────────────────────────────────────
+
+@inproceedings{zaheer2017deep,
+  author    = {Zaheer, Manzil and Kottur, Satwik and Ravanbakhsh, Siamak and
+               Poczos, Barnabas and Salakhutdinov, Ruslan and Smola, Alexander},
+  title     = {{DeepSets}},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {30},
+  year      = {2017}
+}
+
+@inproceedings{gilmer2017neural,
+  author    = {Gilmer, Justin and Schütt, Kristof T. and Maurer, Stefan and
+               Gastegger, Michael and Müller, Klaus-Robert},
+  title     = {Neural Message Passing for Quantum Chemistry},
+  booktitle = {Proceedings of the 34th International Conference on Machine
+               Learning ({ICML})},
+  pages     = {1263--1272},
+  year      = {2017}
+}
+
+@inproceedings{xu2019powerful,
+  author    = {Xu, Keyulu and Hu, Weihua and Leskovec, Jure and Jegelka, Stefanie},
+  title     = {How Powerful Are Graph Neural Networks?},
+  booktitle = {Proceedings of the 7th International Conference on Learning
+               Representations ({ICLR})},
+  year      = {2019}
+}
+
+% ── Sección: SO(3) / REDES EQUIVARIANTES ─────────────────────────────────────
+
+@inproceedings{thomas2018tensor,
+  author    = {Thomas, Nathaniel and Smidt, Tess and Kearnes, Steven and
+               Yang, Lusann and Li, Li and Kohlhoff, Kai and Riley, Patrick},
+  title     = {Tensor Field Networks: Rotation- and Translation-Equivariant
+               Neural Networks for {3D} Point Clouds},
+  booktitle = {arXiv preprint arXiv:1802.08219},
+  year      = {2018}
+}
+
+@article{geiger2022e3nn,
+  author  = {Geiger, Mario and Smidt, Tess},
+  title   = {e3nn: Euclidean Neural Networks},
+  journal = {arXiv preprint arXiv:2207.09453},
+  year    = {2022}
+}
+
+@article{batzner2022nequip,
+  author  = {Batzner, Simon and Musaelian, Albert and Sun, Lixin and
+             Geiger, Mario and Mailoa, Jonathan P. and Kornbluth, Mordechai and
+             Molinari, Nicola and Smidt, Tess E. and Kozinsky, Boris},
+  title   = {{E(3)}-Equivariant Graph Neural Networks for Data-Efficient and
+             Accurate Interatomic Potentials},
+  journal = {Nature Communications},
+  volume  = {13},
+  pages   = {2453},
+  year    = {2022}
+}
+
+@inproceedings{batatia2022mace,
+  author    = {Batatia, Ilyes and Kovács, Dávid Péter and Simm, Gregor N. C.
+               and Ortner, Christoph and Csányi, Gábor},
+  title     = {{MACE}: Higher Order Equivariant Message Passing Neural Networks
+               for Fast and Accurate Force Fields},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {35},
+  year      = {2022}
+}
+
+@book{serre1977linear,
+  author    = {Serre, Jean-Pierre},
+  title     = {Linear Representations of Finite Groups},
+  publisher = {Springer},
+  year      = {1977}
+}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter10_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Movimiento browniano ──────────────────────────────────────────────────────
+
+@article{wiener1923differential,
+  author  = {Wiener, Norbert},
+  title   = {Differential Space},
+  journal = {Journal of Mathematics and Physics},
+  volume  = {2},
+  pages   = {131--174},
+  year    = {1923}
+}
+
+@book{billingsley1999convergence,
+  author    = {Billingsley, Patrick},
+  title     = {Convergence of Probability Measures},
+  edition   = {2nd},
+  publisher = {Wiley},
+  year      = {1999}
+}
+
+@book{karatzas1991brownian,
+  author    = {Karatzas, Ioannis and Shreve, Steven E.},
+  title     = {Brownian Motion and Stochastic Calculus},
+  edition   = {2nd},
+  publisher = {Springer},
+  year      = {1991}
+}
+
+% ── Integral de Itô ──────────────────────────────────────────────────────────
+
+@article{ito1944stochastic,
+  author  = {Itô, Kiyosi},
+  title   = {Stochastic Integral},
+  journal = {Proceedings of the Imperial Academy},
+  volume  = {20},
+  number  = {8},
+  pages   = {519--524},
+  year    = {1944}
+}
+
+@book{oksendal2003stochastic,
+  author    = {Øksendal, Bernt},
+  title     = {Stochastic Differential Equations: An Introduction with Applications},
+  edition   = {6th},
+  publisher = {Springer},
+  year      = {2003}
+}
+
+@article{stratonovich1966new,
+  author  = {Stratonovich, Ruslan L.},
+  title   = {A New Representation for Stochastic Integrals and Equations},
+  journal = {SIAM Journal on Control},
+  volume  = {4},
+  number  = {2},
+  pages   = {362--371},
+  year    = {1966}
+}
+
+% ── Fórmula de Itô ───────────────────────────────────────────────────────────
+
+@article{ito1951formula,
+  author  = {Itô, Kiyosi},
+  title   = {On a Formula Concerning Stochastic Differentials},
+  journal = {Nagoya Mathematical Journal},
+  volume  = {3},
+  pages   = {55--65},
+  year    = {1951}
+}
+
+% ── Proceso OU ───────────────────────────────────────────────────────────────
+
+@article{ornstein1930brownian,
+  author  = {Ornstein, Leonard S. and Uhlenbeck, George E.},
+  title   = {On the Theory of the Brownian Motion},
+  journal = {Physical Review},
+  volume  = {36},
+  number  = {5},
+  pages   = {823--841},
+  year    = {1930}
+}
+
+% ── Feynman-Kac ──────────────────────────────────────────────────────────────
+
+@article{kac1949distributions,
+  author  = {Kac, Mark},
+  title   = {On Distributions of Certain {Wiener} Functionals},
+  journal = {Transactions of the American Mathematical Society},
+  volume  = {65},
+  number  = {1},
+  pages   = {1--13},
+  year    = {1949}
+}
+
+@article{nelson1966derivation,
+  author  = {Nelson, Edward},
+  title   = {Derivation of the {Schrödinger} Equation from {Newtonian} Mechanics},
+  journal = {Physical Review},
+  volume  = {150},
+  number  = {4},
+  pages   = {1079--1085},
+  year    = {1966}
+}
+
+% ── Análisis de ruido en reactores ───────────────────────────────────────────
+
+@book{williams1974random,
+  author    = {Williams, M. M. R.},
+  title     = {Random Processes in Nuclear Reactors},
+  publisher = {Pergamon Press},
+  year      = {1974}
+}
+
+@book{pazsit2008neutron,
+  author    = {Pázsit, Imre and Pál, Lénárd},
+  title     = {Neutron Fluctuations: A Treatise on the Physics of Branching
+               Processes},
+  publisher = {Elsevier},
+  year      = {2008}
+}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para Referencias.bib — citadas en Chapter11_v2
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Fokker-Planck y física estadística ───────────────────────────────────────
+
+
+
+
+@book{sarkka2019applied,
+  author    = {Särkkä, Simo and Solin, Arno},
+  title     = {Applied Stochastic Differential Equations},
+  publisher = {Cambridge University Press},
+  year      = {2019}
+}
+
+% ── Score matching ────────────────────────────────────────────────────────────
+
+
+@inproceedings{ho2020denoising,
+  author    = {Ho, Jonathan and Jain, Ajay and Abbeel, Pieter},
+  title     = {Denoising Diffusion Probabilistic Models},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {33},
+  pages     = {6840--6851},
+  year      = {2020}
+}
+
+% ── Puente de Schrödinger y transporte óptimo ─────────────────────────────────
+
+
+@article{leonard2014survey,
+  author  = {Léonard, Christian},
+  title   = {A Survey of the {Schrödinger} Problem and Some of Its Connections
+             with Optimal Transport},
+  journal = {Discrete and Continuous Dynamical Systems},
+  volume  = {34},
+  number  = {4},
+  pages   = {1533--1574},
+  year    = {2014}
+}
+
+@article{sinkhorn1964relationship,
+  author  = {Sinkhorn, Richard},
+  title   = {A Relationship Between Arbitrary Positive Matrices and Doubly
+             Stochastic Matrices},
+  journal = {The Annals of Mathematical Statistics},
+  volume  = {35},
+  number  = {2},
+  pages   = {876--879},
+  year    = {1964}
+}
+
+% ── Flow matching ─────────────────────────────────────────────────────────────
+
+
+% ── Física nuclear y difusioforesis ──────────────────────────────────────────
+
+@article{anderson1989colloid,
+  author  = {Anderson, John L.},
+  title   = {Colloid Transport by Interfacial Forces},
+  journal = {Annual Review of Fluid Mechanics},
+  volume  = {21},
+  pages   = {61--99},
+  year    = {1989}
+}
+
+% Entradas nuevas para Referencias.bib --- citadas en Chapter12_v2
+% Nota: ho2020denoising, song2021score, lipman2022flow, liu2022flow,
+%       tong2023improving ya estan en nuevas_entradas_cap11.bib
+
+% --- DDPM / schedules / samplers -------------------------------------------
+
+
+
+
+@inproceedings{song2020denoising,
+  author    = {Song, Jiaming and Meng, Chenlin and Ermon, Stefano},
+  title     = {Denoising Diffusion Implicit Models},
+  booktitle = {Proceedings of the 9th International Conference on Learning
+               Representations ({ICLR})},
+  year      = {2021}
+}
+
+@inproceedings{karras2022elucidating,
+  author    = {Karras, Tero and Aittala, Miika and Aila, Timo and Laine, Samuli},
+  title     = {Elucidating the Design Space of Diffusion-Based Generative Models},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {35},
+  year      = {2022}
+}
+
+% --- Condicionamiento / CFG ------------------------------------------------
+
+
+@article{ho2022classifier,
+  author  = {Ho, Jonathan and Salimans, Tim},
+  title   = {Classifier-Free Diffusion Guidance},
+  journal = {arXiv preprint arXiv:2207.12598},
+  year    = {2022}
+}
+
+@inproceedings{chung2022diffusion,
+  author    = {Chung, Hyungjin and Kim, Jeongsol and Mccann, Michael T. and
+               Klasky, Marc L. and Ye, Jong Chul},
+  title     = {Diffusion Posterior Sampling for General Noisy Inverse Problems},
+  booktitle = {Proceedings of the 11th International Conference on Learning
+               Representations ({ICLR})},
+  year      = {2023}
+}
+
+% --- Arquitecturas ----------------------------------------------------------
+
+@inproceedings{peebles2023scalable,
+  author    = {Peebles, William and Xie, Saining},
+  title     = {Scalable Diffusion Models with Transformers},
+  booktitle = {Proceedings of the {IEEE/CVF} International Conference on
+               Computer Vision ({ICCV})},
+  pages     = {4195--4205},
+  year      = {2023}
+}
+
+% --- Latent Diffusion / score latente --------------------------------------
+
+@inproceedings{rombach2022high,
+  author    = {Rombach, Robin and Blattmann, Andreas and Lorenz, Dominik and
+               Esser, Patrick and Ommer, Bjorn},
+  title     = {High-Resolution Image Synthesis with Latent Diffusion Models},
+  booktitle = {Proceedings of the {IEEE/CVF} Conference on Computer Vision and
+               Pattern Recognition ({CVPR})},
+  pages     = {10684--10695},
+  year      = {2022}
+}
+
+@article{pidstrigach2022score,
+  author  = {Pidstrigach, Jakiw},
+  title   = {Score-Based Generative Models Detect Manifolds},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {35},
+  year    = {2022}
+}
+
+% --- Simulacion de calorímetros -------------------------------------------
+
+@article{faucci2022fast,
+  author  = {{Faucci Giannelli}, Michele and others},
+  title   = {The Fast Calorimeter Simulation Challenge 2022},
+  journal = {arXiv preprint arXiv:2202.07023},
+  year    = {2022}
+}
+
+@book{durrett2019probability,
+  author    = {Durrett, Rick},
+  title     = {Probability: Theory and Examples},
+  edition   = {5th},
+  publisher = {Cambridge University Press},
+  year      = {2019}
+}
+
+@book{jaynes2003probability,
+  author    = {Jaynes, Edwin T.},
+  title     = {Probability Theory: The Logic of Science},
+  publisher = {Cambridge University Press},
+  year      = {2003}
+}
+
+@misc{shannon1948mathematical,
+  author = {Shannon, Claude E.},
+  title  = {A Mathematical Theory of Communication},
+  journal = {Bell System Technical Journal},
+  volume  = {27},
+  pages   = {379--423, 623--656},
+  year    = {1948}
+}
+@book{golub1996matrix,
+  author    = {Golub, Gene H. and Van Loan, Charles F.},
+  title     = {Matrix Computations},
+  edition   = {3rd},
+  publisher = {Johns Hopkins University Press},
+  year      = {1996}
+}
+
+@book{horn2013matrix,
+  author    = {Horn, Roger A. and Johnson, Charles R.},
+  title     = {Matrix Analysis},
+  edition   = {2nd},
+  publisher = {Cambridge University Press},
+  year      = {2013}
+}
+
+
+@book{silverman1986density,
+  author    = {Silverman, Bernard W.},
+  title     = {Density Estimation for Statistics and Data Analysis},
+  publisher = {Chapman and Hall},
+  year      = {1986}
+}
+
+@book{strang2019linear,
+  author    = {Strang, Gilbert},
+  title     = {Linear Algebra and Learning from Data},
+  publisher = {Wellesley-Cambridge Press},
+  year      = {2019}
+}
+
+@article{higham2001algorithmic,
+  author  = {Higham, Desmond J.},
+  title   = {An Algorithmic Introduction to Numerical Simulation of
+             Stochastic Differential Equations},
+  journal = {SIAM Review},
+  volume  = {43},
+  number  = {3},
+  pages   = {525--546},
+  year    = {2001}
+}
+
+
+
+% ── Perspectiva EDP del transformer ──────────────────────────
+
+@article{transformer_pde_2024,
+  author  = {Lu, Yihe and Li, Chuangjian and Wang, Juncheng
+             and Shen, Yifan and Gao, Mingchen},
+  title   = {Understanding {T}ransformer Architecture through
+             Continuous Dynamics: A Partial Differential Equation
+             Perspective},
+  journal = {arXiv preprint arXiv:2408.09523},
+  year    = {2024}
+}
+
+
+% ── DiT ──────────────────────────────────────────────────────
+
+@inproceedings{peebles2023dit,
+  author    = {Peebles, William and Xie, Saining},
+  title     = {Scalable Diffusion Models with Transformer
+               Architectures},
+  booktitle = {Proceedings of the IEEE/CVF International
+               Conference on Computer Vision (ICCV)},
+  pages     = {4195--4205},
+  year      = {2023}
+}
+
+% ── Condición CFL ─────────────────────────────────────────────
+
+@article{courant1928partiellen,
+  author  = {Courant, Richard and Friedrichs, Kurt and
+             Lewy, Hans},
+  title   = {{\"U}ber die partiellen {D}ifferenzengleichungen
+             der mathematischen {P}hysik},
+  journal = {Mathematische Annalen},
+  volume  = {100},
+  number  = {1},
+  pages   = {32--74},
+  year    = {1928}
+}
+
+% ── Operador de Fredholm / Boltzmann ──────────────────────────
+
+@incollection{villani2002review,
+  author    = {Villani, Cédric},
+  title     = {A Review of Mathematical Topics in Collisional Kinetic Theory},
+  booktitle = {Handbook of Mathematical Fluid Dynamics},
+  editor    = {Friedlander, S. and Serre, D.},
+  volume    = {1},
+  pages     = {71--305},
+  publisher = {Elsevier},
+  year      = {2002}
+}
+
+% ── Difusión no lineal (Perona-Malik) ────────────────────────
+
+@article{perona1990scale,
+  author  = {Perona, Pietro and Malik, Jitendra},
+  title   = {Scale-Space and Edge Detection Using Anisotropic
+             Diffusion},
+  journal = {IEEE Transactions on Pattern Analysis and Machine
+             Intelligence},
+  volume  = {12},
+  number  = {7},
+  pages   = {629--639},
+  year    = {1990}
+}
+
+% ── Difusión porosa ───────────────────────────────────────────
+
+@book{vazquez2007porous,
+  author    = {Vázquez, Juan Luis},
+  title     = {The Porous Medium Equation: Mathematical Theory},
+  publisher = {Oxford University Press},
+  address   = {Oxford},
+  year      = {2007}
+}
+
+% ── Ley de Fick ───────────────────────────────────────────────
+
+@article{fick1855ueber,
+  author  = {Fick, Adolf},
+  title   = {{\"U}ber {D}iffusion},
+  journal = {Annalen der Physik},
+  volume  = {170},
+  number  = {1},
+  pages   = {59--86},
+  year    = {1855}
+}
+
+% ── Einstein / movimiento browniano ──────────────────────────
+
+@article{einstein1905bewegung,
+  author  = {Einstein, Albert},
+  title   = {{\"U}ber die von der molekularkinetischen {T}heorie
+             der {W}{\"a}rme geforderte {B}ewegung von in
+             ruhenden {F}l{\"u}ssigkeiten suspendierten
+             {T}eilchen},
+  journal = {Annalen der Physik},
+  volume  = {322},
+  number  = {8},
+  pages   = {549--560},
+  year    = {1905}
+}
+
+% ── Difusión en medios heterogéneos ──────────────────────────
+
+@book{bear1972dynamics,
+  author    = {Bear, Jacob},
+  title     = {Dynamics of Fluids in Porous Media},
+  publisher = {American Elsevier},
+  address   = {New York},
+  year      = {1972}
+}
+
+% ── Patrones de Turing ────────────────────────────────────────
+
+@article{turing1952chemical,
+  author  = {Turing, Alan M.},
+  title   = {The Chemical Basis of Morphogenesis},
+  journal = {Philosophical Transactions of the Royal Society B},
+  volume  = {237},
+  number  = {641},
+  pages   = {37--72},
+  year    = {1952}
+}
+
+% ── Hodgkin-Huxley ───────────────────────────────────────────
+
+@article{hodgkin1952quantitative,
+  author  = {Hodgkin, Alan L. and Huxley, Andrew F.},
+  title   = {A Quantitative Description of Membrane Current and
+             Its Application to Conduction and Excitation in Nerve},
+  journal = {The Journal of Physiology},
+  volume  = {117},
+  number  = {4},
+  pages   = {500--544},
+  year    = {1952}
+}
+
+
+% ── FiLM: precursor de AdaLN ─────────────────────────────────
+@inproceedings{perez2018film,
+  author    = {Perez, Ethan and Strub, Florian and
+               de Vries, Harm and Dumoulin, Vincent and
+               Courville, Aaron},
+  title     = {{FiLM}: Visual Reasoning with a General
+               Conditioning Layer},
+  booktitle = {Proceedings of the AAAI Conference on
+               Artificial Intelligence},
+  volume    = {32},
+  year      = {2018}
 }

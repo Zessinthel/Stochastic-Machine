@@ -1,0 +1,439 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{Álgebra lineal numérica y espacios de funciones}
+\label{ap:algebra_lineal}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Este apéndice cubre las herramientas de álgebra lineal y análisis funcional que
+el libro usa de forma recurrente pero que no siempre se tratan con suficiente
+detalle en los cursos de física de pregrado. El contenido es estrictamente el
+que aparece en el texto: SVD y pseudoinversa (Capítulos~\ref{ch:cap2},
+\ref{ch:cap8}), normas matriciales (Capítulos~\ref{ch:cap3}, \ref{ch:cap8},
+\ref{ch:cap9}), el hessiano y la curvatura del paisaje
+(Capítulos~\ref{ch:cap3}, \ref{ch:cap5}), el espacio $L^2$ como espacio de
+Hilbert (Capítulo~\ref{ch:cap10}), y los operadores adjuntos
+(Capítulos~\ref{ch:cap6}, \ref{ch:cap11}).
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La descomposición en valores singulares (SVD)}
+\label{sec:ap_svd}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap2} (regresión regularizada, pseudoinversa,
+curva L), Capítulo~\ref{ch:cap8} (doble descenso, filtro espectral de la parada
+temprana).}
+
+\medskip
+La SVD es la factorización fundamental de cualquier matriz rectangular. A
+diferencia de la diagonalización, existe para toda matriz sin restricción alguna.
+
+\begin{teorema}{Descomposición en valores singulares}
+\label{thm:ap_svd}
+Sea $\bm{A}\in\mathbb{R}^{m\times n}$ con $\mathrm{rank}(\bm{A}) = r$. Existen
+matrices ortogonales $\bm{U}\in\mathbb{R}^{m\times m}$, $\bm{V}\in\mathbb{R}^{n\times n}$
+y una matriz diagonal $\bm{\Sigma}\in\mathbb{R}^{m\times n}$ tal que:
+\begin{equation}
+  \bm{A} = \bm{U}\bm{\Sigma}\bm{V}^\top,
+  \qquad
+  \bm{\Sigma} = \mathrm{diag}(\sigma_1,\ldots,\sigma_r,0,\ldots,0),
+  \label{eq:ap_svd}
+\end{equation}
+con $\sigma_1 \geq \sigma_2 \geq \cdots \geq \sigma_r > 0$. Los escalares
+$\{\sigma_i\}$ son los \textbf{valores singulares}; las columnas de $\bm{U}$
+son los \textbf{vectores singulares izquierdos} $\{\bm{u}_i\}$ y las de
+$\bm{V}$ los \textbf{vectores singulares derechos} $\{\bm{v}_i\}$.
+\end{teorema}
+
+La interpretación geométrica es la más útil para el libro: $\bm{A}$ mapea la
+bola unitaria de $\mathbb{R}^n$ a un elipsoide en $\mathbb{R}^m$. Los vectores
+singulares derechos $\{\bm{v}_i\}$ son los ejes del dominio; los izquierdos
+$\{\bm{u}_i\}$ son los ejes del elipsoide imagen; y los valores singulares
+$\{\sigma_i\}$ son las longitudes de los semiejes.
+
+\medskip\noindent\textbf{Forma compacta.} La SVD se escribe en forma de suma de
+rango 1:
+\begin{equation}
+  \bm{A} = \sum_{i=1}^r \sigma_i\,\bm{u}_i\bm{v}_i^\top.
+  \label{eq:ap_svd_suma}
+\end{equation}
+Truncar la suma a los $k < r$ términos de mayor $\sigma_i$ produce la mejor
+aproximación de rango $k$ de $\bm{A}$ en norma de Frobenius (teorema de
+Eckart-Young).
+
+\medskip\noindent\textbf{Cuatro subespacios fundamentales.} La SVD revela la
+geometría de $\bm{A}$:
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Subespacio} & \textbf{Base ortonormal} \\
+\midrule
+Espacio columna $\mathrm{col}(\bm{A})$ & $\{\bm{u}_1,\ldots,\bm{u}_r\}$ \\
+Núcleo izquierdo $\ker(\bm{A}^\top)$ & $\{\bm{u}_{r+1},\ldots,\bm{u}_m\}$ \\
+Espacio fila $\mathrm{fila}(\bm{A})$ & $\{\bm{v}_1,\ldots,\bm{v}_r\}$ \\
+Núcleo $\ker(\bm{A})$ & $\{\bm{v}_{r+1},\ldots,\bm{v}_n\}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{La pseudoinversa}
+\label{subsec:ap_pseudoinversa}
+
+La pseudoinversa (Moore-Penrose) de $\bm{A}$ es:
+\begin{equation}
+  \bm{A}^\dagger = \bm{V}\bm{\Sigma}^\dagger\bm{U}^\top,
+  \qquad
+  \bm{\Sigma}^\dagger = \mathrm{diag}\!\left(\frac{1}{\sigma_1},\ldots,
+  \frac{1}{\sigma_r},0,\ldots,0\right).
+  \label{eq:ap_pseudoinversa}
+\end{equation}
+Es la inversa generalizada que existe aunque $\bm{A}$ sea rectangular o
+deficiente de rango. Sus propiedades fundamentales:
+\begin{itemize}
+  \item Si $\bm{A}$ tiene rango completo de columnas ($r = n$, sistema
+        sobredeterminado): $\bm{A}^\dagger = (\bm{A}^\top\bm{A})^{-1}\bm{A}^\top$
+        (inversa izquierda). El estimador $\hat{\bm{\theta}} = \bm{A}^\dagger\bm{b}$
+        es la solución de mínimos cuadrados.
+  \item Si $\bm{A}$ tiene rango completo de filas ($r = m$, sistema subdeterminado):
+        $\bm{A}^\dagger = \bm{A}^\top(\bm{A}\bm{A}^\top)^{-1}$ (inversa derecha).
+        $\hat{\bm{\theta}} = \bm{A}^\dagger\bm{b}$ es la solución de mínima norma.
+  \item $\bm{A}\bm{A}^\dagger$ es la proyección ortogonal sobre $\mathrm{col}(\bm{A})$.
+  \item $\bm{A}^\dagger\bm{A}$ es la proyección ortogonal sobre $\mathrm{fila}(\bm{A})$.
+\end{itemize}
+
+\begin{observacion}{La pseudoinversa y el doble descenso}
+En el Capítulo~\ref{ch:cap8}, el régimen sobreparamétrico ($p > N$) corresponde
+al caso de rango completo de filas: el sistema $\bm{X}\bm{\theta} = \bm{y}$
+tiene infinitas soluciones. El descenso de gradiente desde $\bm{\theta}^{(0)} =
+\bm{0}$ converge a $\hat{\bm{\theta}} = \bm{X}^\dagger\bm{y}$, la solución de
+mínima norma, por la Proposición~\ref{prop:min_norma}. La fórmula del error de
+test~\eqref{eq:dd_formula} depende críticamente de que esta sea la solución
+seleccionada y no otra de las infinitas posibles.
+\end{observacion}
+
+\subsection{Número de condición y sensibilidad numérica}
+\label{subsec:ap_condicion}
+
+El \textbf{número de condición} de $\bm{A}$ es:
+\begin{equation}
+  \kappa(\bm{A}) = \frac{\sigma_{\max}}{\sigma_{\min}} = \sigma_1/\sigma_r.
+  \label{eq:ap_condicion}
+\end{equation}
+
+Mide la amplificación máxima de errores en la entrada al resolver el sistema
+$\bm{A}\bm{\theta} = \bm{b}$: si $\bm{b}$ tiene un error relativo $\varepsilon$,
+la solución puede tener un error relativo de hasta $\kappa(\bm{A})\varepsilon$.
+Para $\kappa \gg 1$ (sistema mal condicionado), pequeñas perturbaciones del
+lado derecho producen grandes cambios en la solución: el problema es
+numéricamente inestable.
+
+\medskip\noindent\textbf{Relación con la regularización.} La regularización de
+Tikhonov del Capítulo~\ref{ch:cap2} con parámetro $\lambda$ efectivamente
+reemplaza $\bm{A}$ por $\bm{A}_\lambda$ con valores singulares modificados
+$\sigma_i^{(\lambda)} = \sigma_i^2/(\sigma_i^2 + \lambda)$ (filtro espectral).
+El número de condición efectivo es:
+\[
+  \kappa(\bm{A}_\lambda) \approx \frac{\sigma_1^2}{\sigma_r^2 + \lambda},
+\]
+que decrece con $\lambda$: la regularización mejora el condicionamiento a costa
+de sesgar la solución.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Normas matriciales}
+\label{sec:ap_normas}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap3} (paisaje de pérdida, curvaturas),
+Capítulo~\ref{ch:cap8} (cota de Bartlett, gradient clipping, normas durante el
+entrenamiento), Capítulo~\ref{ch:cap9} (Lema de Schur, capas equivariantes).}
+
+\medskip
+Para una matriz $\bm{W}\in\mathbb{R}^{m\times n}$ con valores singulares
+$\sigma_1\geq\cdots\geq\sigma_r > 0$:
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Norma} & \textbf{Definición} & \textbf{Expresión en SVD} & \textbf{Rol en el libro} \\
+\midrule
+Espectral $\|\cdot\|_2$ & $\max_{\|\bm{x}\|=1}\|\bm{W}\bm{x}\|$ & $\sigma_1$ & Cota de Bartlett \\
+Frobenius $\|\cdot\|_F$ & $\sqrt{\sum_{ij}W_{ij}^2}$ & $\sqrt{\sum_i\sigma_i^2}$ & Regularización $\ell_2$ \\
+Nuclear $\|\cdot\|_*$ & $\sum_i\sigma_i$ & $\sum_i\sigma_i$ & Complejidad efectiva \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Las tres normas están relacionadas: para $\bm{W}\in\mathbb{R}^{m\times n}$
+con rango $r$,
+\begin{equation}
+  \|\bm{W}\|_2 \leq \|\bm{W}\|_F \leq \sqrt{r}\|\bm{W}\|_2,
+  \qquad
+  \|\bm{W}\|_2 \leq \|\bm{W}\|_* \leq \sqrt{r}\|\bm{W}\|_F.
+  \label{eq:ap_normas_rels}
+\end{equation}
+
+\medskip\noindent\textbf{La norma espectral como amplificación máxima.}
+$\|\bm{W}\|_2 = \sigma_1$ es la máxima amplificación que $\bm{W}$ puede
+impartir a un vector: $\|\bm{W}\bm{x}\|_2\leq\|\bm{W}\|_2\|\bm{x}\|_2$.
+En el contexto del retroceso del gradiente (Capítulo~\ref{ch:cap6}), el
+gradiente en la capa $l$ es multiplicado por $\bm{W}^{(l)\top}$, cuya norma
+espectral es $\sigma_1(\bm{W}^{(l)})$. Si $\|\bm{W}^{(l)}\|_2 < 1$ para
+todas las capas, el gradiente se desvanece exponencialmente; si $\|\bm{W}^{(l)}\|_2 > 1$,
+explota. Las conexiones residuales del Capítulo~\ref{ch:cap9} resuelven
+esto añadiendo un camino de gradiente de norma 1.
+
+\medskip\noindent\textbf{La norma de Frobenius y la regularización $\ell_2$.}
+El weight decay $\lambda\sum_l\|\bm{W}^{(l)}\|_F^2$ penaliza la norma de
+Frobenius de cada capa. Por la relación~\eqref{eq:ap_normas_rels}, controlar
+$\|\bm{W}\|_F$ también controla $\|\bm{W}\|_2$ (aunque de forma menos ajustada).
+Las cotas de generalización del Capítulo~\ref{ch:cap8} (Bartlett et al., 2017)
+usan la combinación $\prod_l\|\bm{W}^{(l)}\|_2$ y $\sum_l\|\bm{W}^{(l)}\|_F^2/
+\|\bm{W}^{(l)}\|_2^2$: dependen de ambas normas simultáneamente.
+
+\medskip\noindent\textbf{Submultiplicatividad.} Para la norma espectral y la
+de Frobenius:
+\begin{equation}
+  \|\bm{A}\bm{B}\|_2 \leq \|\bm{A}\|_2\|\bm{B}\|_2,
+  \qquad
+  \|\bm{A}\bm{B}\|_F \leq \|\bm{A}\|_2\|\bm{B}\|_F.
+  \label{eq:ap_submulti}
+\end{equation}
+La primera es la razón por la que la cota de Bartlett tiene la forma de un
+producto de normas espectrales: la composición de capas lineal no puede ampliar
+más que el producto de las amplificaciones de cada capa.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El hessiano y la curvatura del paisaje de pérdida}
+\label{sec:ap_hessiano}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap3} (curvatura, mínimos planos vs.\
+estrechos), Capítulo~\ref{ch:cap5} (estabilidad de Euler, temperatura efectiva
+del SGD), Capítulo~\ref{ch:cap8} (double descent, generalización).}
+
+\medskip
+Sea $f:\mathbb{R}^p\to\mathbb{R}$ de clase $C^2$. La \textbf{matriz hessiana}
+en $\bm{\theta}$ es:
+\begin{equation}
+  \bm{H}(\bm{\theta}) = \nabla^2 f(\bm{\theta}),
+  \qquad
+  H_{ij} = \frac{\partial^2 f}{\partial\theta_i\partial\theta_j}.
+  \label{eq:ap_hessiano}
+\end{equation}
+$\bm{H}$ es simétrica (si $f\in C^2$, por el teorema de Schwarz) y semidefinida
+positiva en un mínimo local.
+
+\medskip\noindent\textbf{Aproximación de Taylor de segundo orden.} En una
+vecindad de $\bm{\theta}_0$:
+\begin{equation}
+  f(\bm{\theta}_0 + \bm{d}) \approx f(\bm{\theta}_0) + \nabla f(\bm{\theta}_0)^\top\bm{d}
+  + \frac{1}{2}\bm{d}^\top\bm{H}(\bm{\theta}_0)\bm{d}.
+  \label{eq:ap_taylor2}
+\end{equation}
+Los autovalores del hessiano $\{\lambda_i\}$ determinan la curvatura en las
+direcciones de los autovectores correspondientes. En un mínimo ($\nabla f = \bm{0}$):
+\begin{itemize}
+  \item $\lambda_i > 0$ para todo $i$: mínimo local estricto, paisaje localmente
+        cuadrático.
+  \item Algunos $\lambda_i = 0$: mínimo degenerado, dirección plana (la pérdida
+        no crece en esa dirección).
+  \item $\lambda_i < 0$ para algún $i$: punto de silla, no es un mínimo.
+\end{itemize}
+
+\subsection{Número de condición del hessiano y el paso de Euler}
+\label{subsec:ap_condicion_hessiano}
+
+El número de condición del hessiano $\kappa(\bm{H}) = \lambda_{\max}/\lambda_{\min}$
+determina la dificultad de optimización. La estabilidad del método de Euler
+(descenso de gradiente) requiere tasa de aprendizaje:
+\begin{equation}
+  \eta < \frac{2}{\lambda_{\max}(\bm{H})}.
+  \label{eq:ap_euler_estabilidad}
+\end{equation}
+Para un hessiano mal condicionado ($\kappa \gg 1$), la tasa debe ser pequeña
+(dictada por $\lambda_{\max}$) pero el progreso en las direcciones de baja
+curvatura es lento (proporcional a $\eta\lambda_{\min}$). El número de
+iteraciones para converger escala como $O(\kappa)$: el condicionamiento es
+la barrera fundamental de la optimización de primer orden.
+
+La normalización por lotes (Capítulo~\ref{ch:cap8}) reduce efectivamente $\kappa$
+al normalizar las activaciones: hace que el hessiano de la pérdida sea más
+isótropo, permitiendo tasas de aprendizaje más grandes.
+
+\subsection{Mínimos planos vs.\ estrechos y la temperatura del SGD}
+\label{subsec:ap_minimos_planos}
+
+Dos mínimos con $f(\bm{\theta}_1^*) = f(\bm{\theta}_2^*)$ pero $\kappa(\bm{H}
+(\bm{\theta}_1^*)) \ll \kappa(\bm{H}(\bm{\theta}_2^*))$ se comportan de manera
+muy distinta en prueba. El volumen de la cuenca de atracción alrededor de
+$\bm{\theta}^*$ es proporcional a $1/\sqrt{\det\bm{H}(\bm{\theta}^*)}$: los
+mínimos planos tienen cuencas más amplias.
+
+La distribución de Gibbs del SGD (Capítulo~\ref{ch:cap5}) con temperatura
+$T_{\mathrm{eff}} = \eta c/2$ asigna masa relativa a las cuencas proporcional
+a su volumen efectivo. En la aproximación gaussiana local de la distribución
+de Gibbs alrededor de $\bm{\theta}^*$:
+\[
+  p^*(\bm{\theta})\approx Z^{-1}\exp\!\left(-\frac{\mathcal{L}(\bm{\theta}^*)}{T_{\mathrm{eff}}}
+  - \frac{1}{2T_{\mathrm{eff}}}\bm{d}^\top\bm{H}(\bm{\theta}^*)\bm{d}\right),
+\]
+cuya constante de normalización local es $(2\pi T_{\mathrm{eff}})^{p/2}/
+\sqrt{\det\bm{H}(\bm{\theta}^*)}$. Un mínimo plano (pequeño $\det\bm{H}$)
+tiene mayor masa que uno estrecho con la misma profundidad.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El espacio $L^2$ como espacio de Hilbert}
+\label{sec:ap_l2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap10} (construcción de la integral de Itô
+como límite $L^2$, isometría de Itô), Capítulo~\ref{ch:cap11} (adjunto $L^2$
+del generador, ecuación de Fokker-Planck como adjunto).}
+
+\medskip
+El espacio $L^2(\Omega, \mathcal{F}, \mathbb{P})$ consiste en todas las
+variables aleatorias $X$ con $\mathbb{E}[X^2] < \infty$, equipado con el
+producto interno:
+\begin{equation}
+  \langle X, Y\rangle_{L^2} = \mathbb{E}[XY],
+  \qquad
+  \|X\|_{L^2} = \sqrt{\mathbb{E}[X^2]}.
+  \label{eq:ap_l2}
+\end{equation}
+Con este producto interno, $L^2$ es un \textbf{espacio de Hilbert}: completo
+respecto a la norma $\|\cdot\|_{L^2}$, lo que garantiza la existencia de
+límites de sucesiones de Cauchy.
+
+\medskip\noindent\textbf{Por qué $L^2$ y no casi seguro.} La integral de Itô
+se construye como límite $L^2$ de sumas de Riemann estocásticas:
+\[
+  \int_0^T f_t\,dW_t = \lim_{n\to\infty}\sum_{k=0}^{n-1}f_{t_k}(W_{t_{k+1}}-W_{t_k})
+  \quad\text{en }L^2(\mathbb{P}).
+\]
+La convergencia casi segura sería más fuerte pero más difícil de establecer;
+la convergencia $L^2$ es suficiente para los propósitos del libro y la prueba
+es directa desde la isometría.
+
+\subsection{La isometría de Itô como isometría de Hilbert}
+\label{subsec:ap_isometria}
+
+La \textbf{isometría de Itô} (Teorema~\ref{thm:isometria} del
+Capítulo~\ref{ch:cap10}) es la afirmación de que la integral de Itô
+$I: \mathcal{L}^2([0,T]\times\Omega) \to L^2(\Omega)$ es una isometría:
+\begin{equation}
+  \left\|\int_0^T f_t\,dW_t\right\|_{L^2(\Omega)}^2
+  = \int_0^T\|f_t\|_{L^2(\Omega)}^2\,dt.
+  \label{eq:ap_iso_ito}
+\end{equation}
+En términos del producto interno: el mapa $f\mapsto\int_0^T f_t\,dW_t$ preserva
+la norma, análogamente a cómo una transformación ortogonal preserva la norma
+en $\mathbb{R}^n$. Esto es lo que hace la integral de Itô una extensión
+natural de la integral de Riemann ordinaria al mundo estocástico: conserva
+la ``energía'' del proceso.
+
+\subsection{El adjunto $L^2$ de un operador diferencial}
+\label{subsec:ap_adjunto_l2}
+
+\textit{Usado en: Capítulo~\ref{ch:cap6} (backpropagation como operador adjunto),
+Capítulo~\ref{ch:cap11} (ecuación de Fokker-Planck como adjunto del generador).}
+
+\medskip
+Sea $\mathcal{A}$ un operador diferencial que actúa sobre funciones $f\in C_c^\infty
+(\mathbb{R}^d)$. Su \textbf{adjunto $L^2$} $\mathcal{A}^*$ se define por:
+\begin{equation}
+  \int (\mathcal{A}f)\,g\,d\bm{x} = \int f\,(\mathcal{A}^*g)\,d\bm{x}
+  \quad\text{para toda }f,g\in C_c^\infty(\mathbb{R}^d).
+  \label{eq:ap_adjunto_def}
+\end{equation}
+Es la generalización al caso de operadores diferenciales del adjunto de una
+matriz: $(\bm{A}\bm{u},\bm{v}) = (\bm{u},\bm{A}^\top\bm{v})$ en $\mathbb{R}^n$.
+
+\begin{proposicion}{Adjunto del generador de difusión}
+\label{prop:ap_adjunto_gen}
+Sea $\mathcal{A}f = \bm{\mu}\cdot\nabla f + \frac{1}{2}\mathrm{tr}(\bm{D}\nabla^2 f)$
+el generador infinitesimal de la SDE $d\bm{X}_t = \bm{\mu}\,dt + \bm{\Sigma}\,d\bm{W}_t$
+con $\bm{D} = \bm{\Sigma}\bm{\Sigma}^\top$. Su adjunto $L^2$ es:
+\begin{equation}
+  \mathcal{A}^*g
+  = -\nabla\cdot(\bm{\mu}\,g) + \frac{1}{2}\sum_{ij}\partial_{x_ix_j}(D_{ij}g),
+  \label{eq:ap_adjunto_gen}
+\end{equation}
+que es exactamente el operador de la ecuación de Fokker-Planck~\eqref{eq:fp}.
+\end{proposicion}
+
+\begin{proof}
+Por integración por partes con soporte compacto:
+$\int\bm{\mu}\cdot\nabla f\cdot g\,d\bm{x} = -\int f\,\nabla\cdot(\bm{\mu}g)\,d\bm{x}$.
+Para el término difusivo: $\int D_{ij}\partial_{x_ix_j}f\cdot g\,d\bm{x}
+= \int f\,\partial_{x_ix_j}(D_{ij}g)\,d\bm{x}$ (integrando por partes dos veces).
+Sumando: $\int(\mathcal{A}f)g\,d\bm{x} = \int f(\mathcal{A}^*g)\,d\bm{x}$
+con $\mathcal{A}^*$ dado por~\eqref{eq:ap_adjunto_gen}. $\square$
+\end{proof}
+
+La ecuación de Fokker-Planck $\partial_t p_t = \mathcal{A}^*p_t$ describe cómo
+evoluciona la densidad de probabilidad; la ecuación de Kolmogorov hacia atrás
+$\partial_t u + \mathcal{A}u = 0$ describe cómo evoluciona la esperanza
+condicional. La dualidad entre ambas es la dualidad operador/adjunto en $L^2$.
+
+\medskip\noindent\textbf{La misma dualidad en el Capítulo~\ref{ch:cap6}.}
+En backpropagation, el forward pass aplica la función $f:\bm{a}\mapsto\bm{W}\bm{a}$
+y el backward pass aplica la traspuesta $\bm{W}^\top$, que es exactamente el
+adjunto respecto al producto interno estándar de $\mathbb{R}^n$. La traspuesta
+matricial y el adjunto $L^2$ del generador de difusión son instancias del mismo
+concepto algebraico: el adjunto respecto a un producto interno.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Proyecciones ortogonales y la descomposición espectral}
+\label{sec:ap_proyecciones}
+%───────────────────────────────────────────────────────────────────────────────
+
+\textit{Usado en: Capítulo~\ref{ch:cap2} (proyección sobre el espacio columna,
+solución de mínima norma), Capítulo~\ref{ch:cap8} (régimen sobreparamétrico,
+proyección de $\bm{\theta}^*$ sobre $\ker(\bm{X})$).}
+
+\medskip
+Una \textbf{proyección ortogonal} sobre un subespacio $V\subseteq\mathbb{R}^n$
+es una matriz $\bm{P}$ que satisface: (1) $\bm{P}^2 = \bm{P}$ (idempotente),
+(2) $\bm{P}^\top = \bm{P}$ (simétrica), (3) $\mathrm{col}(\bm{P}) = V$.
+
+De la SVD de $\bm{A} = \bm{U}\bm{\Sigma}\bm{V}^\top$ con rango $r$:
+\begin{align}
+  \bm{P}_{\mathrm{col}} &= \bm{U}_r\bm{U}_r^\top = \bm{A}\bm{A}^\dagger
+  \quad\text{(proyección sobre } \mathrm{col}(\bm{A})\text{)}, \\
+  \bm{P}_{\mathrm{fila}} &= \bm{V}_r\bm{V}_r^\top = \bm{A}^\dagger\bm{A}
+  \quad\text{(proyección sobre } \mathrm{fila}(\bm{A})\text{)},
+\end{align}
+donde $\bm{U}_r$ y $\bm{V}_r$ son las primeras $r$ columnas de $\bm{U}$ y
+$\bm{V}$.
+
+En el Capítulo~\ref{ch:cap8}, la demostración del Teorema~\ref{thm:double_descent}
+para $\gamma > 1$ descompone el error del estimador de mínima norma en:
+\[
+  \hat{\bm{\theta}} - \bm{\theta}^*
+  = \underbrace{(\bm{P}_{\mathrm{fila}}-\bm{I})\bm{\theta}^*}_{\text{sesgo}}
+  + \underbrace{\bm{X}^\dagger\bm{\varepsilon}}_{\text{varianza}}.
+\]
+El sesgo es la proyección de $\bm{\theta}^*$ sobre el núcleo de $\bm{X}$
+(complemento ortogonal del espacio fila): la parte de la señal verdadera que
+no es recuperable porque vive en las direcciones que $\bm{X}$ no observa.
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La SVD y la pseudoinversa se presentan con rigor en Golub y Van Loan
+(1996)~\cite{golub1996matrix}: la referencia estándar de álgebra lineal numérica.
+El teorema de Eckart-Young para la mejor aproximación de bajo rango está en el
+Capítulo 2 de esa referencia. Para el contexto del aprendizaje automático, una
+presentación accesible está en Strang (2019)~\cite{strang2019linear}.
+
+Las normas matriciales y su rol en las cotas de generalización se discuten en
+Bartlett et al.\ (2017)~\cite{bartlett2017spectrally}. La submultiplicatividad
+de las normas espectrales y de Frobenius es estándar; véase Horn y Johnson
+(2013)~\cite{horn2013matrix}.
+
+La construcción del espacio $L^2$ como espacio de Hilbert, la isometría de Itô
+y el adjunto $L^2$ del generador se desarrollan en Karatzas y
+Shreve~\cite{karatzas1991brownian}, Capítulos 1 y 5. La derivación de la
+ecuación de Fokker-Planck como adjunto del generador via integración por partes
+(Proposición~\ref{prop:ap_adjunto_gen}) sigue la presentación de Øksendal
+(2003)~\cite{oksendal2003stochastic}, Sección 8.1. La dualidad operador/adjunto
+en el contexto de backpropagation se analiza en Griewank y Walther
+(2008)~\cite{griewank2008evaluating}.
+\end{notasbib}

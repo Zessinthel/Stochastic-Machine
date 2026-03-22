@@ -1,0 +1,1378 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{La ecuación de Fokker-Planck y la reversión temporal de SDEs}
+\label{ch:cap11}
+%═══════════════════════════════════════════════════════════════════════════════
+
+El Capítulo~\ref{ch:cap10} terminó enunciando la ecuación de Fokker-Planck sin derivarla y
+verificando que la distribución de Gibbs del Capítulo~\ref{ch:cap5} era estacionaria de la
+SDE de Langevin sin demostración rigurosa. Este capítulo salda esas deudas y
+construye sobre ellas el resultado que organiza los modelos generativos basados
+en difusión: el teorema de Anderson sobre la reversión temporal de SDEs.
+
+Hay una observación de fondo, relevante para la física de reactores y para
+cualquier sistema estocástico con correlaciones espaciales: la difusión isótropa
+$\bm{\Sigma} = g(t)\bm{I}$ que usan los modelos de difusión modernos no es la
+única opción posible, ni necesariamente la más eficiente. El teorema de Anderson
+se establece primero en su forma \textbf{más general} —con difusión $\bm{\Sigma}(\bm{x},t)$
+dependiente del estado— y el caso isótropo aparece como corolario. El término
+$\nabla\cdot\bm{D}$ que distingue al caso general tiene interpretación física
+precisa: es la fuerza de difusio\-fo\-ré\-ti\-ca que emerge cuando el tensor de
+difusión varía en el espacio, análoga al término de deriva en la ecuación de
+transporte de neutrones en medios heterogéneos.
+
+El capítulo cierra con el puente de Schrödinger: el proceso reverso de Anderson
+no es solo una SDE con marginales correctas, sino la única que minimiza la KL
+entre leyes de procesos. En el límite de difusión cero, ese puente converge
+al mapa de transporte óptimo de Monge-Kantorovich, conectando la teoría de
+difusión con el \textit{flow matching} de los modelos generativos más recientes.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La ecuación de Fokker-Planck: derivación rigurosa}
+\label{sec:fp}
+\dificultad{3}{3}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Del generador al adjunto}
+\label{subsec:fp_derivacion}
+
+Sea $d\bm{X}_t = \bm{\mu}(\bm{X}_t,t)\,dt + \bm{\Sigma}(\bm{X}_t,t)\,d\bm{W}_t$
+con $\bm{W}_t \in \mathbb{R}^m$, tensor de difusión $\bm{D} =
+\bm{\Sigma}\bm{\Sigma}^\top \in \mathbb{R}^{d\times d}$, y densidad marginal
+$p_t(\bm{x})$. El generador infinitesimal actúa sobre $f \in C_c^2(\mathbb{R}^d)$:
+\[
+  \mathcal{A}f = \sum_i \mu_i\,\partial_{x_i}f
+  + \frac{1}{2}\sum_{i,j} D_{ij}\,\partial_{x_i x_j}f.
+\]
+Por la Proposición~\ref{prop:generador_def}:
+$\frac{d}{dt}\mathbb{E}[f(\bm{X}_t)] = \int \mathcal{A}f\,p_t\,d\bm{x}$.
+Integrando por partes dos veces y usando que $f$ tiene soporte compacto:
+\begin{align*}
+  \int \mu_i\,\partial_{x_i}f\cdot p_t &= -\int f\,\partial_{x_i}(\mu_i p_t),\\
+  \int D_{ij}\,\partial_{x_ix_j}f\cdot p_t &= \int f\,\partial_{x_ix_j}(D_{ij}p_t).
+\end{align*}
+
+\begin{teorema}{Ecuación de Fokker-Planck}
+\label{thm:fokker_planck}
+La densidad marginal $p_t$ del proceso de Itô con drift $\bm{\mu}$ y tensor de
+difusión $\bm{D} = \bm{\Sigma}\bm{\Sigma}^\top$ satisface:
+\begin{equation}
+  \frac{\partial p_t}{\partial t}
+  = \mathcal{A}^* p_t
+  := -\sum_i \partial_{x_i}(\mu_i p_t)
+  + \frac{1}{2}\sum_{i,j}\partial_{x_i x_j}(D_{ij}p_t).
+  \label{eq:fp}
+\end{equation}
+\end{teorema}
+
+\subsection{Identidad estructural del término de segundo orden}
+\label{subsec:fp_identidad}
+
+Para la demostración del teorema de Anderson será indispensable la siguiente
+identidad de expansión del término difusivo. Expandiendo la derivada doble:
+\begin{equation}
+  \frac{1}{2}\sum_{i,j}\partial_{x_ix_j}(D_{ij}p)
+  = \frac{1}{2}\nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p
+  + \bm{D}\nabla p\right],
+  \label{eq:identidad_difusiva}
+\end{equation}
+donde $(\nabla\cdot\bm{D})_i = \sum_j\partial_{x_j}D_{ij}$ es la
+\textbf{divergencia por filas} del tensor de difusión.
+
+\begin{proof}
+Expandiendo $\sum_j\partial_{x_j}(D_{ij}p) = (\nabla\cdot\bm{D})_i p +
+\sum_j D_{ij}\partial_{x_j}p$, y tomando $\partial_{x_i}$ y sumando en $i$:
+$\sum_{ij}\partial_{x_ix_j}(D_{ij}p) = \sum_i\partial_{x_i}[(\nabla\cdot\bm{D})_i p
++ (\bm{D}\nabla p)_i] = \nabla\cdot[(\nabla\cdot\bm{D})p + \bm{D}\nabla p]$.
+$\square$
+\end{proof}
+
+La Fokker-Planck en forma de ecuación de continuidad es $\partial_t p_t +
+\nabla\cdot\bm{J}_t = 0$ con corriente:
+\begin{equation}
+  \bm{J}_t = \bm{\mu}\,p_t - \frac{1}{2}[(\nabla\cdot\bm{D})\,p_t + \bm{D}\nabla p_t]
+  = p_t\!\left[\bm{\mu} - \frac{1}{2}(\nabla\cdot\bm{D}) - \frac{1}{2}\bm{D}\nabla\log p_t\right].
+  \label{eq:corriente}
+\end{equation}
+
+\subsection{Distribución estacionaria de la SDE de Langevin}
+\label{subsec:gibbs_verificacion}
+
+\begin{proposicion}{La distribución de Gibbs es estacionaria}
+\label{prop:gibbs_estacionaria}
+Para la SDE $d\bm{\theta}_t = -\nabla\mathcal{L}(\bm{\theta}_t)\,dt +
+\sigma\,d\bm{W}_t$ con $\sigma$ constante, $p^* \propto e^{-2\mathcal{L}/\sigma^2}$
+satisface $\mathcal{A}^*p^* = 0$.
+\end{proposicion}
+
+\begin{proof}
+$\nabla p^* = -(2/\sigma^2)\nabla\mathcal{L}\cdot p^*$. Sustituyendo en~\eqref{eq:fp}
+con $\bm{D} = \sigma^2\bm{I}$ (para el que $\nabla\cdot\bm{D} = \bm{0}$):
+\begin{align*}
+  \mathcal{A}^*p^*
+  &= \nabla\cdot(\nabla\mathcal{L}\cdot p^*) + \tfrac{\sigma^2}{2}\Delta p^* \\
+  &= (\Delta\mathcal{L})p^* - \tfrac{2}{\sigma^2}\|\nabla\mathcal{L}\|^2 p^*
+    - (\Delta\mathcal{L})p^* + \tfrac{2}{\sigma^2}\|\nabla\mathcal{L}\|^2 p^* = 0.
+    \quad\square
+\end{align*}
+\end{proof}
+
+\begin{fisicaconexion}{La ecuación de Fokker-Planck en física estadística}
+La ecuación de Fokker-Planck~\eqref{eq:fp} tiene una larga historia en física
+antes de su adopción en los modelos de difusión de ML. Fokker (1914) y Planck
+(1917) la derivaron en el contexto de la difusión browniana. En
+\textbf{física estadística de no equilibrio}, la Fokker-Planck es la ecuación
+maestra continua: describe la evolución de la distribución de probabilidad de
+un sistema estocástico bajo la acción simultánea de deriva determinista y ruido
+térmico. La corriente de probabilidad~\eqref{eq:corriente} tiene interpretación
+termodinámica directa: $\bm{J} = \bm{0}$ en la distribución estacionaria es el
+principio de balance detallado, que equivale a la ausencia de corrientes
+circulantes en el equilibrio termodinámico (segunda ley de la termodinámica para
+sistemas de Markov).
+
+La Proposición~\ref{prop:gibbs_estacionaria} es el enunciado preciso de la
+equipartición estocástica: para la SDE de Langevin con potencial $\mathcal{L}$,
+la distribución de Gibbs $p^* \propto e^{-2\mathcal{L}/\sigma^2}$ es la
+distribución de equilibrio. El parámetro $\sigma^2/2$ juega el rol de $k_BT$
+(temperatura): el ratio $\mathcal{L}/(k_BT)$ determina cuánto pesa cada
+configuración en el ensemble estadístico. Esta es la misma distribución de
+Gibbs-Boltzmann de la mecánica estadística: el SGD con ruido explora el paisaje
+de pérdida exactamente como un sistema físico a temperatura $T_{\mathrm{eff}} =
+\sigma^2/2$ explora su espacio de fases. La tasa de disipación de la KL
+$\frac{d}{dt}D_{\mathrm{KL}}(p_t\|p^*) = -\frac{\sigma^2}{2}\mathcal{I}(p_t\|p^*)$
+(Proposición~\ref{prop:kl_decrece}) tiene la estructura del \textbf{H-teorema
+de Boltzmann}: la entropía relativa $H = D_{\mathrm{KL}}$ decrece monótonamente
+hasta el equilibrio, con la información de Fisher $\mathcal{I}$ como tasa de
+producción de entropía.
+\end{fisicaconexion}
+\label{sec:balance_detallado}
+\dificultad{3}{3}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Balance detallado general}
+\label{subsec:bd_general}
+
+La distribución estacionaria satisface $\nabla\cdot\bm{J}^* = 0$. La condición
+más fuerte, $\bm{J}^* = \bm{0}$, es el \textbf{balance detallado}. De~\eqref{eq:corriente}:
+\begin{equation}
+  \bm{J}^* = \bm{0}
+  \;\Leftrightarrow\;
+  \bm{\mu}(\bm{x}) = \frac{1}{2}(\nabla\cdot\bm{D})(\bm{x})
+  + \frac{1}{2}\bm{D}(\bm{x})\nabla\log p^*(\bm{x}).
+  \label{eq:balance_general}
+\end{equation}
+Para $\bm{D} = \sigma^2\bm{I}$ esto se reduce a $\bm{\mu} = \frac{\sigma^2}{2}
+\nabla\log p^*$, la condición de la Sección~\ref{subsec:gibbs_verificacion}. Para $\bm{D}$
+dependiente del estado aparece el término $\frac{1}{2}\nabla\cdot\bm{D}$:
+la fuerza de \textbf{difusioforesis} que arrastra partículas hacia las regiones
+de mayor difusividad, independientemente del potencial. Este término tiene
+importancia directa en sistemas de transporte en medios heterogéneos.
+
+\begin{proposicion}{Decrecimiento de la KL}
+\label{prop:kl_decrece}
+Para un proceso en balance detallado respecto a $p^*$:
+$\frac{d}{dt}D_{\mathrm{KL}}(p_t\|p^*) = -\int p_t\,
+\bm{J}_t^2/(p_t^2)\,d\bm{x} \leq 0$.
+\end{proposicion}
+
+Para difusión isótropa constante, esto equivale a
+$\frac{d}{dt}D_{\mathrm{KL}} = -\frac{\sigma^2}{2}\mathcal{I}(p_t\|p^*)$
+(demostración idéntica a la Sección anterior).
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El teorema de Anderson: forma general}
+\label{sec:anderson}
+\dificultad{3}{3}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{La pregunta}
+\label{subsec:reverso_pregunta}
+
+Sea $\{\bm{X}_t\}_{t\in[0,T]}$ con SDE general $d\bm{X}_t =
+\bm{\mu}(\bm{X}_t,t)\,dt + \bm{\Sigma}(\bm{X}_t,t)\,d\bm{W}_t$ y densidades
+marginales $p_t > 0$. El proceso reverso $\tilde{\bm{X}}_t = \bm{X}_{T-t}$
+tiene densidad marginal $\tilde{p}_t = p_{T-t}$. ¿Satisface $\tilde{\bm{X}}_t$
+una SDE? ¿Cuál?
+
+\subsection{Enunciado: caso general con difusión dependiente del estado}
+\label{subsec:anderson_general}
+
+\begin{teorema}{Reversión temporal de SDEs -- forma general (Anderson, 1982)}
+\label{thm:anderson_general}
+Sea $d\bm{X}_t = \bm{\mu}(\bm{X}_t,t)\,dt + \bm{\Sigma}(\bm{X}_t,t)\,d\bm{W}_t$
+con $\bm{D} = \bm{\Sigma}\bm{\Sigma}^\top$ y $p_t \in C^{1,2}$ estrictamente
+positiva. El proceso reverso $\tilde{\bm{X}}_t = \bm{X}_{T-t}$ satisface:
+
+\begin{equation}
+\boxed{
+\begin{aligned}
+d\tilde{\bm{X}}_t
+= \Bigl[ & -\bm{\mu}(\tilde{\bm{X}}_t,T{-}t)
++ (\nabla_{\bm{x}}\cdot\bm{D})(\tilde{\bm{X}}_t,T{-}t) \\
+& + \bm{D}(\tilde{\bm{X}}_t,T{-}t)\,\nabla_{\bm{x}}\log p_{T-t}(\tilde{\bm{X}}_t)
+\Bigr]dt \\
+& + \bm{\Sigma}(\tilde{\bm{X}}_t,T{-}t)\,d\tilde{\bm{W}}_t,
+\end{aligned}
+}
+\label{eq:reverse_general}
+\end{equation}
+
+donde $(\nabla\cdot\bm{D})_i = \sum_j\partial_{x_j}D_{ij}$ y $\tilde{\bm{W}}_t$
+es un movimiento browniano bajo la ley del proceso reverso.
+\end{teorema}
+
+El drift del proceso reverso tiene tres contribuciones:
+\begin{enumerate}
+  \item $-\bm{\mu}$: el drift forward negado (reversión naive).
+  \item $\nabla\cdot\bm{D}$: corrección por heterogeneidad espacial de la
+        difusión. Cero si $\bm{D}$ no depende del estado.
+  \item $\bm{D}\nabla\log p_{T-t}$: corrección por la estructura de la
+        distribución marginal. Es el término de score ponderado por la difusión.
+\end{enumerate}
+
+\subsection{Demostración: Ruta A — Verificación directa vía Fokker-Planck}
+\label{subsec:anderson_ruta_a}
+
+La estrategia es proponer la SDE~\eqref{eq:reverse_general}, escribir su
+Fokker-Planck para $\tilde{p}_t$, y verificar que $\tilde{p}_t = p_{T-t}$
+la satisface. La verificación es un cálculo algebraico puro que no requiere
+teoría de medidas avanzada.
+
+\medskip
+\noindent\textbf{Paso 1: Fokker-Planck del proceso reverso propuesto.}
+
+El drift de~\eqref{eq:reverse_general} es
+$\tilde{\bm{\mu}}(\bm{x},t) = -\bm{\mu}(\bm{x},T{-}t) + (\nabla\cdot\bm{D})(\bm{x},T{-}t)
++ \bm{D}(\bm{x},T{-}t)\nabla\log p_{T-t}(\bm{x})$
+y la difusión es $\bm{\Sigma}(\bm{x},T{-}t)$. La Fokker-Planck para la densidad
+$\tilde{p}_t$ del proceso reverso es:
+\begin{equation}
+  \partial_t\tilde{p}_t
+  = -\nabla\cdot(\tilde{\bm{\mu}}\,\tilde{p}_t)
+  + \frac{1}{2}\sum_{i,j}\partial_{x_ix_j}(D_{ij}\,\tilde{p}_t).
+  \label{eq:fp_reverso}
+\end{equation}
+
+\medskip
+\noindent\textbf{Paso 2: lado izquierdo con la candidata $\tilde{p}_t = p_{T-t}$.}
+
+Por la regla de la cadena con $\tau = T-t$:
+\[
+  \partial_t\tilde{p}_t(\bm{x}) = -(\partial_\tau p_\tau)(\bm{x})\big|_{\tau=T-t}.
+\]
+Como $p_\tau$ satisface la Fokker-Planck forward~\eqref{eq:fp}, usando la
+identidad~\eqref{eq:identidad_difusiva}:
+\begin{equation}
+  \partial_t\tilde{p}_t
+  = \nabla\cdot(\bm{\mu}\,p_{T-t})
+  - \frac{1}{2}\nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p_{T-t}
+    + \bm{D}\nabla p_{T-t}\right].
+  \label{eq:lhs_anderson}
+\end{equation}
+Todos los coeficientes se evalúan en $(\bm{x},T{-}t)$.
+
+\medskip
+\noindent\textbf{Paso 3: lado derecho de la Fokker-Planck reversa.}
+
+Sustituyendo $\tilde{p}_t = p_{T-t}$ y $\tilde{\bm{\mu}} = -\bm{\mu} +
+(\nabla\cdot\bm{D}) + \bm{D}\nabla\log p_{T-t}$ en~\eqref{eq:fp_reverso}:
+
+\textit{Término de drift:}
+\begin{align*}
+  -\nabla\cdot(\tilde{\bm{\mu}}\,p_{T-t})
+  &= \nabla\cdot(\bm{\mu}\,p_{T-t})
+    - \nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p_{T-t}\right]
+    - \nabla\cdot(\bm{D}\,p_{T-t}\,\nabla\log p_{T-t}).
+\end{align*}
+Usando $p_{T-t}\nabla\log p_{T-t} = \nabla p_{T-t}$:
+\[
+  \nabla\cdot(\bm{D}\,p_{T-t}\,\nabla\log p_{T-t})
+  = \nabla\cdot(\bm{D}\nabla p_{T-t}).
+\]
+
+\textit{Término difusivo} (con la identidad~\eqref{eq:identidad_difusiva}):
+\[
+  \frac{1}{2}\sum_{ij}\partial_{x_ix_j}(D_{ij}p_{T-t})
+  = \frac{1}{2}\nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p_{T-t}
+    + \bm{D}\nabla p_{T-t}\right].
+\]
+
+\textit{Suma del lado derecho:}
+\begin{align}
+  \text{RHS}
+  &= \nabla\cdot(\bm{\mu}\,p_{T-t})
+    - \nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p_{T-t}\right]
+    - \nabla\cdot(\bm{D}\nabla p_{T-t}) \notag\\
+  &\quad + \frac{1}{2}\nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p_{T-t}
+    + \bm{D}\nabla p_{T-t}\right] \notag\\
+  &= \nabla\cdot(\bm{\mu}\,p_{T-t})
+    - \frac{1}{2}\nabla\cdot\!\left[(\nabla\cdot\bm{D})\,p_{T-t}
+    + \bm{D}\nabla p_{T-t}\right].
+  \label{eq:rhs_anderson}
+\end{align}
+
+\medskip
+\noindent\textbf{Paso 4: comparación.}
+
+Comparando~\eqref{eq:lhs_anderson} y~\eqref{eq:rhs_anderson}: LHS $=$ RHS.
+La candidata $\tilde{p}_t = p_{T-t}$ satisface la Fokker-Planck del proceso
+reverso propuesto para cualquier tensor $\bm{D}(\bm{x},t)$. La condición
+inicial $\tilde{p}_0 = p_T$ es correcta por construcción. Por unicidad de
+soluciones de la Fokker-Planck, la SDE~\eqref{eq:reverse_general} es la SDE
+del proceso reverso. $\square$
+
+\begin{observacion}{El rol de la identidad $\nabla\cdot(p\nabla\log p) = \nabla\cdot(\nabla p)$}
+La pieza algebraica central de la demostración es que el término de score del
+drift reverso, al multiplicarse por $p$, produce $\bm{D}\nabla p$, que junto
+con el término difusivo de segundo orden de la Fokker-Planck produce exactamente
+la mitad de $\nabla\cdot[(\nabla\cdot\bm{D})p + \bm{D}\nabla p]$. La otra
+mitad cancela con $-\nabla\cdot[(\nabla\cdot\bm{D})p]$ del término de drift.
+El score $\nabla\log p$ codifica la información de curvatura de la distribución
+en un campo vectorial de primer orden, lo que permite que la Fokker-Planck de
+segundo orden del reverso coincida exactamente con la del forward invertido en
+tiempo.
+\end{observacion}
+
+\subsection{Demostración: Ruta B — Cambio de medida vía Girsanov}
+\label{subsec:anderson_ruta_b}
+
+La Ruta A es algebraicamente directa pero no ilumina la estructura probabilística.
+La Ruta B revela por qué el score aparece: es la derivada de Radon-Nikodym entre
+la ley del proceso forward y la ley del browniano de referencia.
+
+\begin{definicion}{Exponencial de Doléans-Dade}
+\label{def:doleans}
+Para $\bm{u}_t \in \mathbb{R}^m$ adaptado, la \textbf{exponencial de
+Doléans-Dade} es:
+\[
+  \mathcal{E}(\bm{u})_t
+  = \exp\!\left(\int_0^t \bm{u}_s^\top d\bm{W}_s
+    - \frac{1}{2}\int_0^t \|\bm{u}_s\|^2\,ds\right),
+\]
+que satisface $d\mathcal{E}(\bm{u})_t = \mathcal{E}(\bm{u})_t\,\bm{u}_t^\top
+d\bm{W}_t$: es una martingala local.
+\end{definicion}
+
+La \textbf{condición de Novikov} $\mathbb{E}\!\left[e^{\frac{1}{2}\int_0^T
+\|\bm{u}_t\|^2\,dt}\right] < \infty$ garantiza que $\mathcal{E}(\bm{u})_T$
+es una martingala con $\mathbb{E}[\mathcal{E}(\bm{u})_T] = 1$.
+
+\begin{teorema}{Teorema de Girsanov}
+\label{thm:girsanov}
+Bajo la condición de Novikov, si se define $\tilde{\mathbb{P}}$ por
+$d\tilde{\mathbb{P}}/d\mathbb{P}|_{\mathcal{F}_T} = \mathcal{E}(\bm{u})_T$,
+entonces $\tilde{\bm{W}}_t = \bm{W}_t - \int_0^t\bm{u}_s\,ds$ es un
+movimiento browniano estándar bajo $\tilde{\mathbb{P}}$.
+\end{teorema}
+
+\begin{proof}[Demostración del Teorema~\ref{thm:anderson_general} vía Girsanov]
+\textbf{Paso 1: medida del proceso reverso.}
+La ley de $\tilde{\bm{X}}_t = \bm{X}_{T-t}$ bajo $\mathbb{P}^{\mathrm{fwd}}$
+tiene densidad de transición reversa:
+\[
+  \tilde{p}(\bm{x},t|\bm{y},s) = p(\bm{y},T-s|\bm{x},T-t)
+  \cdot\frac{p_{T-t}(\bm{x})}{p_{T-s}(\bm{y})}, \quad s < t.
+\]
+Se define la medida $\tilde{\mathbb{P}}$ sobre el proceso reverso mediante
+$d\tilde{\mathbb{P}}/d\mathbb{P}^{\mathrm{rev}} = \mathcal{E}(\bm{u})_T$
+donde $\mathbb{P}^{\mathrm{rev}}$ es la ley del browniano reverso
+$\hat{\bm{W}}_t = \bm{W}_{T-t}-\bm{W}_T$.
+
+\textbf{Paso 2: ecuación de $\tilde{\bm{X}}_t$ bajo $\mathbb{P}$.}
+Con $\hat{\bm{W}}_t = \bm{W}_{T-t}-\bm{W}_T$ (que es browniano bajo $\mathbb{P}$)
+e invirtiendo el tiempo en la SDE:
+\[
+  d\tilde{\bm{X}}_t = -\bm{\mu}(\tilde{\bm{X}}_t,T{-}t)\,dt
+  - \bm{\Sigma}(\tilde{\bm{X}}_t,T{-}t)\,d\hat{\bm{W}}_t.
+\]
+Bajo $\mathbb{P}$, el drift efectivo es $-\bm{\mu}$ y la difusión es $-\bm{\Sigma}$
+(o $+\bm{\Sigma}$ por simetría del browniano).
+
+\textbf{Paso 3: identificación del proceso $\bm{u}$.}
+Para que bajo $\tilde{\mathbb{P}}$ el drift sea el correcto, se necesita
+$\bm{\Sigma}\bm{u}_t = (\nabla\cdot\bm{D}) + \bm{D}\nabla\log p_{T-t}$.
+Dado que $\bm{D} = \bm{\Sigma}\bm{\Sigma}^\top$, si $\bm{\Sigma}$ es
+cuadrada e invertible: $\bm{u}_t = \bm{\Sigma}^\top(\bm{\Sigma}\bm{\Sigma}^\top)^{-1}
+[(\nabla\cdot\bm{D}) + \bm{D}\nabla\log p_{T-t}] = \bm{\Sigma}^{-\top}
+[(\nabla\cdot\bm{D}) + \bm{D}\nabla\log p_{T-t}]$.
+
+\textbf{Paso 4: verificación de Novikov.}
+Para coeficientes Lipschitz y $p_t$ acotada inferior y superiormente en compactos,
+$\|\bm{u}_t\|^2 \leq C(1+\|\tilde{\bm{X}}_t\|^2)$. El control de momentos del
+proceso garantiza $\mathbb{E}[e^{\frac{1}{2}\int_0^T\|\bm{u}\|^2}] < \infty$.
+Para el proceso OU con $p_t$ gaussiana, la condición es verificable explícitamente
+ya que $\nabla\log p_t$ es lineal en $\bm{x}$.
+
+\textbf{Paso 5: conclusión.}
+Por Girsanov, $\tilde{\bm{W}}_t = \hat{\bm{W}}_t - \int_0^t\bm{u}_s\,ds$ es
+browniano bajo $\tilde{\mathbb{P}}$, y la SDE de $\tilde{\bm{X}}_t$ bajo
+$\tilde{\mathbb{P}}$ tiene el drift de~\eqref{eq:reverse_general}. $\square$
+\end{proof}
+
+\begin{observacion}{Qué aporta cada ruta}
+La \textbf{Ruta A} (Fokker-Planck) es elemental y algorítmica: proponer, calcular,
+comparar. No requiere más que la regla de la cadena y la identidad~\eqref{eq:identidad_difusiva}.
+La \textbf{Ruta B} (Girsanov) revela la estructura probabilística: el score
+$\nabla\log p_t$ es proporcional a la derivada de Radon-Nikodym entre la medida
+del proceso forward y la del browniano de referencia. El proceso reverso es la
+medida de proceso que "corrige" el browniano reverso para que tenga las marginales
+correctas. Esta perspectiva es la que conecta directamente con el puente de
+Schrödinger de la Sección~\ref{sec:schrodinger}.
+\end{observacion}
+
+\subsection{El término \texorpdfstring{$\nabla\cdot\bm{D}$}{nabla·D}: interpretación física}
+\label{subsec:divergencia_d}
+
+El término $(\nabla\cdot\bm{D})_i = \sum_j\partial_{x_j}D_{ij}$ es la fuerza
+neta que experimenta una partícula browniana en un medio con difusividad variable,
+independientemente del potencial. Tiene nombres distintos en distintos campos:
+
+\begin{itemize}
+  \item \textbf{Física estadística}: fuerza de difusioforesis o deriva espuria
+        (en la convención de Itô).
+  \item \textbf{Transporte de neutrones}: término de hetero\-genei\-dad en la
+        ecuación de transporte difusivo $\nabla\cdot(D(\bm{x})\nabla\phi)
+        = (\nabla D)\cdot(\nabla\phi) + D\Delta\phi$: el primer término es el
+        análogo de $(\nabla\cdot\bm{D})p$.
+  \item \textbf{Mecánica cuántica}: en la ecuación de Fokker-Planck para la
+        densidad de probabilidad en mecánica estocástica de Nelson, este término
+        aparece como parte de la velocidad osmótica.
+\end{itemize}
+
+Para los modelos de difusión modernos, $\bm{D} = g(t)^2\bm{I}$ no depende del
+estado, luego $\nabla\cdot\bm{D} = \bm{0}$: el término desaparece y el reverse
+SDE solo tiene el score. Pero en aplicaciones de física de reactores donde la
+difusividad $D(\bm{x})$ varía en el espacio (distintos materiales, heterogeneidades),
+el término es esencial para que el proceso reverso tenga las marginales correctas.
+
+\begin{fisicaconexion}{Difusioforesis y transporte en medios heterogéneos}
+El término $\nabla\cdot\bm{D}$ que aparece en el reverse SDE general tiene
+nombre y descripción experimental en física. En un fluido con gradiente de
+temperatura o composición, partículas coloidales se mueven desde regiones de
+baja difusividad hacia regiones de alta difusividad incluso en ausencia de
+gradiente de presión o concentración: este efecto es la
+\textbf{difusioforesis} (o termoforesis cuando el gradiente es térmico). La
+fuerza efectiva sobre la partícula es proporcional a $\nabla D(\bm{x})$,
+exactamente la contribución $\frac{1}{2}\nabla\cdot\bm{D}$ del balance
+detallado~\eqref{eq:balance_general}.
+
+En la \textbf{ecuación de difusión de neutrones}, el flujo $\phi(\bm{r})$ en
+un reactor heterogéneo satisface $-\nabla\cdot(D(\bm{r})\nabla\phi) + \Sigma_a\phi
+= S$, donde $D(\bm{r})$ varía entre el combustible ($D \approx 1$ cm), el
+moderador ($D \approx 0.16$ cm para agua) y el reflector. Expandiendo:
+$-D(\bm{r})\Delta\phi - (\nabla D)\cdot(\nabla\phi) + \Sigma_a\phi = S$.
+El término $(\nabla D)\cdot(\nabla\phi)$ es el análogo macroscópico de
+$\nabla\cdot\bm{D}$ en la Fokker-Planck: en interfaces entre materiales, el
+flujo neutrónico sufre una discontinuidad de derivada proporcional al salto
+en $D$. Ignorar este término (asumir $D$ constante por zonas y no en las
+interfaces) produce el error más común en el modelado de reactores heterogéneos.
+
+En \textbf{procesos de difusión en biofísica}, las proteínas difunden en
+membranas celulares con difusividad que varía entre el interior y los bordes de
+las balsas lipídicas (lipid rafts): $D(\bm{x})$ puede cambiar por un factor
+10 en escala de nanómetros. La velocidad de deriva inducida $v_{\mathrm{drift}}
+= \frac{1}{2}\partial_x D(x)$ acumula proteínas en los bordes de las balsas,
+un mecanismo de señalización que no requiere energía directa. En los
+modelos de difusión anisótropa del cerebro (tractografía por tensor de difusión),
+el tensor $\bm{D}(\bm{r})$ varía con la orientación de los axones: ignorar
+$\nabla\cdot\bm{D}$ en el proceso inverso produciría artefactos sistemáticos en
+la reconstrucción de la conectividad cerebral.
+\end{fisicaconexion}
+\label{subsec:anderson_casos}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{Caso} & $\bm{\Sigma}$ & $\nabla\cdot\bm{D}$ & \textbf{Drift reverso} \\
+\midrule
+Isótropo escalar & $g(t)\bm{I}$ & $\bm{0}$ & $-\bm{\mu}+g^2\nabla\log p$ \\
+Isótropo variable & $g(\bm{x},t)\bm{I}$ & $2g\nabla g$ & $-\bm{\mu}+2g\nabla g+g^2\nabla\log p$ \\
+Diagonal & $\mathrm{diag}(\sigma_i(\bm{x},t))$ & $(\partial_{x_j}\sigma_i^2)_i$ & caso general \\
+Tensor completo & $\bm{\Sigma}(\bm{x},t)$ & $\sum_j\partial_{x_j}D_{ij}$ & \eqref{eq:reverse_general} \\
+\bottomrule
+\end{tabular}
+\caption{Casos particulares del teorema de Anderson general.}
+\label{tab:anderson_casos}
+\end{table}
+
+\begin{proposicion}{Caso isótropo escalar —  Corolario del Teorema~\ref{thm:anderson_general}}
+
+\label{cor:anderson_isotropo}
+Para $\bm{\Sigma}(\bm{x},t) = g(t)\bm{I}$ y $\bm{\mu}(\bm{x},t) = \bm{f}(\bm{x},t)$:
+\begin{equation}
+  d\tilde{\bm{X}}_t
+  = \left[-\bm{f}(\tilde{\bm{X}}_t,T{-}t)
+  + g(T{-}t)^2\,\nabla_{\bm{x}}\log p_{T-t}(\tilde{\bm{X}}_t)\right]dt
+  + g(T{-}t)\,d\tilde{\bm{W}}_t.
+  \label{eq:reverse_isotropo}
+\end{equation}
+\end{proposicion}
+
+\subsection{La ODE de flujo de probabilidad}
+\label{subsec:prob_flow_ode}
+
+\begin{proposicion}{ODE de flujo de probabilidad}
+\label{prop:prob_flow}
+Para el caso isótropo, la ODE determinista:
+\begin{equation}
+  \frac{d\bm{x}}{dt}
+  = \bm{f}(\bm{x},t) - \frac{g(t)^2}{2}\nabla_{\bm{x}}\log p_t(\bm{x})
+  \label{eq:prob_flow_ode}
+\end{equation}
+tiene densidades marginales $p_t(\bm{x})$ idénticas a las del forward process.
+\end{proposicion}
+
+\begin{proof}
+La ecuación de continuidad de~\eqref{eq:prob_flow_ode} es $\partial_t p =
+-\nabla\cdot(p\dot{\bm{x}})$. Sustituyendo:
+$\partial_t p = -\nabla\cdot(p\bm{f}) + \frac{g^2}{2}\nabla\cdot(p\nabla\log p)
+= -\nabla\cdot(p\bm{f}) + \frac{g^2}{2}\Delta p$,
+que es la Fokker-Planck del forward. Misma EDP, misma condición inicial: por
+unicidad, misma solución. $\square$
+\end{proof}
+
+La ODE de flujo conecta los modelos de difusión con las Neural ODEs del
+Capítulo~\ref{ch:cap9}: para muestrear de $p_0$, se integra~\eqref{eq:prob_flow_ode} desde
+$t=T$ hasta $t=0$ con condición inicial $\bm{x}(T)\sim\mathcal{N}(\bm{0},\bm{I})$.
+Las trayectorias son deterministas pero su distribución marginal es $p_0$.
+
+\subsection{Aplicación al forward process OU}
+\label{subsec:anderson_ou}
+
+Para el proceso OU $d\bm{X}_t = -\bm{X}_t\,dt + \sqrt{2}\,d\bm{W}_t$
+($\bm{f} = -\bm{x}$, $g = \sqrt{2}$), el Corolario~\ref{cor:anderson_isotropo}
+da:
+\begin{equation}
+  d\tilde{\bm{X}}_t
+  = \Big[\tilde{\bm{X}}_t
+  + 2\nabla\log p_{T-t}(\tilde{\bm{X}}_t)\Big]dt
+  + \sqrt{2}\,d\tilde{\bm{W}}_t.
+  \label{eq:reverse_ou}
+\end{equation}
+El único elemento desconocido es el score $\nabla\log p_{T-t}$: varía de
+$-\tilde{\bm{X}}_t$ (gaussiano, simple) en $t=0$ hasta la geometría completa
+de $p_0$ en $t=T$.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Score matching: estimación de la función de score}
+\label{sec:score_matching}
+\dificultad{3}{2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{La función de score}
+\label{subsec:score_def}
+
+\begin{definicion}{Función de score}
+La \textbf{función de score} de una distribución con densidad $p$ es
+$\bm{s}(\bm{x}) = \nabla_{\bm{x}}\log p(\bm{x})$.
+\end{definicion}
+
+El score apunta hacia las regiones de mayor probabilidad. Para $p =
+\mathcal{N}(\bm{\mu},\bm{\Sigma})$: $\bm{s}(\bm{x}) = -\bm{\Sigma}^{-1}
+(\bm{x}-\bm{\mu})$, que apunta hacia la media. Nótese que el score es
+\textbf{no isótropo} para $\bm{\Sigma} \neq \sigma^2\bm{I}$: incluso cuando
+el forward process inyecta ruido isótropo, el score de la distribución marginal
+$p_t$ hereda la correlación de $p_0$ (ver la discusión de la Sección anterior
+sobre por qué la difusión isótropa no destruye la correlación).
+
+\subsection{Score matching implícito (Hyvärinen, 2005)}
+\label{subsec:hyvarinen}
+
+El score verdadero $\nabla\log p$ no puede calcularse directamente desde
+muestras porque requiere conocer $p$. El score matching implícito elimina esa
+dependencia.
+
+\begin{teorema}{Score matching implícito}
+\label{thm:hyvarinen}
+Para $\bm{s}_{\bm{\phi}}: \mathbb{R}^d\to\mathbb{R}^d$ paramétrico:
+\begin{align}
+  J_E(\bm{\phi}) &= \tfrac{1}{2}\mathbb{E}_p\|\bm{s}_{\bm{\phi}}-\nabla\log p\|^2
+  \quad\text{(no computable)}, \label{eq:jsm_e}\\
+  J_I(\bm{\phi}) &= \mathbb{E}_p\!\left[\mathrm{tr}(\nabla_{\bm{x}}\bm{s}_{\bm{\phi}})
+  + \tfrac{1}{2}\|\bm{s}_{\bm{\phi}}\|^2\right]
+  \quad\text{(computable)}, \label{eq:jsm_i}
+\end{align}
+satisfacen $J_E(\bm{\phi}) = J_I(\bm{\phi}) + C$ con $C$ independiente de
+$\bm{\phi}$. Luego $\argmin J_E = \argmin J_I$.
+\end{teorema}
+
+\begin{proof}
+Expandiendo $J_E = \frac{1}{2}\mathbb{E}_p\|\bm{s}_{\bm{\phi}}\|^2
+- \mathbb{E}_p[\bm{s}_{\bm{\phi}}\cdot\nabla\log p]
++ \frac{1}{2}\mathbb{E}_p\|\nabla\log p\|^2$.
+El último término es la constante $C$. Para el término del medio,
+usando $\nabla\log p = \nabla p/p$ e integrando por partes (Green en
+$\mathbb{R}^d$, términos de frontera nulos para $p$ con decaimiento rápido):
+\[
+  \int p\,s_{\bm{\phi},i}\,\frac{\partial\log p}{\partial x_i}
+  = \int s_{\bm{\phi},i}\,\partial_{x_i}p
+  = -\int p\,\partial_{x_i}s_{\bm{\phi},i}.
+\]
+Sumando en $i$: $\mathbb{E}_p[\bm{s}_{\bm{\phi}}\cdot\nabla\log p]
+= -\mathbb{E}_p[\mathrm{tr}(\nabla\bm{s}_{\bm{\phi}})]$.
+Luego $J_E = J_I + C$. $\square$
+\end{proof}
+
+El costo de $J_I$ es $O(d)$ evaluaciones del jacobiano de $\bm{s}_{\bm{\phi}}$
+por muestra. El denoising score matching elimina incluso ese costo.
+
+\subsection{Denoising score matching (Vincent, 2011)}
+\label{subsec:dsm}
+
+\begin{teorema}{Denoising score matching}
+\label{thm:dsm}
+Sea $q_\sigma(\tilde{\bm{x}}|\bm{x}) = \mathcal{N}(\tilde{\bm{x}};\bm{x},\sigma^2\bm{I})$
+y $q_\sigma(\tilde{\bm{x}}) = \int q_\sigma(\tilde{\bm{x}}|\bm{x})p(\bm{x})\,d\bm{x}$.
+Entonces:
+\[
+  \argmin_{\bm{\phi}}\,\mathbb{E}_{q_\sigma(\tilde{\bm{x}})}
+  \|\bm{s}_{\bm{\phi}}(\tilde{\bm{x}})-\nabla\log q_\sigma(\tilde{\bm{x}})\|^2
+  =
+  \argmin_{\bm{\phi}}\,\mathbb{E}_{p(\bm{x})\,q_\sigma(\tilde{\bm{x}}|\bm{x})}
+  \|\bm{s}_{\bm{\phi}}(\tilde{\bm{x}})-\nabla\log q_\sigma(\tilde{\bm{x}}|\bm{x})\|^2.
+\]
+El lado derecho no requiere conocer $q_\sigma(\tilde{\bm{x}})$.
+\end{teorema}
+
+\begin{proof}
+Denotamos $\bm{s} = \bm{s}_{\bm{\phi}}(\tilde{\bm{x}})$, $\bm{s}_0 = \nabla\log
+q_\sigma(\tilde{\bm{x}})$ y $\bm{s}_c = \nabla\log q_\sigma(\tilde{\bm{x}}|\bm{x})$.
+Se expande:
+\[
+  \mathbb{E}_{q_\sigma}\|\bm{s}-\bm{s}_0\|^2
+  = \mathbb{E}_{q_\sigma}\|\bm{s}\|^2
+  - 2\mathbb{E}_{q_\sigma}[\bm{s}\cdot\bm{s}_0]
+  + C_1.
+\]
+El primer término es $\mathbb{E}_{p,q_\sigma|\bm{x}}\|\bm{s}\|^2$.
+Para el segundo, usando $q_\sigma(\tilde{\bm{x}})\nabla\log q_\sigma(\tilde{\bm{x}})
+= \nabla_{\tilde{\bm{x}}}q_\sigma(\tilde{\bm{x}}) = \int p(\bm{x})
+\nabla_{\tilde{\bm{x}}}q_\sigma(\tilde{\bm{x}}|\bm{x})\,d\bm{x}$:
+\begin{align*}
+  \mathbb{E}_{q_\sigma}[\bm{s}\cdot\bm{s}_0]
+  &= \int q_\sigma(\tilde{\bm{x}})\,\bm{s}\cdot\nabla\log q_\sigma(\tilde{\bm{x}})
+    \,d\tilde{\bm{x}} \\
+  &= \int\!\int p(\bm{x})q_\sigma(\tilde{\bm{x}}|\bm{x})\,\bm{s}
+    \cdot\frac{\nabla_{\tilde{\bm{x}}}q_\sigma(\tilde{\bm{x}})}{q_\sigma(\tilde{\bm{x}})}
+    \,d\bm{x}\,d\tilde{\bm{x}}.
+\end{align*}
+Expresando $\nabla\log q_\sigma(\tilde{\bm{x}})$ como promedio condicional
+sobre $p(\bm{x}|\tilde{\bm{x}})$ (por la fórmula de Bayes $p(\bm{x}|\tilde{\bm{x}})
+\propto p(\bm{x})q_\sigma(\tilde{\bm{x}}|\bm{x})$):
+\[
+  \nabla\log q_\sigma(\tilde{\bm{x}})
+  = \frac{\int p(\bm{x})\nabla_{\tilde{\bm{x}}}q_\sigma(\tilde{\bm{x}}|\bm{x})
+    \,d\bm{x}}{q_\sigma(\tilde{\bm{x}})}
+  = \mathbb{E}_{p(\bm{x}|\tilde{\bm{x}})}[\nabla\log q_\sigma(\tilde{\bm{x}}|\bm{x})].
+\]
+Por tanto $\mathbb{E}_{q_\sigma}[\bm{s}\cdot\bm{s}_0]
+= \mathbb{E}_{p,q_\sigma|\bm{x}}[\bm{s}\cdot\bm{s}_c]$.
+Sustituyendo:
+\[
+  \mathbb{E}_{q_\sigma}\|\bm{s}-\bm{s}_0\|^2
+  = \mathbb{E}_{p,q_\sigma|\bm{x}}\|\bm{s}\|^2
+  - 2\mathbb{E}_{p,q_\sigma|\bm{x}}[\bm{s}\cdot\bm{s}_c] + C_1
+  = \mathbb{E}_{p,q_\sigma|\bm{x}}\|\bm{s}-\bm{s}_c\|^2
+  + C_1 - C_2,
+\]
+donde $C_2 = \mathbb{E}_{p,q_\sigma|\bm{x}}\|\bm{s}_c\|^2$ no depende de
+$\bm{\phi}$. Los $\argmin$ coinciden. $\square$
+\end{proof}
+
+\subsubsection*{La pérdida de predicción de ruido (DDPM)}
+
+Para el kernel gaussiano, con $\tilde{\bm{x}} = \bm{x} + \sigma\bm{\varepsilon}$,
+$\bm{\varepsilon}\sim\mathcal{N}(\bm{0},\bm{I})$:
+$\nabla_{\tilde{\bm{x}}}\log q_\sigma(\tilde{\bm{x}}|\bm{x}) = -\bm{\varepsilon}/\sigma$.
+Parametrizando $\bm{s}_{\bm{\phi}}(\tilde{\bm{x}}) =
+-\bm{\varepsilon}_{\bm{\phi}}(\tilde{\bm{x}})/\sigma$:
+\begin{equation}
+  J_{\mathrm{DDPM}}(\bm{\phi})
+  = \mathbb{E}_{p(\bm{x}),\bm{\varepsilon}}\bigl[
+  \|\bm{\varepsilon}_{\bm{\phi}}(\bm{x}+\sigma\bm{\varepsilon})-\bm{\varepsilon}\|^2
+  \bigr].
+  \label{eq:ddpm_loss}
+\end{equation}
+Esta es la función de pérdida de DDPM (Ho et al., 2020): predecir el ruido
+añadido. La red $\bm{\varepsilon}_{\bm{\phi}}$ es en la práctica una U-Net o
+transformer condicionado al nivel de ruido $\sigma$ (o equivalentemente al
+tiempo $t$).
+
+\begin{observacion}{Correlación y el score}
+La discusión entre las Secciones~\ref{sec:anderson} y~\ref{sec:score_matching}
+revela la separación de responsabilidades del diseño: el ruido isótropo $g(t)\bm{I}$
+no destruye la correlación de $p_0$ sino que la traslada a $p_t$ y por ende al
+score $\nabla\log p_t$. La red $\bm{\varepsilon}_{\bm{\phi}}$ aprende esa
+correlación implícitamente: aunque predice un vector $\bm{\varepsilon}\in
+\mathbb{R}^d$, las componentes de su salida son interdependientes a través
+de los pesos de la red. El ruido isótropo simplifica $\nabla\cdot\bm{D} =
+\bm{0}$ y hace computable la pérdida~\eqref{eq:ddpm_loss}; la geometría
+correlacional de los datos queda completamente codificada en la función
+aprendida por la red.
+\end{observacion}
+
+\begin{fisicaconexion}{La función de score en física estadística y termodinámica}
+La función de score $\bm{s}(\bm{x}) = \nabla\log p(\bm{x})$ es un objeto con
+significado físico profundo, independiente de su rol en los modelos de difusión.
+Para la distribución de Gibbs-Boltzmann $p(\bm{x}) \propto e^{-U(\bm{x})/(k_BT)}$:
+\[
+  \bm{s}(\bm{x}) = \nabla\log p(\bm{x}) = -\frac{\nabla U(\bm{x})}{k_BT},
+\]
+que es la \textbf{fuerza termodinámica} normalizada por la temperatura: apunta
+hacia los mínimos de energía libre, exactamente como el score apunta hacia las
+regiones de alta probabilidad. En la ecuación de Langevin $d\bm{x} = -\nabla U\,dt
++ \sqrt{2k_BT}\,d\bm{W}$, la deriva puede reescribirse como $k_BT\,\bm{s}(\bm{x})$:
+el drift es el score multiplicado por la temperatura.
+
+La información de Fisher $\mathcal{I}(p) = \mathbb{E}_p[\|\nabla\log p\|^2]
+= \mathbb{E}_p[\|\bm{s}\|^2]$ (la norma cuadrática media del score) aparece
+en varios contextos físicos:
+\begin{itemize}
+  \item En el límite de baja temperatura, $\mathcal{I}(p)$ es proporcional a
+        la varianza del gradiente de energía, que mide la rugosidad del paisaje
+        de energía.
+  \item El corolario de la ecuación de Cramér-Rao establece que $\mathcal{I}^{-1}$
+        es la varianza mínima de cualquier estimador insesgado de los parámetros
+        de $p$: la información de Fisher es la curvatura de la log-verosimilitud,
+        exactamente la matriz de Fisher del Capítulo~\ref{ch:cap7}.
+  \item La tasa de decrecimiento de la KL en la Proposición~\ref{prop:kl_decrece},
+        $\frac{d}{dt}D_\mathrm{KL} = -\frac{\sigma^2}{2}\mathcal{I}(p_t\|p^*)$,
+        es el \textbf{H-teorema cuantitativo}: la información de Fisher de la
+        distribución relativa es la tasa de producción de entropía.
+\end{itemize}
+
+El score matching implícito (Teorema~\ref{thm:hyvarinen}) puede interpretarse
+como la estimación de la fuerza termodinámica sin conocer el potencial $U$
+directamente: se aprende $\bm{s} = -\nabla U / k_BT$ desde las posiciones de
+las partículas (muestras de $p$), sin resolver la ecuación de Poisson $\Delta U
+= \nabla\cdot(\bm{s}\cdot k_BT)$. Esta perspectiva conecta el score matching
+con los métodos de física computacional para estimar energías libres a partir
+de simulaciones de dinámica molecular.
+\end{fisicaconexion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El puente de Schrödinger y el transporte óptimo}
+\label{sec:schrodinger}
+\dificultad{3}{3}
+%───────────────────────────────────────────────────────────────────────────────
+
+\subsection{Multiplicidad de los procesos reversos y el principio de selección}
+\label{subsec:multiplicidad}
+
+El Teorema~\ref{thm:anderson_general} determina la SDE del proceso reverso
+\textit{dado} un forward process específico. Pero hay infinitas SDEs con
+marginales $p_T$ en $t=0$ y $p_0$ en $t=T$. ¿En qué sentido es el proceso de
+Anderson ``el'' proceso reverso?
+
+El \textbf{problema del puente de Schrödinger} (Schrödinger, 1931; Föllmer,
+1988) responde con un principio variacional: entre todos los procesos de Markov
+con las marginales correctas, el puente de Schrödinger es el que está más
+cerca del proceso de referencia en el sentido de la KL entre leyes de procesos.
+
+\subsection{KL entre leyes de procesos vía Girsanov}
+\label{subsec:kl_procesos}
+
+Para dos procesos de Itô con la misma difusión $g(t)$ pero drifts $b(\bm{x},t)$
+y $f(\bm{x},t)$, con leyes $\mathbb{P}^b$ y $\mathbb{P}^f$ sobre
+$C([0,T];\mathbb{R}^d)$, el teorema de Girsanov establece que la derivada de
+Radon-Nikodym es $d\mathbb{P}^b/d\mathbb{P}^f = \mathcal{E}(\bm{u})_T$ con
+$\bm{u} = (b-f)/g$. Por tanto:
+\begin{equation}
+  D_{\mathrm{KL}}(\mathbb{P}^b\|\mathbb{P}^f)
+  = \mathbb{E}_{\mathbb{P}^b}\!\left[\log\frac{d\mathbb{P}^b}{d\mathbb{P}^f}\right]
+  = \frac{1}{2}\mathbb{E}_{\mathbb{P}^b}\!\left[
+    \int_0^T \frac{\|b(\bm{X}_t,t)-f(\bm{X}_t,t)\|^2}{g(t)^2}\,dt
+  \right].
+  \label{eq:kl_procesos}
+\end{equation}
+La KL entre leyes de procesos es la energía cuadrática integrada de la
+diferencia de drifts a lo largo de las trayectorias.
+
+\begin{definicion}{Puente de Schrödinger}
+\label{def:schrodinger}
+Sea $\mathbb{R}$ la ley del forward process (proceso de referencia) y
+$\Pi(p_T, p_0)$ el conjunto de procesos de Markov con marginal $p_T$ en $t=0$
+y marginal $p_0$ en $t=T$. El \textbf{puente de Schrödinger} entre $p_T$ y
+$p_0$ con referencia $\mathbb{R}$ es:
+\begin{equation}
+  \mathbb{P}^* = \argmin_{\mathbb{P}\in\Pi(p_T,p_0)} D_{\mathrm{KL}}(\mathbb{P}\|\mathbb{R}).
+  \label{eq:schrodinger_problem}
+\end{equation}
+\end{definicion}
+
+\begin{proposicion}{El proceso de Anderson es el puente de Schrödinger}
+\label{prop:anderson_schrodinger}
+Con la ley del forward process OU como referencia $\mathbb{R}$, el proceso
+reverso de Anderson $\tilde{\bm{X}}_t = \bm{X}_{T-t}$ es la solución del
+problema~\eqref{eq:schrodinger_problem}.
+\end{proposicion}
+
+\begin{proof}
+Por~\eqref{eq:kl_procesos}, minimizar $D_{\mathrm{KL}}(\mathbb{P}\|\mathbb{R})$
+sobre $\Pi(p_T,p_0)$ equivale a encontrar el drift $b^*$ que minimiza la
+norma cuadrática integrada $\mathbb{E}[\int_0^T\|b-f_{\mathbb{R}}\|^2/g^2\,dt]$
+sujeto a que $\mathbb{P}$ tenga marginales $p_T$ y $p_0$.
+
+Se introduce el lagrangiano con multiplicadores funcionales $\varphi(\bm{x})$
+y $\psi(\bm{x})$ para las restricciones de marginalidad. La condición de
+optimalidad de primer orden en el drift es:
+\[
+  b^*(\bm{x},t) = f_{\mathbb{R}}(\bm{x},t) + g(t)^2\nabla_{\bm{x}}\phi(\bm{x},t),
+\]
+donde $\phi$ satisface la ecuación de Kolmogorov hacia atrás respecto a
+$\mathbb{R}$:
+\[
+  \partial_t\phi + f_{\mathbb{R}}\cdot\nabla\phi + \frac{g^2}{2}\Delta\phi = 0,
+  \quad \phi(\bm{x},T) = \log\frac{p_0(\bm{x})}{p_T(\bm{x})}.
+\]
+Para $\mathbb{R}$ el forward OU corriendo hacia atrás (con $f_{\mathbb{R}} = \bm{x}$),
+la función $\phi(\bm{x},t) = \log(p_{T-t}(\bm{x})/p_T(\bm{x}))$ satisface
+esa ecuación (verificable por sustitución directa usando la Fokker-Planck del OU).
+Luego $b^*(\bm{x},t) = \bm{x} + g^2\nabla\log p_{T-t}(\bm{x})$,
+que es exactamente el drift del proceso de Anderson~\eqref{eq:reverse_ou}. $\square$
+\end{proof}
+
+\subsection{La dualidad de Sinkhorn}
+\label{subsec:sinkhorn_dualidad}
+
+El problema del puente de Schrödinger admite una formulación dual que produce
+el \textbf{algoritmo de Sinkhorn}, que discretiza el problema en el espacio
+de estados.
+
+\subsubsection*{El problema primal discreto}
+
+Dado el costo cuadrático $C_{ij} = \|\bm{x}_i-\bm{x}_j\|^2$, el kernel de
+calor $K_{ij} = e^{-C_{ij}/\epsilon}$ (la discretización del kernel de
+transición browniano con $\epsilon = 2g^2 T/n$ para $n$ pasos), y marginales
+discretas $\bm{a} = (a_i)$ y $\bm{b} = (b_j)$, el problema de transporte
+óptimo regularizado con entropía es:
+\begin{equation}
+  \bm{\pi}^* = \argmin_{\bm{\pi}\geq 0,\,\bm{\pi}\bm{1}=\bm{a},\,\bm{\pi}^\top\bm{1}=\bm{b}}
+  \sum_{i,j}\pi_{ij}C_{ij} + \epsilon\sum_{i,j}\pi_{ij}\log\pi_{ij}.
+  \label{eq:sinkhorn_primal}
+\end{equation}
+
+El término $\epsilon\sum_{ij}\pi_{ij}\log\pi_{ij} = \epsilon\,D_{\mathrm{KL}}(\bm{\pi}\|\bm{1})$
+es la regularización entrópica: favorece planes de transporte difusos
+(como el kernel browniano) sobre los concentrados en trayectorias únicas.
+
+\subsubsection*{El problema dual: potenciales de Sinkhorn}
+
+El dual del problema~\eqref{eq:sinkhorn_primal} es:
+\begin{equation}
+  \max_{\bm{f}\in\mathbb{R}^n,\,\bm{g}\in\mathbb{R}^n}
+  \bm{f}\cdot\bm{a} + \bm{g}\cdot\bm{b}
+  - \epsilon\sum_{i,j}e^{(f_i+g_j-C_{ij})/\epsilon},
+  \label{eq:sinkhorn_dual}
+\end{equation}
+donde $\bm{f}$ y $\bm{g}$ son los \textbf{potenciales de Sinkhorn}.
+Los potenciales tienen interpretación como multiplicadores de Lagrange de las
+restricciones de marginalidad.
+
+\begin{proposicion}{Forma de la solución primal y relación primal-dual}
+\label{prop:sinkhorn_solucion}
+La solución del problema~\eqref{eq:sinkhorn_primal} tiene la forma de
+\textbf{Sinkhorn}:
+\begin{equation}
+  \pi_{ij}^* = u_i^*\,K_{ij}\,v_j^*,
+  \label{eq:sinkhorn_forma}
+\end{equation}
+donde $\bm{u}^*$ y $\bm{v}^*$ son vectores positivos, relacionados con los
+potenciales duales por $f_i = \epsilon\log u_i$ y $g_j = \epsilon\log v_j$.
+Las condiciones de marginalidad $\bm{\pi}^*\bm{1} = \bm{a}$ y
+$(\bm{\pi}^*)^\top\bm{1} = \bm{b}$ se traducen en:
+$\bm{u}\odot(K\bm{v}) = \bm{a}$ y $\bm{v}\odot(K^\top\bm{u}) = \bm{b}$.
+\end{proposicion}
+
+\begin{proof}
+Las condiciones KKT del primal~\eqref{eq:sinkhorn_primal} dan:
+$\partial_{\pi_{ij}}(\text{Lagrangiano}) = C_{ij} + \epsilon(1+\log\pi_{ij})
+- \lambda_i - \nu_j = 0$,
+luego $\pi_{ij}^* = e^{(\lambda_i+\nu_j-C_{ij})/\epsilon - 1}
+= e^{(\lambda_i-1/2)/\epsilon}K_{ij}e^{(\nu_j-1/2)/\epsilon}
+=: u_i K_{ij} v_j$, con $u_i = e^{(\lambda_i-\epsilon/2)/\epsilon}$ y
+análogamente para $v_j$. Las condiciones de marginalidad imponen
+$u_i\sum_j K_{ij}v_j = a_i$ y $v_j\sum_i K_{ij}u_i = b_j$, que en notación
+vectorial son $\bm{u}\odot(K\bm{v}) = \bm{a}$ y $\bm{v}\odot(K^\top\bm{u}) = \bm{b}$.
+$\square$
+\end{proof}
+
+\subsubsection*{El algoritmo de Sinkhorn}
+
+Las condiciones de marginalidad sugieren el siguiente método de punto fijo
+alternado (\textbf{algoritmo de Sinkhorn}, Sinkhorn 1967, redescubierto por
+Cuturi 2013):
+
+\begin{algorithm}[H]
+\caption{Algoritmo de Sinkhorn}
+\label{alg:sinkhorn}
+\KwIn{Marginales $\bm{a}$, $\bm{b}$; kernel $K_{ij} = e^{-C_{ij}/\epsilon}$;
+      tolerancia $\delta$}
+\KwOut{Plan óptimo $\bm{\pi}^* = \mathrm{diag}(\bm{u}^*)K\mathrm{diag}(\bm{v}^*)$}
+$\bm{v}^{(0)} \leftarrow \bm{1}$\;
+\For{$k = 0, 1, 2, \ldots$ hasta convergencia}{
+  $\bm{u}^{(k+1)} \leftarrow \bm{a} \oslash (K\bm{v}^{(k)})$\;
+  $\bm{v}^{(k+1)} \leftarrow \bm{b} \oslash (K^\top\bm{u}^{(k+1)})$\;
+}
+\Return $\bm{\pi}^* = \mathrm{diag}(\bm{u}^*)K\mathrm{diag}(\bm{v}^*)$\;
+\end{algorithm}
+
+donde $\oslash$ es la división elemento a elemento.
+
+\begin{proposicion}{Convergencia del algoritmo de Sinkhorn}
+\label{prop:sinkhorn_convergencia}
+El Algoritmo~\ref{alg:sinkhorn} converge linealmente con factor de contracción
+$\kappa = \tanh(\lambda_K/4)^2 < 1$, donde $\lambda_K = \log(\max_{ij}K_{ij}/
+\min_{ij}K_{ij})$ es el contraste del kernel.
+\end{proposicion}
+
+\begin{proof}[Esquema]
+Se trabaja en escala logarítmica $\bm{f}^{(k)} = \epsilon\log\bm{u}^{(k)}$,
+$\bm{g}^{(k)} = \epsilon\log\bm{v}^{(k)}$. Cada iteración de Sinkhorn es una
+proyección alternada en el espacio de potenciales duales sobre los conjuntos
+afines $\{\bm{f}: \sum_j e^{(f_i+g_j-C_{ij})/\epsilon} = a_i\,\forall i\}$ y
+análogo para $\bm{g}$. La contracción de la proyección alternada sobre dos
+conjuntos convexos es la razón entre la norma dual del kernel y la norma
+primal, que da la tasa $\kappa$. Para $\epsilon$ grande (kernel suave),
+$\kappa$ es pequeño y la convergencia es rápida. $\square$
+\end{proof}
+
+\subsection{El límite de difusión cero: transporte óptimo de Monge}
+\label{subsec:ot_limite}
+
+\begin{teorema}{Convergencia al transporte óptimo de Monge}
+\label{thm:ot_limite}
+En el límite $\epsilon \to 0$, el plan óptimo regularizado $\bm{\pi}^*_\epsilon$
+converge al plan de \textbf{transporte óptimo de Monge-Kantorovich} sin
+regularización:
+\begin{equation}
+  \bm{\pi}^*_0 = \argmin_{\bm{\pi}\geq 0,\,\bm{\pi}\bm{1}=\bm{a},\,
+  \bm{\pi}^\top\bm{1}=\bm{b}}
+  \sum_{i,j}\pi_{ij}C_{ij},
+  \label{eq:ot_sin_reg}
+\end{equation}
+en el sentido que $W_2(\bm{\pi}^*_\epsilon,\bm{\pi}^*_0)\to 0$ con
+$W_2(\bm{\pi}^*_\epsilon,\bm{\pi}^*_0) = O(\epsilon\log(1/\epsilon))$.
+\end{teorema}
+
+\begin{proof}[Esquema]
+Cuando $\epsilon \to 0$, el kernel $K_{ij} = e^{-C_{ij}/\epsilon}$ se concentra
+en cero: $K_{ij} \to 0$ para $C_{ij} > 0$ y $K_{ii} = 1$ para $C_{ii} = 0$.
+El plan de Sinkhorn $\pi_{ij}^* = u_i K_{ij} v_j$ concentra la masa en los
+pares $(i,j)$ con $C_{ij}$ mínimo compatibles con las marginales: el mapa
+determinista $j = T^*(i)$ que minimiza el costo cuadrático. La regularización
+entrópica $\epsilon\sum_{ij}\pi_{ij}\log\pi_{ij}$ actúa como barrera que
+desplaza la solución en $O(\epsilon\log(1/\epsilon))$ de la solución exacta.
+$\square$
+\end{proof}
+
+Para la distribución de datos $p_0 = \mathcal{N}(\bm{\mu}_0, \bm{\Sigma}_0)$
+y prior $p_T = \mathcal{N}(\bm{0},\bm{I})$, el mapa de transporte óptimo de
+Monge bajo costo cuadrático es el mapa afín:
+\begin{equation}
+  T^*(\bm{x}) = \bm{\Sigma}_0^{-1/2}
+  \left(\bm{\Sigma}_0^{1/2}\bm{I}\bm{\Sigma}_0^{1/2}\right)^{1/2}
+  \bm{\Sigma}_0^{-1/2}(\bm{x}-\bm{\mu}_0)
+  = \bm{\Sigma}_0^{-1/2}(\bm{x}-\bm{\mu}_0),
+  \label{eq:monge_gaussiana}
+\end{equation}
+y las trayectorias de transporte óptimo son líneas rectas:
+$\bm{x}(t) = (1-t)\bm{x}_0 + t T^*(\bm{x}_0)$,
+con campo de velocidades $\dot{\bm{x}} = T^*(\bm{x}_0)-\bm{x}_0$ constante a
+lo largo de cada trayectoria.
+
+\subsection{Flow matching: aprendizaje del campo de velocidades}
+\label{subsec:flow_matching}
+
+La ODE de flujo de probabilidad~\eqref{eq:prob_flow_ode} y el límite de
+transporte óptimo sugieren aprender directamente el campo vectorial $v(\bm{x},t)$
+en lugar del score.
+
+\begin{definicion}{Flow matching (Lipman et al., 2022; Liu et al., 2022)}
+\label{def:flow_matching}
+El \textbf{flow matching} aprende el campo $v_{\bm{\phi}}(\bm{x},t)$ de la ODE
+$d\bm{x}/dt = v(\bm{x},t)$ minimizando:
+\begin{equation}
+  \mathcal{L}_{\mathrm{FM}}(\bm{\phi})
+  = \mathbb{E}_{t,\bm{x}_0\sim p_0,\bm{x}_T\sim p_T}
+  \left[\|v_{\bm{\phi}}(\bm{x}(t),t) - (\bm{x}_T-\bm{x}_0)\|^2\right],
+  \label{eq:fm_loss}
+\end{equation}
+donde $\bm{x}(t) = (1-t)\bm{x}_0 + t\bm{x}_T$ es la interpolación lineal y
+$\bm{x}_T-\bm{x}_0$ es la velocidad objetivo.
+\end{definicion}
+
+\begin{proposicion}{El campo de velocidades óptimo del flow matching}
+\label{prop:fm_campo}
+El minimizador de~\eqref{eq:fm_loss} es el campo de velocidades condicional:
+\[
+  v^*(\bm{x},t)
+  = \mathbb{E}_{\bm{x}_0,\bm{x}_T|\bm{x}(t)=\bm{x}}[\bm{x}_T-\bm{x}_0].
+\]
+Para pareo independiente ($\bm{x}_0 \perp \bm{x}_T$), las trayectorias de
+distintos pares se cruzan y $v^*$ es un promedio sobre ellas. Para pareo
+óptimo $\bm{x}_T = T^*(\bm{x}_0)$ (OT flow matching, Tong et al., 2023),
+las trayectorias no se cruzan y $v^*(\bm{x},t) = T^*(\bm{x}_0) - \bm{x}_0$
+es constante a lo largo de cada trayectoria.
+\end{proposicion}
+
+\begin{proof}
+Expandiendo $\mathcal{L}_{\mathrm{FM}} = \mathbb{E}\|v_{\bm{\phi}}(\bm{x}(t),t)
+- (\bm{x}_T-\bm{x}_0)\|^2$ y tomando la derivada funcional respecto a
+$v_{\bm{\phi}}(\bm{x},t)$:
+$v^*(\bm{x},t) = \argmin_v \mathbb{E}[\|v - (\bm{x}_T-\bm{x}_0)\|^2 |
+\bm{x}(t)=\bm{x}] = \mathbb{E}[\bm{x}_T-\bm{x}_0|\bm{x}(t)=\bm{x}]$.
+Para OT flow matching, el pareo $(\bm{x}_0,T^*(\bm{x}_0))$ es determinista dado
+$\bm{x}_0$, y las trayectorias $\{(1-t)\bm{x}_0+tT^*(\bm{x}_0):t\in[0,1]\}$
+no se cruzan entre distintos $\bm{x}_0$ (propiedad del mapa de Monge). Luego
+$\bm{x}(t)$ determina únicamente $\bm{x}_0$ y la esperanza colapsa al valor
+exacto. $\square$
+\end{proof}
+
+\subsubsection*{Comparación cuantitativa: difusión vs.\ flow matching}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lllll}
+\toprule
+\textbf{Método} & $\epsilon$ & \textbf{Trayectorias} & \textbf{Pasos} & \textbf{$v^*$ complejidad} \\
+\midrule
+DDPM & $\infty$ & Aleatorias & $1000$ & Alta \\
+Score SDE & grande & Aleatorias & $10$-$100$ & Alta \\
+Prob. flow ODE & grande & Deterministas & $10$-$100$ & Alta \\
+OT flow matching & $0^+$ & Rectas & $1$-$10$ & Baja \\
+\midrule
+Schrödinger bridge & $\epsilon>0$ & Suavizadas & $10$-$100$ & Media \\
+\bottomrule
+\end{tabular}
+\caption{Comparación de métodos generativos basados en transporte.}
+\label{tab:comparacion}
+\end{table}
+
+El costo del campo de velocidades en OT flow matching es mínimo porque las
+trayectorias rectas no se cruzan: la red no necesita resolver la ambigüedad
+de qué modo pertenece cada punto de la trayectoria. Esto explica por qué los
+modelos de tercera generación (Stable Diffusion 3, Flux) usan flow matching
+en lugar de difusión estándar.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 11}
+\label{sec:resumen11}
+%───────────────────────────────────────────────────────────────────────────────
+
+El capítulo establece cuatro resultados encadenados. Primero, la ecuación de
+Fokker-Planck derivada por dualidad $L^2$ cierra la deuda del Capítulo~\ref{ch:cap10} y
+la Proposición~\ref{prop:gibbs_estacionaria} cierra la del Capítulo~\ref{ch:cap5}. La
+identidad~\eqref{eq:identidad_difusiva} —que el término de segundo orden de la
+Fokker-Planck es la mitad de la divergencia de $(\nabla\cdot\bm{D})p + \bm{D}\nabla p$—
+es el instrumento algebraico central de todo el capítulo.
+
+Segundo, el Teorema~\ref{thm:anderson_general} establece la SDE del proceso
+reverso en su forma más general, con $\bm{\Sigma}(\bm{x},t)$ arbitrario. El
+término $\nabla\cdot\bm{D}$ es la corrección por heterogeneidad espacial de la
+difusión: cero para difusión isótropa, no nulo para medios heterogéneos (física
+de reactores, medios porosos). Se presenta en dos rutas: la Ruta A (verificación
+de Fokker-Planck) es elemental; la Ruta B (Girsanov) revela que el score es la
+derivada de Radon-Nikodym que corrige el browniano reverso para tener las
+marginales correctas.
+
+Tercero, los Teoremas~\ref{thm:hyvarinen} y~\ref{thm:dsm} convierten el score
+en la pérdida de predicción de ruido~\eqref{eq:ddpm_loss}: computable, escalable,
+y exactamente DDPM. La discusión sobre correlación aclara que la difusión
+isótropa no destruye la correlación de los datos sino que la traslada al score,
+que la red aprende implícitamente.
+
+Cuarto, la Proposición~\ref{prop:anderson_schrodinger} revela que el proceso de
+Anderson es el puente de Schrödinger: el proceso más cercano al forward en KL
+entre leyes de procesos. La dualidad de Sinkhorn (Algoritmo~\ref{alg:sinkhorn})
+discretiza ese problema variacional y converge al mapa de transporte óptimo de
+Monge en el límite $\epsilon\to 0$ (Teorema~\ref{thm:ot_limite}). El flow
+matching aprende ese mapa directamente con trayectorias rectas y sin cruce,
+reduciendo el número de pasos de muestreo de $10^3$ (DDPM) a $O(10)$.
+
+La conexión hacia el \textbf{Capítulo~\ref{ch:cap12}} es ahora completa: forward process
+(proceso OU, Capítulo~\ref{ch:cap10}), reverse SDE (Teorema~\ref{thm:anderson_general}),
+pérdida de entrenamiento (Teorema~\ref{thm:dsm}), arquitectura (U-Net/transformer
+equivariante, Capítulo~\ref{ch:cap9}), y el marco unificador del puente de Schrödinger que
+interpola entre difusión (DDPM) y transporte (flow matching).
+
+%───────────────────────────────────────────────────────────────────────────────
+\label{sec:estrella11}
+\begin{estrella}{El reverse SDE en reactores heterogéneos y modelos generativos de flujo neutrónico}
+
+\textbf{Forward process como modelo de difusión de neutrones perturbada.}
+El flujo neutrónico perturbado $\delta\Phi(\bm{r},t)$ en torno al estado
+estacionario del IAN-R1 satisface, en la aproximación de un grupo y geometría
+cilíndrica, una ecuación de difusión análoga a la Fokker-Planck con difusividad
+$D(\bm{r})$ variable (zona de combustible, reflector de berilio, estructura):
+\[
+  \frac{\partial p_t}{\partial t}
+  = -\nabla\cdot\!\left[(\nabla D)\,p_t + D(\bm{r})\nabla p_t\right]
+  + \Sigma_a\,p_t = \mathcal{A}^*p_t + \Sigma_a\,p_t,
+\]
+donde $p_t(\bm{r})$ es la densidad de probabilidad de encontrar un neutrón en
+la posición $\bm{r}$ en el tiempo $t$ (proporcional al flujo local). El término
+$\nabla D$ es exactamente la contribución $\nabla\cdot\bm{D}$ del Teorema
+general~\ref{thm:anderson_general}: no puede ignorarse en las interfaces
+combustible-moderador-reflector.\medskip
+
+\textbf{El reverse SDE como modelo generativo de distribuciones de flujo.}
+La SDE~\eqref{eq:reverse_general} con el tensor de difusión $D(\bm{r})$ del
+reactor proporciona un método novedoso para generar distribuciones de flujo
+físicamente consistentes para distintas configuraciones de barras de control,
+sin ejecutar el código de difusión completo. El proceso forward (perturbación
+del flujo desde la distribución nominal hacia el ruido) y el reverse (generación
+desde el ruido hacia una distribución de flujo física) forman un par análogo al
+forward/reverse de los modelos de difusión de imágenes, pero sobre el espacio
+de distribuciones de neutrones. El score $\nabla\log p_t(\bm{r})$ aprendido
+por la red es el campo de fuerza que corrige la difusión browniana isótropa para
+respetar la geometría heterogénea del reactor.\medskip
+
+\textbf{Transporte óptimo entre distribuciones de flujo.}
+El flow matching del Capítulo~\ref{ch:cap12} (OT flow matching) puede
+aplicarse para transportar óptimamente entre distribuciones de flujo
+correspondientes a distintas condiciones de operación: de flujo a potencia
+$P_1$ a flujo a potencia $P_2$, o de configuración de barras $\mathcal{B}_1$
+a $\mathcal{B}_2$. El plan de transporte óptimo discretizado con el Algoritmo
+de Sinkhorn~\ref{alg:sinkhorn} sobre una malla del reactor (con costo
+cuadrático $C_{ij} = \|\bm{r}_i - \bm{r}_j\|^2$) produce el campo de
+velocidades de menor energía que conecta ambas distribuciones: el camino
+más corto en el espacio de distribuciones de flujo, con interpretación directa
+como la manobra de barras de control más eficiente para transicionar entre
+los dos estados.
+
+El score matching para el IAN-R1 tiene una ventaja particular respecto a
+otros reactores: el conjunto de simulaciones de referencia (MCNP o difusión
+de dos grupos) es pequeño ($N \sim 10^3$--$10^4$), pero el denoising score
+matching~\eqref{eq:ddpm_loss} es un estimador eficiente incluso con pocos datos
+porque aprovecha la regularidad suave de las distribuciones de flujo (límites
+continuos, simetría cilíndrica, decaimiento en el reflector).
+\end{estrella}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Verificación del teorema de Anderson por simulación directa}
+\textbf{Objetivo:} verificar numéricamente que el proceso reverso~\eqref{eq:reverse_ou}
+para el OU reproduce $p_0$ a partir de muestras de $p_T$, usando el score exacto
+gaussiano.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Tomar $p_0 = \frac{1}{2}\mathcal{N}(-2, 0.5^2) + \frac{1}{2}\mathcal{N}(2, 0.5^2)$
+        (bimodal). Simular el forward process OU ($\alpha=1$, $\sigma=\sqrt{2}$)
+        con Euler-Maruyama desde $t=0$ hasta $T=4$ usando $\Delta t = 0.01$.
+        Verificar que la distribución en $t=T$ es aproximadamente $\mathcal{N}(0,1)$.
+  \item En cada tiempo $t$, la distribución marginal del forward OU es una
+        mezcla gaussiana con parámetros conocidos analíticamente (del Ejercicio
+        Resuelto~\ref{ej:ou_distribucion}). Calcular el score exacto
+        $\nabla\log p_t(x) = \sum_k w_k(x,t)\cdot(-(x-\mu_k(t))/\nu_k(t))$
+        como promedio ponderado de las componentes.
+  \item Simular el reverse SDE~\eqref{eq:reverse_ou} con el score exacto,
+        desde $t=0$ ($\tilde{p}_0 = p_T \approx \mathcal{N}(0,1)$) hasta $t=T$
+        ($\tilde{p}_T$ debe aproximar $p_0$). Usar $N=10^3$ partículas y
+        $\Delta t = 0.01$.
+  \item Comparar el histograma de $\tilde{X}_T$ con $p_0$ usando la divergencia
+        KL empírica. ¿El reverse SDE recupera la bimodalidad? ¿Cuánto influye
+        el paso $\Delta t$?
+\end{enumerate}
+\medskip\noindent\textbf{Verificación:} $D_\mathrm{KL}(\hat{p}_0\|p_0) < 0.05$
+con $N = 10^3$ partículas y $\Delta t = 0.01$.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Denoising score matching: entrenamiento y muestreo}
+\textbf{Objetivo:} entrenar un score network con la pérdida~\eqref{eq:ddpm_loss}
+y usarlo en el reverse SDE para generar muestras de $p_0$.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Usar la misma $p_0$ bimodal del ejercicio anterior. Entrenar un MLP
+        $(2, 64, 64, 1)$ con entradas $(x, \sigma)$ y salida $\varepsilon_\phi(x,\sigma)$
+        usando la pérdida $\mathbb{E}_{p_0,\varepsilon}[\|\varepsilon_\phi(x +
+        \sigma\varepsilon, \sigma) - \varepsilon\|^2]$ sobre un schedule de
+        $\sigma \in [0.01, 3.0]$ con $10^4$ iteraciones de Adam.
+  \item Convertir el score estimado: $\hat{s}(x,\sigma) = -\varepsilon_\phi(x,\sigma)/\sigma$.
+        Comparar $\hat{s}(x, \sigma=0.3)$ con el score exacto gaussiano sobre
+        la malla $x \in [-5, 5]$.
+  \item Muestrear 500 puntos con el reverse SDE de Euler-Maruyama (200 pasos)
+        y comparar con $p_0$ mediante KDE. ¿Reproduce las dos modas?
+  \item Variar el número de pasos de integración en $\{20, 50, 100, 200\}$.
+        ¿Cómo afecta la calidad de las muestras?
+\end{enumerate}
+\end{ejerciciocomp}
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La ecuación de Fokker-Planck fue introducida por Fokker (1914) y Planck (1917)
+en el contexto de la difusión browniana. La formulación moderna como adjunto
+$L^2$ del generador es estándar; véase Risken (1989)~\cite{risken1989fokker}
+para una presentación completa orientada a física estadística. El H-teorema y la
+estructura de producción de entropía relacionada con la información de Fisher
+se discuten en Villani (2009)~\cite{villani2009optimal}.
+
+El teorema de Anderson (Teorema~\ref{thm:anderson_general}) fue demostrado por
+Anderson (1982)~\cite{anderson1982reverse} mediante la verificación directa
+(Ruta A). La forma general con $\bm{D}(\bm{x},t)$ dependiente del estado no
+siempre se presenta en los tutoriales de modelos de difusión; la exposición aquí
+sigue a Song et al.\ (2021)~\cite{song2021score} y Särkkä y Solin
+(2019)~\cite{sarkka2019applied}. La Ruta B vía el teorema de Girsanov
+(Teorema~\ref{thm:girsanov}) sigue a la presentación de Föllmer y Wakolbinger
+(1986) y Lehec (2013); véase también Tzen y Raginsky (2019) para la conexión
+con la inferencia variacional.
+
+El score matching implícito (Teorema~\ref{thm:hyvarinen}) fue introducido por
+Hyvärinen (2005)~\cite{hyvarinen2005estimation}. El denoising score matching
+(Teorema~\ref{thm:dsm}) fue introducido por Vincent (2011)~\cite{vincent2011connection}.
+La pérdida de predicción de ruido~\eqref{eq:ddpm_loss} y el modelo DDPM son de
+Ho et al.\ (2020)~\cite{ho2020denoising}. La formulación unificada mediante SDEs
+(tanto el forward process como el reverse, incluyendo la ODE de flujo de
+probabilidad) es de Song et al.\ (2021)~\cite{song2021score}.
+
+El puente de Schrödinger fue formulado por Schrödinger (1931--1932) como un
+problema de la mecánica cuántica en tiempo imaginario. Su formulación moderna en
+términos de KL entre medidas de proceso es de Föllmer (1988)~\cite{follmer1988random}
+y Leonard (2014)~\cite{leonard2014survey}. El algoritmo de Sinkhorn fue
+introducido por Sinkhorn (1964)~\cite{sinkhorn1964relationship} para matrices
+de doble estocástica y redescubierto en el contexto de transporte óptimo
+regularizado por Cuturi (2013)~\cite{cuturi2013sinkhorn}. El flow matching fue
+introducido simultáneamente por Lipman et al.\ (2022)~\cite{lipman2022flow} y
+Liu et al.\ (2022)~\cite{liu2022flow}; el OT flow matching con pareo óptimo es
+de Tong et al.\ (2023)~\cite{tong2023improving}.
+
+La conexión entre la ecuación de difusión de neutrones y la Fokker-Planck en
+medios heterogéneos (relevante para la Sección~\ref{sec:estrella11}) se discute
+en el contexto de la ecuación de transporte de Boltzmann en Bell y Glasstone
+(1970)~\cite{bell1970nuclear}. El término de difusioforesis en la ecuación de
+transporte de partículas es tratado en Anderson (1989)~\cite{anderson1989colloid}.
+\end{notasbib}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios resueltos}
+\addcontentsline{toc}{section}{Ejercicios resueltos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\label{ej:fp_ou}
+\textbf{(Fokker-Planck para el proceso OU: familia gaussiana).}
+Para $dX_t = -\alpha X_t\,dt + \sigma\,dW_t$, verificar que la familia
+$p_t = \mathcal{N}(\mu_t,\nu_t)$ satisface la Fokker-Planck y encontrar
+las ODEs para $\mu_t$, $\nu_t$.
+
+\medskip\noindent\textit{Solución.}
+La Fokker-Planck es $\partial_t p = \partial_x(\alpha x p) + \frac{\sigma^2}{2}
+\partial_{xx}p$. Para $p = \mathcal{N}(\mu_t,\nu_t)$, identificando coeficientes
+de $(x-\mu_t)^0$ y $(x-\mu_t)^2$:
+$\dot{\mu}_t = -\alpha\mu_t$, $\dot{\nu}_t = -2\alpha\nu_t + \sigma^2$.
+Soluciones: $\mu_t = \mu_0 e^{-\alpha t}$, $\nu_t = \nu_0 e^{-2\alpha t} +
+\frac{\sigma^2}{2\alpha}(1-e^{-2\alpha t})$, en perfecta concordancia con la
+Sección~\ref{subsec:ou}. $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:anderson_diag}
+\textbf{(Teorema de Anderson para difusión diagonal: aplicación en reactor).}
+
+Considerar un sistema neutrónico 1D con difusividad variable $D(x) > 0$:
+\[
+  dX_t = v(X_t)\,dt + \sqrt{2D(X_t)}\,dW_t.
+\]
+\textbf{(a)} Calcular $\nabla\cdot\bm{D}$ para este caso escalar.
+\textbf{(b)} Escribir el reverse SDE de Anderson.
+\textbf{(c)} Mostrar que si el proceso satisface balance detallado con
+distribución estacionaria $p^*$, entonces $v(x) = D'(x) + D(x)(\log p^*)'(x)$.
+
+\medskip\noindent\textit{Solución.}
+\textbf{(a)} $D(x,t) = 2D(x)$ (escalar), luego $\nabla\cdot\bm{D} = 2D'(x)$.
+
+\textbf{(b)} Del Teorema~\ref{thm:anderson_general}:
+$d\tilde{X}_t = [-v(\tilde{X}_t,T-t) + 2D'(\tilde{X}_t)
++ 2D(\tilde{X}_t)\partial_x\log p_{T-t}(\tilde{X}_t)]\,dt
++ \sqrt{2D(\tilde{X}_t)}\,d\tilde{W}_t$.
+
+\textbf{(c)} Del balance detallado~\eqref{eq:balance_general} con $D_{11} = 2D(x)$:
+$v(x) = \frac{1}{2}\cdot 2D'(x) + \frac{1}{2}\cdot 2D(x)(\log p^*)'(x)
+= D'(x) + D(x)(\log p^*)'(x)$.
+Este es el drift de la difusión de Smoluchowski en un potencial efectivo
+$U(x) = -\log p^*(x)$, con el término adicional $D'(x)$ que no aparece si
+$D$ es constante. En la física de reactores, $D'(x)$ representa la fuerza
+difusioforética en interfaces entre materiales de distinta difusividad. $\square$
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios propuestos}
+\addcontentsline{toc}{section}{Ejercicios propuestos}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\textbf{(Reverse SDE para difusión con tensor de difusión completo).}
+Sea $d\bm{X}_t = -\bm{A}\bm{X}_t\,dt + \bm{B}\,d\bm{W}_t$ con $\bm{A}$
+y $\bm{B}$ matrices constantes, $\bm{D} = \bm{B}\bm{B}^\top$.
+\begin{enumerate}[label=(\alph*)]
+  \item Calcular $\nabla\cdot\bm{D}$ para este caso.
+  \item Calcular la distribución marginal gaussiana $p_t =
+        \mathcal{N}(\bm{\mu}_t,\bm{\Sigma}_t)$ resolviendo las ecuaciones
+        de Lyapunov $\dot{\bm{\mu}}_t = -\bm{A}\bm{\mu}_t$ y
+        $\dot{\bm{\Sigma}}_t = -\bm{A}\bm{\Sigma}_t - \bm{\Sigma}_t\bm{A}^\top + \bm{D}$.
+  \item Escribir el reverse SDE explícito. ¿Qué forma tiene el score para
+        $p_t$ gaussiana?
+  \item Para $\bm{A} = \mathrm{diag}(1,2)$ y $\bm{D} = \mathrm{diag}(2,4)$,
+        verificar que la distribución estacionaria es $\mathcal{N}(\bm{0},\bm{I})$
+        y que el reverse SDE lleva $p_T = \mathcal{N}(\bm{0},\bm{I})$ de vuelta
+        a $p_0$.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Sinkhorn y transporte óptimo entre gaussianas).}
+Sean $p_0 = \mathcal{N}(-2,0.1)$ y $p_T = \mathcal{N}(2,0.1)$ discretizadas en
+$n=50$ puntos en $[-4,4]$.
+\begin{enumerate}[label=(\alph*)]
+  \item Implementar el Algoritmo~\ref{alg:sinkhorn} para $\epsilon \in
+        \{0.01, 0.1, 1.0\}$. Verificar que el costo $\sum_{ij}\pi_{ij}^*C_{ij}$
+        converge a $16 = (-2-2)^2$ cuando $\epsilon\to 0$.
+  \item Calcular el mapa de transporte inducido $T_\epsilon(x_i) =
+        \sum_j \pi_{ij}^* x_j / a_i$ y compararlo con $T^*(x) = x+4$.
+  \item Verificar numéricamente que el error $\|T_\epsilon - T^*\|_\infty =
+        O(\epsilon\log(1/\epsilon))$ como predice el Teorema~\ref{thm:ot_limite}.
+  \item Trazar la interpolación $\bm{x}(t) = (1-t)x_0 + tT^*(x_0)$ para 20
+        valores de $x_0$ muestreados de $p_0$. ¿Se cruzan las trayectorias?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Flow matching vs.\ score matching para la misma tarea).}
+Sea $p_0 = \frac{1}{2}\mathcal{N}(-3,0.25) + \frac{1}{2}\mathcal{N}(3,0.25)$
+(mezcla bimodal) y $p_T = \mathcal{N}(0,1)$.
+\begin{enumerate}[label=(\alph*)]
+  \item Entrenar un MLP con la pérdida de denoising score matching~\eqref{eq:ddpm_loss}
+        con $\sigma \in \{0.1, 0.5, 1.0\}$ y $10^4$ muestras.
+  \item Entrenar un MLP con la pérdida de flow matching~\eqref{eq:fm_loss}
+        con pareo independiente.
+  \item Entrenar el mismo MLP con pareo OT (usando Sinkhorn del ejercicio
+        anterior). Comparar la varianza del campo $v^*$ en los tres casos.
+  \item Muestrear $10^3$ puntos de cada modelo integrando el reverse SDE
+        (score matching) o la ODE (flow matching) con el método de Euler.
+        ¿Cuántos pasos necesita cada método para producir muestras de calidad
+        comparable?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Difusividad variable en un reactor esférico homogéneo).}
+Considerar la ecuación de difusión de neutrones en 1D esférico con difusividad
+$D(r) = D_0(1-r^2/R^2)$ (máxima en el centro, cero en el borde):
+$dX_t = [D'(X_t) + D(X_t)\partial_x\log p^*(X_t)]\,dt + \sqrt{2D(X_t)}\,dW_t$.
+\begin{enumerate}[label=(\alph*)]
+  \item Verificar que la distribución estacionaria de esta SDE satisface
+        $p^*(x) = Ce^{-\int_0^x v(x')/D(x')\,dx'}$ donde $v(x) = D'(x)$
+        (sin potencial externo) es la fuerza de difusioforesis sola.
+  \item Calcular $p^*(x)$ explícitamente para el perfil $D(r) = D_0(1-r^2/R^2)$.
+  \item Escribir el reverse SDE para este sistema y verificar que lleva $p_T$
+        de vuelta a $p^*(x)$.
+  \item Simular el forward process (dispersión de neutrones en el reactor) y
+        el reverse process con el score exacto. ¿Cuánto tiempo necesita el
+        forward para llegar a $\mathcal{N}(0,\sigma^2)$?
+\end{enumerate}
+\end{ejercicio}

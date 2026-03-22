@@ -1,0 +1,1159 @@
+%═══════════════════════════════════════════════════════════════════════════════
+\chapter{Sobreajuste, regularización y generalización}
+\label{ch:cap2}
+%═══════════════════════════════════════════════════════════════════════════════
+
+El Capítulo~\ref{ch:cap1} cerró con una promesa: existe una familia paramétrica
+no lineal capaz de aproximar cualquier función continua con precisión arbitraria.
+Ahora surge la pregunta inmediata: si podemos aproximar cualquier función, ¿por
+qué no interpolar exactamente los datos de que disponemos? La respuesta define uno
+de los conceptos centrales del aprendizaje automático, y es, en el fondo, la misma
+advertencia que el análisis numérico lleva décadas haciendo sobre la interpolación
+de alto grado.
+
+Este capítulo construye el marco conceptual que responde esa pregunta con precisión.
+El recorrido va de la observación numérica al análisis espectral: primero se muestra
+el problema con un ejemplo concreto, luego se formaliza la distinción entre error de
+entrenamiento y error de generalización, después se analiza el dilema sesgo-varianza,
+y finalmente se desarrolla la regularización de Tikhonov, su interpretación como
+filtro espectral mediante la SVD, y los criterios para seleccionar el parámetro de
+regularización.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{El peligro de la interpolación perfecta}
+\label{sec:runge}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+El estudiante de análisis numérico conoce el fenómeno de Runge: un polinomio de
+grado alto que interpola exactamente una función suave en nodos equiespaciados puede
+exhibir oscilaciones violentas entre los nodos, especialmente cerca de los extremos
+del intervalo. Este fenómeno no es una curiosidad numérica; es la primera manifestación
+de un problema estructural que reaparece en todas las formas de aprendizaje: el modelo
+que memoriza los datos no necesariamente describe bien el fenómeno subyacente.
+
+Para verlo en el lenguaje del Capítulo~\ref{ch:cap1}, considérese la función de
+Runge:
+\[
+  g(x) = \frac{1}{1 + 25x^2}, \qquad x \in [-1, 1],
+\]
+y un conjunto de $N$ nodos equiespaciados $x_i = -1 + 2(i-1)/(N-1)$ con valores
+$y_i = g(x_i)$. La familia polinomial de grado $d = N-1$ interpola exactamente:
+$\mathcal{L}_{\text{train}}(\bm{\theta}^*) = 0$. Sin embargo, al evaluar el polinomio
+en puntos intermedios, el error puede ser enorme. Para $N = 11$, el error máximo
+del polinomio interpolante de grado 10 supera el 100\% del rango de la función.
+
+El mensaje es preciso:
+
+\begin{observacion}{Pérdida empírica cero no implica buen modelo}
+Minimizar la pérdida empírica $\mathcal{L}_{\text{train}}(\bm{\theta})$ hasta cero
+equivale a exigir que el modelo pase exactamente por todos los puntos de datos.
+Cuando el número de parámetros es igual al número de datos, esto siempre es posible.
+Pero el modelo resultante describe el ruido de las observaciones, no la función
+subyacente. Este fenómeno se denomina \textbf{sobreajuste} (\textit{overfitting}).
+\end{observacion}
+
+\begin{fisicaconexion}{Memorizar datos vs.\ describir la naturaleza}
+El fenómeno de Runge es la versión matemática de un problema experimental que todo
+físico ha encontrado en el laboratorio: cuando se ajusta un polinomio de grado alto
+a datos con ruido, el ajuste puede pasar perfectamente por cada punto medido pero
+oscilar de forma incontrolada entre ellos. Un ejemplo inmediato es la deconvolución
+espectral: si se intenta reconstruir el perfil de una línea espectral ajustando un
+polinomio interpolante a los canales del espectrómetro, el resultado suele oscilar
+entre canales y producir ``intensidades negativas'' entre los máximos, que son
+físicamente imposibles. El problema no está en los datos ni en el método: está en
+que el modelo tiene demasiada libertad para absorber el ruido de cada medición
+individual en lugar de la señal subyacente. La regularización es el mecanismo
+que impone la suavidad física de la señal como restricción matemática.
+\end{fisicaconexion}
+
+El sobreajuste tiene una causa matemática identificable: la familia paramétrica
+tiene demasiados grados de libertad en relación con la información contenida en los
+datos. Formalizar esta idea requiere distinguir entre dos tipos de error.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Error de entrenamiento y error de generalización}
+\label{sec:train_test}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{1}{1}
+
+\begin{definicion}{Partición de datos: entrenamiento y evaluación}
+\label{def:particion}
+Sea $\mathcal{D} = \{(\bm{x}_i, y_i)\}_{i=1}^N$ un conjunto de datos. Una
+\textbf{partición entrenamiento-evaluación} con fracción $\alpha \in (0,1)$ consiste
+en dividir $\mathcal{D}$ en dos subconjuntos disjuntos:
+\[
+  \mathcal{D}_{\text{train}} \;\cup\; \mathcal{D}_{\text{test}} = \mathcal{D},
+  \qquad
+  \mathcal{D}_{\text{train}} \;\cap\; \mathcal{D}_{\text{test}} = \emptyset,
+\]
+con $|\mathcal{D}_{\text{train}}| = \lfloor \alpha N \rfloor$ y
+$|\mathcal{D}_{\text{test}}| = N - \lfloor \alpha N \rfloor$. El subconjunto
+$\mathcal{D}_{\text{train}}$ se usa para determinar $\bm{\theta}^*$; el subconjunto
+$\mathcal{D}_{\text{test}}$ no participa en ese proceso y se reserva para evaluar
+el modelo resultante.
+\end{definicion}
+
+\begin{definicion}{Error de entrenamiento y error de generalización}
+\label{def:errores}
+Sea $\bm{\theta}^* = \argmin_{\bm{\theta}} \mathcal{L}_{\text{train}}(\bm{\theta})$
+el minimizador de la pérdida sobre $\mathcal{D}_{\text{train}}$. Se definen:
+\begin{align}
+  E_{\text{train}} &= \mathcal{L}_{\text{train}}(\bm{\theta}^*)
+  = \frac{1}{|\mathcal{D}_{\text{train}}|}
+    \sum_{(\bm{x}_i,y_i)\in\mathcal{D}_{\text{train}}}
+    \ell\bigl(f(\bm{x}_i;\bm{\theta}^*),\, y_i\bigr),
+  \label{eq:etrain}\\[6pt]
+  E_{\text{test}} &= \mathcal{L}_{\text{test}}(\bm{\theta}^*)
+  = \frac{1}{|\mathcal{D}_{\text{test}}|}
+    \sum_{(\bm{x}_i,y_i)\in\mathcal{D}_{\text{test}}}
+    \ell\bigl(f(\bm{x}_i;\bm{\theta}^*),\, y_i\bigr).
+  \label{eq:etest}
+\end{align}
+La brecha $E_{\text{test}} - E_{\text{train}} \geq 0$ se denomina
+\textbf{brecha de generalización}. Cuando esta brecha es grande, el modelo
+ha sobreajustado.
+\end{definicion}
+
+\begin{observacion}{El conjunto de test como árbitro imparcial}
+La condición de que $\mathcal{D}_{\text{test}}$ no participe en la determinación
+de $\bm{\theta}^*$ es fundamental. Si se usaran datos de test para ajustar el modelo
+o seleccionar hiperparámetros, $E_{\text{test}}$ dejaría de ser una estimación
+imparcial del error de generalización. Este principio se viola frecuentemente en
+la práctica y es fuente de estimaciones de rendimiento demasiado optimistas.
+\end{observacion}
+
+\subsection{La curva de capacidad}
+\label{subsec:curva_capacidad}
+
+\dificultad{2}{2}
+
+La relación entre la complejidad del modelo y los errores de entrenamiento y test
+tiene una estructura sistemática. Definimos la \textbf{capacidad} de una familia
+paramétrica como el número de parámetros libres $p$. Al variar $p$ y registrar
+$E_{\text{train}}$ y $E_{\text{test}}$, se obtiene la curva característica de la
+Figura~\ref{fig:bias_variance_curve}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Axes
+  \draw[->] (0,0) -- (8.5,0) node[right] {Capacidad $p$};
+  \draw[->] (0,0) -- (0,5.5) node[above] {Error};
+
+  % Training error curve (decreasing)
+  \draw[thick, defcolor, domain=0.3:8.2, samples=120]
+    plot (\x, {3.8*exp(-0.55*\x) + 0.15});
+
+  % Test error curve (U-shape)
+  \draw[thick, ejemcolor, domain=0.3:8.2, samples=120]
+    plot (\x, {3.8*exp(-0.55*\x) + 0.15 + 1.1*exp(-1.6*(\x-4.5)^2)*(\x-1.5) + 0.05*\x});
+
+  % Labels
+  \node[defcolor, right] at (8.2, 0.55) {\small $E_{\text{train}}$};
+  \node[ejemcolor, right] at (8.2, 1.25) {\small $E_{\text{test}}$};
+
+  % Optimal zone
+  \draw[dashed, gray] (4.5,0) -- (4.5,4.2);
+  \node[below, gray] at (4.5,0) {\small óptimo};
+
+  % Regions
+  \node[defcolor!60, align=center] at (1.8, 4.5) {\small alto sesgo\\[-2pt]\small baja varianza};
+  \node[ejemcolor!80, align=center] at (7.0, 4.5) {\small bajo sesgo\\[-2pt]\small alta varianza};
+\end{tikzpicture}
+\caption{Curva de capacidad. El error de entrenamiento decrece monótonamente al aumentar la capacidad $p$. El error de test tiene un mínimo en la zona de capacidad óptima; más allá de ese punto el modelo sobreajusta.}
+\label{fig:bias_variance_curve}
+\end{figure}
+
+Cuatro hechos caracterizan esta curva, y todos tienen demostración:
+
+\begin{enumerate}
+  \item $E_{\text{train}}$ es no creciente en $p$: al añadir parámetros, el conjunto
+        de modelos factibles se agranda y el mínimo de $\mathcal{L}_{\text{train}}$
+        solo puede disminuir o mantenerse.
+  \item Para $p = N$ (interpolación exacta), $E_{\text{train}} = 0$ con pérdida MSE
+        y nodos distintos.
+  \item $E_{\text{test}}$ tiene un mínimo para algún $p^* < N$ si los datos contienen
+        ruido.
+  \item La brecha $E_{\text{test}} - E_{\text{train}}$ es no decreciente en $p$.
+\end{enumerate}
+
+Los hechos 1 y 2 son consecuencias directas de la Proposición~\ref{prop:interpolacion}
+del Capítulo~\ref{ch:cap1}. Los hechos 3 y 4 requieren el análisis sesgo-varianza
+de la sección siguiente.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{La descomposición sesgo-varianza}
+\label{sec:biasvar}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{3}
+
+Para analizar la brecha de generalización con precisión necesitamos un modelo
+del ruido. Se asume el modelo aditivo estándar:
+
+\begin{definicion}{Modelo de datos con ruido aditivo}
+\label{def:ruido}
+Los datos se generan mediante:
+\[
+  y_i = g(\bm{x}_i) + \varepsilon_i,
+  \qquad i = 1, \ldots, N,
+\]
+donde $g: \mathbb{R}^n \to \mathbb{R}$ es la \textbf{función objetivo} desconocida,
+y $\varepsilon_i$ son perturbaciones aleatorias con:
+\[
+  \mathbb{E}[\varepsilon_i] = 0,
+  \qquad
+  \mathbb{E}[\varepsilon_i^2] = \sigma_\varepsilon^2,
+  \qquad
+  \mathbb{E}[\varepsilon_i \varepsilon_j] = 0 \text{ para } i \neq j.
+\]
+Es decir, el ruido tiene media cero, varianza $\sigma_\varepsilon^2$ y es
+no correlacionado entre observaciones.
+\end{definicion}
+
+El operador $\mathbb{E}[\cdot]$ denota la \textbf{esperanza} sobre las
+realizaciones del ruido $\bm{\varepsilon} = (\varepsilon_1,\ldots,\varepsilon_N)\T$:
+para una función $h(\bm{\varepsilon})$, $\mathbb{E}[h(\bm{\varepsilon})] =
+\int h(\bm{\varepsilon})\, p(\bm{\varepsilon})\, d\bm{\varepsilon}$, donde
+$p(\bm{\varepsilon})$ es la densidad de probabilidad del ruido. En el modelo
+anterior no se asume ninguna distribución específica; solo se usan las propiedades
+de linealidad de $\mathbb{E}[\cdot]$ y las condiciones sobre los momentos del ruido.
+
+\begin{observacion}{Por qué asumir ruido aditivo}
+El modelo $y_i = g(\bm{x}_i) + \varepsilon_i$ es el más simple que captura la
+realidad: las observaciones físicas siempre tienen alguna fuente de incertidumbre
+(ruido instrumental, variabilidad natural, truncamiento numérico). La hipótesis de
+media cero y varianza finita es suficiente para el análisis que sigue. La hipótesis
+de no correlación es más fuerte, pero es la que corresponde a medidas independientes
+en el sentido experimental usual.
+\end{observacion}
+
+\begin{fisicaconexion}{Sesgo y varianza como error sistemático y estadístico}
+La distinción entre sesgo y varianza es exactamente la distinción entre
+\textbf{error sistemático} y \textbf{error estadístico} que todo físico aprende
+en su primer curso experimental. El error estadístico se reduce promediando más
+mediciones: al aumentar $N$, la varianza del estimador disminuye como $1/N$.
+El error sistemático, en cambio, no desaparece con más datos: si el instrumento
+tiene un offset de calibración, la media de mil mediciones seguirá estando
+desplazada del valor verdadero. En el contexto del ajuste de modelos, el sesgo
+es el ``error de calibración'' del modelo: si la familia de funciones no puede
+representar la función real $g$ (por ejemplo, se usa una recta para ajustar
+una parábola), el estimador convergirá a un valor sistemáticamente equivocado
+sin importar cuántos datos se tengan. La regularización introduce
+deliberadamente un sesgo controlado para reducir el error estadístico (varianza):
+es el mismo compromiso que un físico acepta cuando aplica un filtro suavizante
+a sus datos.
+\end{fisicaconexion}
+
+\begin{definicion}{Sesgo y varianza de un estimador}
+\label{def:sesgvar}
+Sea $\hat{\bm{\theta}}(\mathcal{D}_{\text{train}})$ el estimador obtenido como
+minimizador de $\mathcal{L}_{\text{train}}$, visto como función del conjunto de
+datos de entrenamiento (y por tanto del ruido $\bm{\varepsilon}$). Se definen:
+\[
+  \text{Sesgo}[\hat{f}(\bm{x})]
+  = \mathbb{E}\bigl[f(\bm{x};\hat{\bm{\theta}})\bigr] - g(\bm{x}),
+\]
+\[
+  \text{Varianza}[\hat{f}(\bm{x})]
+  = \mathbb{E}\Bigl[\bigl(f(\bm{x};\hat{\bm{\theta}}) -
+    \mathbb{E}[f(\bm{x};\hat{\bm{\theta}})]\bigr)^2\Bigr].
+\]
+El sesgo mide cuánto se aleja la predicción media del valor verdadero. La varianza
+mide cuánto fluctúa la predicción al cambiar la realización del ruido en los datos
+de entrenamiento.
+\end{definicion}
+
+\begin{teorema}{Descomposición sesgo-varianza}
+\label{thm:biasvar}
+Sea $\bm{x}_0 \in \mathbb{R}^n$ un punto de evaluación fijo. Bajo el modelo de
+ruido de la Definición~\ref{def:ruido}, el error cuadrático esperado en $\bm{x}_0$
+se descompone como:
+\[
+  \mathbb{E}\Bigl[\bigl(f(\bm{x}_0;\hat{\bm{\theta}}) - y_0\bigr)^2\Bigr]
+  \;=\;
+  \underbrace{\text{Sesgo}[\hat{f}(\bm{x}_0)]^2}_{\text{error sistemático}}
+  \;+\;
+  \underbrace{\text{Varianza}[\hat{f}(\bm{x}_0)]}_{\text{error por ruido en train}}
+  \;+\;
+  \underbrace{\sigma_\varepsilon^2}_{\text{ruido irreducible}},
+\]
+donde $y_0 = g(\bm{x}_0) + \varepsilon_0$ con $\varepsilon_0$ independiente de
+$\mathcal{D}_{\text{train}}$ y con las mismas propiedades que $\varepsilon_i$.
+\end{teorema}
+
+\begin{proof}
+Denotemos $\hat{f}_0 = f(\bm{x}_0;\hat{\bm{\theta}})$ y $\bar{f}_0 =
+\mathbb{E}[\hat{f}_0]$. Escribimos:
+\begin{align*}
+  \hat{f}_0 - y_0
+  &= \hat{f}_0 - g(\bm{x}_0) - \varepsilon_0 \\
+  &= \bigl(\hat{f}_0 - \bar{f}_0\bigr)
+   + \bigl(\bar{f}_0 - g(\bm{x}_0)\bigr)
+   - \varepsilon_0.
+\end{align*}
+Elevando al cuadrado y tomando esperanza, y usando que los tres términos son
+no correlacionados entre sí:
+
+\begin{itemize}
+  \item $\hat{f}_0 - \bar{f}_0$ depende de $\bm{\varepsilon}$ (el ruido en
+        $\mathcal{D}_{\text{train}}$) con media cero.
+  \item $\bar{f}_0 - g(\bm{x}_0)$ es determinista (no depende de $\bm{\varepsilon}$).
+  \item $\varepsilon_0$ es independiente de $\mathcal{D}_{\text{train}}$ con media cero.
+\end{itemize}
+
+Por tanto, los productos cruzados tienen esperanza cero, y:
+\begin{align*}
+  \mathbb{E}\bigl[(\hat{f}_0 - y_0)^2\bigr]
+  &= \mathbb{E}\bigl[(\hat{f}_0 - \bar{f}_0)^2\bigr]
+   + \bigl(\bar{f}_0 - g(\bm{x}_0)\bigr)^2
+   + \mathbb{E}[\varepsilon_0^2] \\
+  &= \text{Varianza}[\hat{f}(\bm{x}_0)]
+   + \text{Sesgo}[\hat{f}(\bm{x}_0)]^2
+   + \sigma_\varepsilon^2.
+\end{align*}
+\end{proof}
+
+\begin{observacion}{Interpretación del Teorema~\ref{thm:biasvar}}
+Los tres términos tienen naturaleza diferente y se comportan de forma distinta
+al variar la capacidad $p$:
+\begin{itemize}
+  \item El \textbf{sesgo} decrece al aumentar $p$: modelos más complejos tienen más
+        libertad para aproximar $g$. Para $p$ suficientemente grande, el Teorema de
+        Aproximación Universal garantiza que el sesgo puede hacerse arbitrariamente
+        pequeño.
+  \item La \textbf{varianza} crece al aumentar $p$: modelos con más parámetros son
+        más sensibles a las fluctuaciones del ruido en los datos de entrenamiento.
+        Cada realización del ruido produce un $\hat{\bm{\theta}}$ diferente, y la
+        dispersión de esas realizaciones define la varianza.
+  \item El \textbf{ruido irreducible} $\sigma_\varepsilon^2$ no depende de $p$: es
+        una propiedad del proceso de medición, no del modelo.
+\end{itemize}
+El mínimo del error esperado total se alcanza en el valor de $p$ donde el balance
+entre sesgo y varianza es óptimo. La regularización es el mecanismo para controlar
+ese balance de forma continua, sin necesidad de discretizar $p$.
+\end{observacion}
+
+\subsection{El dilema sesgo-varianza en el caso lineal}
+\label{subsec:dilemma_lineal}
+
+\dificultad{3}{2}
+
+La descomposición del Teorema~\ref{thm:biasvar} es general, pero en el caso lineal
+puede hacerse explícita. Sea la familia polinomial de grado $d$ con pérdida MSE, de
+modo que $\hat{\bm{\theta}} = \bm{V}^\dagger\bm{y}$ (Proposición~\ref{prop:normales}).
+
+Bajo el modelo $\bm{y} = \bm{V}\bm{\theta}_{\text{real}} + \bm{\varepsilon}$, el
+estimador es:
+\[
+  \hat{\bm{\theta}} = \bm{V}^\dagger(\bm{V}\bm{\theta}_{\text{real}} + \bm{\varepsilon})
+  = \bm{V}^\dagger\bm{V}\,\bm{\theta}_{\text{real}} + \bm{V}^\dagger\bm{\varepsilon}.
+\]
+Tomando esperanza (recordando que $\mathbb{E}[\bm{\varepsilon}] = \bm{0}$):
+\[
+  \mathbb{E}[\hat{\bm{\theta}}] = \bm{V}^\dagger\bm{V}\,\bm{\theta}_{\text{real}}.
+\]
+Cuando $\bm{V}$ tiene rango completo, $\bm{V}^\dagger\bm{V} = \bm{I}$ y el
+estimador es \textbf{insesgado}: $\mathbb{E}[\hat{\bm{\theta}}] = \bm{\theta}_{\text{real}}$.
+En cambio, si el modelo es mal especificado (la función real $g$ no es un polinomio
+de grado $d$), el término $\bm{V}^\dagger\bm{V}\,\bm{\theta}_{\text{real}}$ introduce
+sesgo sistemático, incluso con ruido cero.
+
+La varianza del estimador es:
+\[
+  \mathbb{E}\bigl[\|\hat{\bm{\theta}} - \mathbb{E}[\hat{\bm{\theta}}]\|_2^2\bigr]
+  = \mathbb{E}\bigl[\|\bm{V}^\dagger\bm{\varepsilon}\|_2^2\bigr]
+  = \sigma_\varepsilon^2\, \|\bm{V}^\dagger\|_F^2
+  = \sigma_\varepsilon^2 \sum_{i=1}^p \frac{1}{\sigma_i^2},
+\]
+donde $\sigma_i$ son los valores singulares de $\bm{V}$ y $\|\cdot\|_F$ es la
+norma de Frobenius. Este resultado muestra que la varianza crece al aumentar $p$
+(más parámetros), y se dispara cuando algún $\sigma_i \to 0$ (sistema mal condicionado).
+La regularización, que introducimos a continuación, actúa precisamente sobre ese
+denominador.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Regularización de Tikhonov}
+\label{sec:tikhonov}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{3}
+
+La regularización modifica el problema de minimización añadiendo un término que
+penaliza la complejidad del modelo. La forma más clásica y matemáticamente tractable
+es la regularización de Tikhonov, conocida en ML como \textit{ridge regression} o
+regularización $\ell_2$.
+
+\begin{definicion}{Problema de minimización regularizado}
+\label{def:tikhonov}
+Dado un parámetro de regularización $\lambda > 0$, el \textbf{problema de
+minimización regularizado con norma $\ell_2$} es:
+\[
+  \bm{\theta}^*_\lambda \;=\; \argmin_{\bm{\theta} \in \mathbb{R}^p}
+  \Bigl\{
+    \mathcal{L}(\bm{\theta}) + \lambda\|\bm{\theta}\|_2^2
+  \Bigr\}
+  \;=\; \argmin_{\bm{\theta} \in \mathbb{R}^p}
+  \Bigl\{
+    \frac{1}{N}\|\bm{V}\bm{\theta} - \bm{y}\|_2^2 + \lambda\|\bm{\theta}\|_2^2
+  \Bigr\}.
+\]
+El escalar $\lambda > 0$ se denomina \textbf{parámetro de regularización} o
+\textbf{hiperparámetro}.
+\end{definicion}
+
+\begin{observacion}{Interpretación del término de regularización}
+El término $\lambda\|\bm{\theta}\|_2^2$ penaliza parámetros de magnitud grande.
+Desde el punto de vista de la aproximación, parámetros grandes corresponden a
+funciones que oscilan rápidamente (como el polinomio interpolante de alto grado).
+La regularización impone una preferencia por soluciones más suaves. El parámetro
+$\lambda$ controla la intensidad de esa preferencia: $\lambda \to 0$ recupera el
+problema no regularizado, y $\lambda \to \infty$ fuerza $\bm{\theta}^*_\lambda \to \bm{0}$.
+\end{observacion}
+
+\begin{proposicion}{Solución del problema regularizado}
+\label{prop:sol_tikhonov}
+El minimizador del problema de la Definición~\ref{def:tikhonov} existe, es único
+para todo $\lambda > 0$, y viene dado por:
+\[
+  \bm{\theta}^*_\lambda \;=\; \bigl(\bm{V}\T\bm{V} + N\lambda\bm{I}\bigr)^{-1}\bm{V}\T\bm{y}.
+\]
+\end{proposicion}
+
+\begin{proof}
+La función objetivo $F(\bm{\theta}) = \frac{1}{N}\|\bm{V}\bm{\theta}-\bm{y}\|_2^2
++ \lambda\|\bm{\theta}\|_2^2$ es suma de dos funciones convexas y diferenciables,
+luego es convexa y diferenciable. Su gradiente es:
+\[
+  \nabla_{\bm{\theta}} F(\bm{\theta})
+  = \frac{2}{N}\bm{V}\T(\bm{V}\bm{\theta} - \bm{y}) + 2\lambda\bm{\theta}
+  = \frac{2}{N}\bigl[(\bm{V}\T\bm{V} + N\lambda\bm{I})\bm{\theta} - \bm{V}\T\bm{y}\bigr].
+\]
+Igualando a cero:
+\[
+  (\bm{V}\T\bm{V} + N\lambda\bm{I})\bm{\theta} = \bm{V}\T\bm{y}.
+\]
+La matriz $\bm{V}\T\bm{V} + N\lambda\bm{I}$ es definida positiva para todo
+$\lambda > 0$: si $\bm{V}\T\bm{V}$ es semidefinida positiva (siempre) con
+autovalores $\mu_i \geq 0$, entonces $\bm{V}\T\bm{V} + N\lambda\bm{I}$ tiene
+autovalores $\mu_i + N\lambda > 0$. Por tanto, la matriz es invertible y la
+solución es única.
+\end{proof}
+
+\begin{fisicaconexion}{Regularización en problemas inversos de física}
+\label{obs:inv_problemas}
+La Proposición~\ref{prop:sol_tikhonov} es la solución estándar a una clase amplia
+de problemas inversos en física, donde se busca reconstruir una causa a partir de
+sus efectos observados con ruido. En tomografía computarizada, se invierte la
+transformada de Radon discretizada para reconstruir una imagen de densidad a partir
+de proyecciones de rayos X: la matriz $\bm{V}$ es la matriz de proyección y
+$\bm{y}$ son los detectores. En espectroscopía, se invierte la función de aparato
+del instrumento para deconvolucionar el espectro medido y recuperar el espectro
+real: el ruido en el espectrómetro produce oscilaciones espurias si no se regulariza.
+En geofísica, se invierte el modelo de velocidades sísmicas a partir de tiempos de
+llegada de ondas: el sistema está fuertemente subdeterminado y la regularización
+impone suavidad geológica. En todos estos casos, la inversión directa
+$\bm{V}^{-1}\bm{y}$ amplifica el ruido porque $\bm{V}$ es mal condicionada. La
+solución $(\bm{V}\T\bm{V} + N\lambda\bm{I})^{-1}\bm{V}\T\bm{y}$ estabiliza
+la inversión a costa de un sesgo controlado por $\lambda$.
+\end{fisicaconexion}
+
+\subsection{Efecto de la regularización sobre el sesgo y la varianza}
+\label{subsec:sesgvar_tikhonov}
+
+\dificultad{3}{2}
+
+Bajo el modelo $\bm{y} = \bm{V}\bm{\theta}_{\text{real}} + \bm{\varepsilon}$, el
+estimador regularizado es:
+\[
+  \hat{\bm{\theta}}_\lambda
+  = \bm{H}_\lambda \bm{V}\T(\bm{V}\bm{\theta}_{\text{real}} + \bm{\varepsilon})
+  = \bm{H}_\lambda \bm{V}\T\bm{V}\,\bm{\theta}_{\text{real}} + \bm{H}_\lambda\bm{V}\T\bm{\varepsilon},
+\]
+donde $\bm{H}_\lambda = (\bm{V}\T\bm{V} + N\lambda\bm{I})^{-1}$ es la matriz de
+resolución.
+
+\noindent\textbf{Sesgo del estimador regularizado:}
+\[
+  \text{Sesgo}[\hat{\bm{\theta}}_\lambda]
+  = \mathbb{E}[\hat{\bm{\theta}}_\lambda] - \bm{\theta}_{\text{real}}
+  = (\bm{H}_\lambda \bm{V}\T\bm{V} - \bm{I})\,\bm{\theta}_{\text{real}}
+  = -N\lambda\,\bm{H}_\lambda\,\bm{\theta}_{\text{real}}.
+\]
+El sesgo es cero solo cuando $\lambda = 0$ (sin regularización). Para $\lambda > 0$,
+la regularización introduce un sesgo proporcional a $\lambda$.
+
+\noindent\textbf{Varianza del estimador regularizado:}
+\[
+  \text{Varianza}[\hat{\bm{\theta}}_\lambda]
+  = \sigma_\varepsilon^2\,\|\bm{H}_\lambda\bm{V}\T\|_F^2
+  = \sigma_\varepsilon^2 \sum_{i=1}^p \frac{\sigma_i^2}{(\sigma_i^2 + N\lambda)^2},
+\]
+donde $\sigma_i$ son los valores singulares de $\bm{V}$. Para $\lambda > 0$, cada
+término es menor que el correspondiente sin regularización ($\sigma_\varepsilon^2/\sigma_i^2$),
+y la reducción es mayor para valores singulares pequeños.
+
+La regularización introduce sesgo y reduce varianza de forma simultánea, en
+proporciones controladas por $\lambda$. La Sección~\ref{sec:svd} completa el
+análisis de esta relación mediante la SVD.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Análisis espectral: la descomposición en valores singulares}
+\label{sec:svd}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{3}
+
+La descomposición en valores singulares (SVD) es el instrumento de análisis lineal
+más informativo para el problema de mínimos cuadrados. Permite ver exactamente
+qué direcciones del espacio de parámetros están bien determinadas por los datos
+y cuáles no, y entender la regularización como un filtro espectral.
+
+\begin{teorema}{Descomposición en valores singulares (SVD)}
+\label{thm:svd}
+Sea $\bm{V} \in \mathbb{R}^{N \times p}$ con $N \geq p$ y $\rank(\bm{V}) = r
+\leq p$. Existen matrices:
+\[
+  \bm{U} \in \mathbb{R}^{N \times r},\quad
+  \bm{\Sigma} \in \mathbb{R}^{r \times r},\quad
+  \bm{W} \in \mathbb{R}^{p \times r},
+\]
+con $\bm{U}\T\bm{U} = \bm{W}\T\bm{W} = \bm{I}_r$ y $\bm{\Sigma} =
+\operatorname{diag}(\sigma_1, \ldots, \sigma_r)$ con $\sigma_1 \geq \sigma_2
+\geq \cdots \geq \sigma_r > 0$, tales que:
+\[
+  \bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T.
+\]
+Los escalares $\sigma_i$ se denominan \textbf{valores singulares} de $\bm{V}$.
+Las columnas de $\bm{U}$ se denominan \textbf{vectores singulares izquierdos}
+y las columnas de $\bm{W}$ \textbf{vectores singulares derechos}.
+\end{teorema}
+
+La demostración de existencia usa el teorema espectral para matrices simétricas
+aplicado a $\bm{V}\T\bm{V}$; se incluye como Ejercicio Resuelto~\ref{ej:svd_construccion}
+al final del capítulo.
+
+\subsection{La pseudoinversa revisitada}
+\label{subsec:pseudoinversa_svd}
+
+Con la SVD de $\bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T$, la pseudoinversa se escribe:
+\[
+  \bm{V}^\dagger = \bm{W}\bm{\Sigma}^{-1}\bm{U}\T,
+\]
+y la solución de mínimos cuadrados es $\bm{\theta}^* = \bm{W}\bm{\Sigma}^{-1}\bm{U}\T\bm{y}$.
+Expandiendo en las direcciones singulares $\bm{w}_i$ (columnas de $\bm{W}$) y
+$\bm{u}_i$ (columnas de $\bm{U}$):
+\[
+  \bm{\theta}^* = \sum_{i=1}^r \frac{\bm{u}_i\T\bm{y}}{\sigma_i}\,\bm{w}_i.
+\]
+Cada término $(\bm{u}_i\T\bm{y})/\sigma_i$ amplifica el componente de $\bm{y}$ en
+la dirección $\bm{u}_i$ por el factor $1/\sigma_i$. Cuando $\sigma_i$ es pequeño
+---dirección mal determinada por los datos--- este factor puede ser enorme, amplificando
+el ruido contenido en $\bm{y}$. El número de condicionamiento $\kappa(\bm{V}) =
+\sigma_1/\sigma_r$ cuantifica el peor caso de esta amplificación.
+
+\subsection{La regularización como filtro espectral}
+\label{subsec:filtro}
+
+\dificultad{3}{3}
+
+Con la SVD, la solución regularizada de la Proposición~\ref{prop:sol_tikhonov}
+admite una descomposición espectral explícita.
+
+\begin{proposicion}{Solución regularizada en la base singular}
+\label{prop:filtro_espectral}
+Sea $\bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T$ la SVD de rango completo de $\bm{V}$.
+El minimizador regularizado se escribe:
+\[
+  \bm{\theta}^*_\lambda = \sum_{i=1}^p \frac{\sigma_i}{\sigma_i^2 + N\lambda}
+  \,(\bm{u}_i\T\bm{y})\,\bm{w}_i.
+\]
+\end{proposicion}
+
+\begin{proof}
+De la Proposición~\ref{prop:sol_tikhonov}, $\bm{\theta}^*_\lambda =
+(\bm{V}\T\bm{V} + N\lambda\bm{I})^{-1}\bm{V}\T\bm{y}$. Sustituyendo
+$\bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T$:
+\[
+  \bm{V}\T\bm{V} = \bm{W}\bm{\Sigma}^2\bm{W}\T,
+  \qquad
+  \bm{V}\T\bm{V} + N\lambda\bm{I} = \bm{W}(\bm{\Sigma}^2 + N\lambda\bm{I})\bm{W}\T,
+\]
+\[
+  (\bm{V}\T\bm{V} + N\lambda\bm{I})^{-1}
+  = \bm{W}(\bm{\Sigma}^2 + N\lambda\bm{I})^{-1}\bm{W}\T.
+\]
+Por tanto:
+\[
+  \bm{\theta}^*_\lambda
+  = \bm{W}(\bm{\Sigma}^2 + N\lambda\bm{I})^{-1}\bm{W}\T \cdot \bm{W}\bm{\Sigma}\bm{U}\T\bm{y}
+  = \bm{W}\,\operatorname{diag}\!\left(\frac{\sigma_i}{\sigma_i^2+N\lambda}\right)\bm{U}\T\bm{y},
+\]
+que en notación de suma es la expresión del enunciado.
+\end{proof}
+
+La comparación entre la solución sin regularización y la regularizada es
+inmediata:
+\[
+  \bm{\theta}^* = \sum_{i=1}^p \frac{1}{\sigma_i}\,(\bm{u}_i\T\bm{y})\,\bm{w}_i,
+  \qquad
+  \bm{\theta}^*_\lambda = \sum_{i=1}^p \underbrace{\frac{\sigma_i}{\sigma_i^2 + N\lambda}}_{f_i(\lambda)}\,(\bm{u}_i\T\bm{y})\,\bm{w}_i.
+\]
+
+Los factores $f_i(\lambda) = \sigma_i/(\sigma_i^2 + N\lambda)$ son los \textbf{factores de
+filtro}. Se analizan sus propiedades:
+
+\begin{enumerate}
+  \item Para $\lambda = 0$: $f_i(0) = 1/\sigma_i$. Se recupera la pseudoinversa.
+  \item Para $\sigma_i \gg \sqrt{N\lambda}$ (dirección bien determinada):
+        $f_i(\lambda) \approx 1/\sigma_i$. La regularización apenas afecta a
+        estas componentes.
+  \item Para $\sigma_i \ll \sqrt{N\lambda}$ (dirección mal determinada):
+        $f_i(\lambda) \approx \sigma_i/(N\lambda) \ll 1/\sigma_i$. La regularización
+        amortigua fuertemente la contribución de estas componentes.
+  \item $f_i(\lambda)$ alcanza su máximo en $\sigma_i = \sqrt{N\lambda}$, con valor
+        $1/(2\sqrt{N\lambda})$.
+\end{enumerate}
+
+La regularización es, en esencia, un filtro pasa-bajos en el espacio de valores
+singulares: preserva las direcciones bien determinadas ($\sigma_i$ grande) y suprime
+las que el ruido dominaría ($\sigma_i$ pequeño). El umbral de corte está en
+$\sigma_i \sim \sqrt{N\lambda}$.
+
+\begin{observacion}{Analogía con la suavización espectral en física}
+La estructura del filtro $f_i(\lambda) = \sigma_i/(\sigma_i^2 + N\lambda)$ es
+idéntica al filtro de Wiener en procesamiento de señales: $H(\omega) =
+S_x(\omega)/(S_x(\omega) + S_n(\omega))$, donde $S_x$ y $S_n$ son las densidades
+espectrales de señal y ruido. En ambos casos, la supresión es proporcional a la
+relación señal-ruido local en el espacio de frecuencias (o valores singulares). La
+regularización de Tikhonov es un filtro de Wiener con relación señal-ruido $\sigma_i^2/N\lambda$.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Selección del parámetro de regularización}
+\label{sec:lambda}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+El valor de $\lambda$ no puede determinarse por minimización de $\mathcal{L}_{\text{train}}$
+(que siempre favorece $\lambda = 0$). Se necesita un criterio externo basado en
+la capacidad del modelo de generalizar a datos nuevos.
+
+\subsection{Validación cruzada $k$-fold}
+\label{subsec:cv}
+
+\begin{definicion}{Validación cruzada $k$-fold}
+\label{def:cv}
+Sea $\mathcal{D}_{\text{train}}$ el conjunto de entrenamiento con $M$ elementos.
+La \textbf{validación cruzada $k$-fold} consiste en:
+\begin{enumerate}
+  \item Dividir $\mathcal{D}_{\text{train}}$ en $k$ subconjuntos disjuntos de
+        tamaño aproximadamente igual: $\mathcal{F}_1, \ldots, \mathcal{F}_k$.
+  \item Para cada $j = 1, \ldots, k$: entrenar con $\mathcal{D}_{\text{train}}
+        \setminus \mathcal{F}_j$ y evaluar sobre $\mathcal{F}_j$, obteniendo
+        el error de validación $E_j(\lambda)$.
+  \item Estimar el error de generalización para este $\lambda$ como:
+        $E_{\text{CV}}(\lambda) = \frac{1}{k}\sum_{j=1}^k E_j(\lambda)$.
+\end{enumerate}
+El $\lambda$ óptimo es $\lambda^* = \argmin_\lambda E_{\text{CV}}(\lambda)$.
+\end{definicion}
+
+\begin{observacion}{Casos límite: leave-one-out y train-test split}
+Cuando $k = M$ (cada fold tiene un solo elemento) se obtiene la validación
+\textit{leave-one-out} (LOO), que es el estimador insesgado del error de
+generalización pero tiene costo computacional $O(M)$ veces el de un entrenamiento.
+Cuando $k = 1$ se reduce a la partición simple entrenamiento-test de la
+Definición~\ref{def:particion}. En la práctica, $k = 5$ o $k = 10$ ofrece un
+buen balance entre sesgo y varianza del estimador del error.
+\end{observacion}
+
+\subsection{La curva L}
+\label{subsec:curva_l}
+
+Para problemas inversos en física, donde el conjunto de datos puede ser pequeño y
+la validación cruzada costosa, existe un criterio geométrico alternativo: la curva L.
+
+\begin{definicion}{Curva L}
+\label{def:curva_l}
+La \textbf{curva L} es el conjunto de puntos parametrizados por $\lambda > 0$:
+\[
+  \bigl(\log\mathcal{L}_{\text{train}}(\bm{\theta}^*_\lambda),\;
+         \log\|\bm{\theta}^*_\lambda\|_2^2\bigr) \;\subset\; \mathbb{R}^2.
+\]
+\end{definicion}
+
+Esta curva tiene la forma característica de una L: para $\lambda$ pequeño, la
+norma $\|\bm{\theta}^*_\lambda\|_2$ es grande y el ajuste es bueno (brazo horizontal);
+para $\lambda$ grande, el ajuste es pobre pero la norma es pequeña (brazo vertical).
+La esquina de la L corresponde al valor de $\lambda$ donde el modelo alcanza el mejor
+compromiso entre fidelidad a los datos y regularidad de la solución. En problemas
+de física, donde el número de observaciones puede ser menor que el número de parámetros,
+la curva L frecuentemente da resultados similares a la validación cruzada con un
+costo computacional muy inferior.
+
+\begin{fisicaconexion}{La curva L en problemas inversos geofísicos y espectrales}
+La curva L es un criterio estándar en problemas inversos de física donde el
+conjunto de datos es pequeño y la validación cruzada resulta costosa. En
+\textbf{tomografía sísmica}, se usa para determinar el nivel de suavidad del
+modelo de velocidades del subsuelo que mejor reproduce los tiempos de llegada
+observados sin sobreajustar los errores de lectura. En \textbf{deconvolución
+espectral}, aparece al intentar separar líneas espectrales superpuestas: el brazo
+horizontal de la L corresponde a soluciones que ajustan bien los datos pero con
+perfiles espectrales ruidosos; el brazo vertical corresponde a soluciones muy
+suaves que ignoran detalles reales. La esquina identifica el nivel de regularización
+que preserva las características físicas del espectro sin amplificar el ruido del
+detector. En \textbf{tomografía de emisión de positrones} (PET), el mismo criterio
+selecciona el parámetro de penalización que controla la resolución espacial de la
+imagen reconstruida frente al ruido estadístico de los fotones detectados.
+\end{fisicaconexion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Regularización \texorpdfstring{$\ell_1$}{ell-1} y soluciones dispersas}
+\label{sec:ell1}
+%───────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{2}
+
+La regularización de Tikhonov no es la única posibilidad. Una alternativa importante
+es la penalización con la norma $\ell_1$:
+
+\begin{definicion}{Problema regularizado con norma $\ell_1$ (LASSO)}
+\label{def:lasso}
+El \textbf{problema LASSO} (\textit{Least Absolute Shrinkage and Selection Operator})
+es:
+\[
+  \bm{\theta}^*_\lambda = \argmin_{\bm{\theta} \in \mathbb{R}^p}
+  \Bigl\{
+    \frac{1}{N}\|\bm{V}\bm{\theta} - \bm{y}\|_2^2 + \lambda\|\bm{\theta}\|_1
+  \Bigr\},
+  \qquad \|\bm{\theta}\|_1 = \sum_{j=1}^p |\theta_j|.
+\]
+\end{definicion}
+
+A diferencia de la regularización $\ell_2$, la penalización $\ell_1$ tiene la
+propiedad de producir soluciones \textbf{dispersas}: muchos componentes de
+$\bm{\theta}^*_\lambda$ son exactamente cero. La razón es geométrica.
+
+La solución de ambos problemas regularizados puede interpretarse como el punto
+de mínima pérdida empírica en la intersección con una bola de radio $c(\lambda)$:
+$\ell_2$ impone $\|\bm{\theta}\|_2 \leq c$ (bola esférica) y $\ell_1$ impone
+$\|\bm{\theta}\|_1 \leq c$ (bola con forma de diamante en $\mathbb{R}^2$, o
+hiperoctaedro en $\mathbb{R}^p$). Las superficies de nivel de la pérdida empírica
+son elipsoides centrados en $\bm{\theta}^*$. El mínimo restringido es el primer
+punto de contacto entre el elipsoide que se expande y la bola de la restricción.
+
+La bola $\ell_2$ es lisa: el contacto ocurre en un punto genérico de la frontera.
+La bola $\ell_1$ tiene vértices en los ejes coordenados, donde exactamente un
+conjunto de componentes es no nulo. El contacto tiene probabilidad positiva de
+ocurrir en un vértice, lo que produce soluciones con exactamente $k < p$ componentes
+no nulas. El parámetro $\lambda$ controla cuántas componentes sobreviven.
+
+\begin{observacion}{Dispersidad en redes neuronales}
+En redes neuronales profundas, la regularización $\ell_1$ aplicada a los pesos
+de una capa puede desactivar conexiones enteras (peso exactamente cero), produciendo
+redes más compactas. Sin embargo, la función $\|\bm{\theta}\|_1$ no es diferenciable
+en $\theta_i = 0$, lo que complica los algoritmos de gradiente del Capítulo 5.
+Este problema se resuelve con el algoritmo de gradiente proximal, que se menciona
+en el Apéndice del Capítulo 5.
+\end{observacion}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 2}
+\label{sec:resumen2}
+%───────────────────────────────────────────────────────────────────────────────
+
+La pregunta que abrió este capítulo tenía una respuesta desconcertante: el modelo
+que minimiza perfectamente la pérdida empírica no es necesariamente el mejor modelo.
+El sobreajuste no es un fallo del método de optimización sino una consecuencia de
+que los datos de entrenamiento contienen ruido y el modelo tiene demasiados grados
+de libertad para absorberlo.
+
+El Teorema de descomposición sesgo-varianza (\ref{thm:biasvar}) formaliza ese
+diagnóstico: el error esperado en datos nuevos tiene tres fuentes, y solo el sesgo
+y la varianza son controlables. El sesgo y la varianza se comportan de forma opuesta
+al variar la complejidad del modelo, lo que crea un dilema que no puede resolverse
+simplemente aumentando la capacidad.
+
+La regularización de Tikhonov introduce la solución: en vez de reducir discretamente
+la complejidad eligiendo un valor de $p$, se añade una penalización continua
+$\lambda\|\bm{\theta}\|_2^2$ que controla el balance. El análisis espectral mediante
+la SVD revela la elegancia del mecanismo: la regularización es un filtro pasa-bajos
+que preserva las direcciones bien determinadas por los datos y amortigua las que
+serían dominadas por el ruido. La analogía con el filtro de Wiener en física de
+señales es exacta.
+
+El capítulo cierra con una observación que anticipa lo que sigue. Todo lo desarrollado
+aquí es exacto porque la familia paramétrica era lineal en $\bm{\theta}$: la pérdida
+empírica era una forma cuadrática, la SVD diagonalizaba el problema, y la solución
+tenía forma cerrada. Cuando la familia es no lineal ---como ocurrirá a partir del
+Capítulo 4--- el paisaje de $\mathcal{L}(\bm{\theta})$ deja de ser una parábola.
+La geometría de ese paisaje, y la forma en que determina qué algoritmos de optimización
+son viables, es el objeto del Capítulo 3.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios resueltos}
+\addcontentsline{toc}{section}{Ejercicios resueltos}
+\label{sec:ej_resueltos2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\label{ej:svd_construccion}
+\textbf{(Construcción de la SVD a partir del teorema espectral).}
+
+Sea $\bm{V} \in \mathbb{R}^{N\times p}$ con $N \geq p$. Mostrar que existe una
+descomposición $\bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T$ con las propiedades del
+Teorema~\ref{thm:svd}.
+
+\medskip\noindent\textit{Solución.}
+La matriz $\bm{V}\T\bm{V} \in \mathbb{R}^{p\times p}$ es simétrica (pues
+$(\bm{V}\T\bm{V})\T = \bm{V}\T\bm{V}$) y semidefinida positiva:
+$\bm{z}\T(\bm{V}\T\bm{V})\bm{z} = \|\bm{V}\bm{z}\|_2^2 \geq 0$ para todo
+$\bm{z} \in \mathbb{R}^p$.
+
+Por el teorema espectral para matrices simétricas reales, existe una
+descomposición:
+\[
+  \bm{V}\T\bm{V} = \bm{W}\bm{\Lambda}\bm{W}\T,
+\]
+donde $\bm{W} \in \mathbb{R}^{p\times p}$ es ortogonal ($\bm{W}\T\bm{W} = \bm{I}$)
+y $\bm{\Lambda} = \operatorname{diag}(\mu_1, \ldots, \mu_p)$ con $\mu_i \geq 0$.
+
+Definimos $\sigma_i = \sqrt{\mu_i}$ y $\bm{\Sigma} = \operatorname{diag}(\sigma_1,\ldots,\sigma_r)$
+donde $r = \rank(\bm{V})$ es el número de autovalores no nulos. Para
+$i = 1, \ldots, r$ definimos:
+\[
+  \bm{u}_i = \frac{\bm{V}\bm{w}_i}{\sigma_i} \in \mathbb{R}^N,
+\]
+donde $\bm{w}_i$ es la $i$-ésima columna de $\bm{W}$. Verificamos que
+$\{\bm{u}_i\}_{i=1}^r$ es un conjunto ortonormal:
+\[
+  \bm{u}_i\T\bm{u}_j
+  = \frac{(\bm{V}\bm{w}_i)\T(\bm{V}\bm{w}_j)}{\sigma_i\sigma_j}
+  = \frac{\bm{w}_i\T(\bm{V}\T\bm{V})\bm{w}_j}{\sigma_i\sigma_j}
+  = \frac{\bm{w}_i\T(\mu_j\bm{w}_j)}{\sigma_i\sigma_j}
+  = \frac{\mu_j\delta_{ij}}{\sigma_i\sigma_j} = \delta_{ij}.
+\]
+Definiendo $\bm{U}$ como la matriz de columnas $\bm{u}_1,\ldots,\bm{u}_r$,
+verificamos:
+\[
+  \bm{U}\bm{\Sigma}\bm{W}\T
+  \;=\; \sum_{i=1}^r \sigma_i\,\bm{u}_i\bm{w}_i\T
+  \;=\; \sum_{i=1}^r \sigma_i\,\frac{\bm{V}\bm{w}_i}{\sigma_i}\bm{w}_i\T
+  \;=\; \bm{V}\sum_{i=1}^r \bm{w}_i\bm{w}_i\T = \bm{V},
+\]
+donde la última igualdad usa que los vectores $\bm{w}_i$ para $i > r$
+están en el núcleo de $\bm{V}$ y no contribuyen a la suma. $\square$
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:tikhonov_numerico}
+\textbf{(Efecto de la regularización: experimento numérico).}
+
+Sea $g(x) = \sin(2\pi x)$ muestreada en $N = 15$ nodos equiespaciados en $[0,1]$
+con ruido gaussiano $\varepsilon_i \sim \mathcal{N}(0, 0.1^2)$. Se ajusta una
+familia polinomial de grado $d = 14$ (interpolación exacta) y se comparan tres
+valores: $\lambda = 0$ (sin regularización), $\lambda = 10^{-3}$, $\lambda = 10^{-1}$.
+
+Calcular analíticamente (usando la SVD) el número de condicionamiento de
+$\bm{V}\T\bm{V}$ para nodos equiespaciados con $d = 14$, y estimar cuánto
+amplifica el ruido la solución no regularizada.
+
+\medskip\noindent\textit{Solución parcial.}
+Los nodos equiespaciados $x_i = (i-1)/14$ producen una matriz de Vandermonde
+$\bm{V} \in \mathbb{R}^{15 \times 15}$ cuyo número de condicionamiento crece
+exponencialmente con $d$. Para $d = 14$, $\kappa(\bm{V}) \approx 10^{13}$
+(verificable numéricamente). Esto significa que una perturbación de amplitud
+$0.1$ en $\bm{y}$ puede producir una perturbación de amplitud
+$\approx 10^{12}$ en $\bm{\theta}^*$, lo que explica las oscilaciones violentas
+del polinomio interpolante.
+
+Con $\lambda = 10^{-1}$, el factor de filtro para la dirección más inestable
+($\sigma_r \approx 10^{-6}$) pasa de $1/\sigma_r \approx 10^6$ a
+$\sigma_r/(\sigma_r^2 + N\lambda) \approx \sigma_r/(N\lambda) \approx 7\times10^{-7}$:
+una reducción de más de 12 órdenes de magnitud en la amplificación del ruido.
+La solución regularizada recupera la forma cualitativa de $\sin(2\pi x)$ a costa
+de no interpolar exactamente los datos.
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:descomp_svd}
+\textbf{(SVD de una matriz pequeña).}
+
+Sea $\bm{V} = \begin{pmatrix} 1 & 1 \\ 1 & -1 \\ 0 & 1 \end{pmatrix}$.
+Calcular explícitamente la SVD $\bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T$.
+
+\medskip\noindent\textit{Solución.}
+\[
+  \bm{V}\T\bm{V} =
+  \begin{pmatrix}1&1&0\\1&-1&1\end{pmatrix}
+  \begin{pmatrix}1&1\\1&-1\\0&1\end{pmatrix}
+  = \begin{pmatrix}2&0\\0&3\end{pmatrix}.
+\]
+Los autovalores son $\mu_1 = 3$, $\mu_2 = 2$, con autovectores
+$\bm{w}_1 = (0,1)\T$ y $\bm{w}_2 = (1,0)\T$. Entonces:
+$\sigma_1 = \sqrt{3}$, $\sigma_2 = \sqrt{2}$, $\bm{W} = \begin{pmatrix}0&1\\1&0\end{pmatrix}$.
+
+Los vectores singulares izquierdos son:
+\[
+  \bm{u}_1 = \frac{\bm{V}\bm{w}_1}{\sigma_1}
+  = \frac{1}{\sqrt{3}}\begin{pmatrix}1\\-1\\1\end{pmatrix},
+  \qquad
+  \bm{u}_2 = \frac{\bm{V}\bm{w}_2}{\sigma_2}
+  = \frac{1}{\sqrt{2}}\begin{pmatrix}1\\1\\0\end{pmatrix}.
+\]
+
+Por tanto:
+\[
+  \bm{U} = \begin{pmatrix}
+    1/\sqrt{3} & 1/\sqrt{2} \\
+    -1/\sqrt{3} & 1/\sqrt{2} \\
+    1/\sqrt{3} & 0
+  \end{pmatrix},\quad
+  \bm{\Sigma} = \begin{pmatrix}\sqrt{3}&0\\0&\sqrt{2}\end{pmatrix},\quad
+  \bm{W} = \begin{pmatrix}0&1\\1&0\end{pmatrix}.
+\]
+Verificación: $\bm{U}\T\bm{U} = \bm{I}_2$, $\bm{W}\T\bm{W} = \bm{I}_2$,
+$\bm{U}\bm{\Sigma}\bm{W}\T = \bm{V}$. $\square$
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios propuestos}
+\addcontentsline{toc}{section}{Ejercicios propuestos}
+\label{sec:ej_propuestos2}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejercicio}
+\textbf{(Fenómeno de Runge y partición entrenamiento-test).}
+Sea $g(x) = 1/(1+25x^2)$ en $[-1,1]$.
+\begin{enumerate}[label=(\alph*)]
+  \item Para $N = 5, 9, 13$ nodos equiespaciados, ajuste el polinomio interpolante
+        de grado $N-1$ y calcule el error máximo $\max_{x\in[-1,1]}|f^*(x)-g(x)|$
+        en 200 puntos uniformes.
+  \item Repita con nodos de Chebyshev $x_k = \cos\bigl(\frac{(2k-1)\pi}{2N}\bigr)$.
+  \item ¿Para qué tipo de nodos el error disminuye al aumentar $N$? ¿Por qué?
+        Relacione con el análisis de la sección~\ref{sec:svd}.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Descomposición sesgo-varianza explícita).}
+Sea la familia lineal $f(x;\theta) = \theta x$ (una sola recta por el origen)
+y los datos $y_i = 2x_i + \varepsilon_i$ con $\varepsilon_i \sim \mathcal{N}(0,\sigma^2)$
+y $x_i$ fijos.
+\begin{enumerate}[label=(\alph*)]
+  \item Calcule $\hat{\theta} = \argmin_\theta \sum_i (y_i - \theta x_i)^2$.
+        Expréselo en función de $x_i$ e $y_i$.
+  \item Calcule $\mathbb{E}[\hat\theta]$ y $\text{Var}[\hat\theta]$.
+  \item Calcule el sesgo y la varianza de la predicción $\hat{f}(x_0) = \hat\theta x_0$
+        para un punto fijo $x_0$.
+  \item Verifique el Teorema~\ref{thm:biasvar} calculando los tres términos
+        explícitamente.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Curva de regularización).}
+Sea $\bm{V} \in \mathbb{R}^{20 \times 5}$ una matriz de Vandermonde con nodos
+equiespaciados en $[0,1]$ y $\bm{y} = \bm{V}\bm{\theta}_{\text{real}} + \bm{\varepsilon}$
+con $\bm{\theta}_{\text{real}} = (1,0,-1,0,1)\T$ y $\varepsilon_i \sim \mathcal{N}(0, 0.5^2)$.
+\begin{enumerate}[label=(\alph*)]
+  \item Calcule la SVD de $\bm{V}$ y grafique los valores singulares.
+  \item Para $\lambda \in \{10^{-4}, 10^{-3}, 10^{-2}, 10^{-1}, 1, 10\}$, calcule
+        $\bm{\theta}^*_\lambda$, $E_{\text{train}}(\lambda)$, y
+        $\|\bm{\theta}^*_\lambda\|_2$.
+  \item Trace la curva L (log $E_{\text{train}}$ vs. log $\|\bm{\theta}^*_\lambda\|_2$)
+        e identifique visualmente la esquina.
+  \item Compare el $\lambda^*$ obtenido de la curva L con el obtenido por validación
+        cruzada 5-fold.
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(LASSO vs. Ridge: interpretación geométrica).}
+En $\mathbb{R}^2$ con $\bm{\theta} = (\theta_1, \theta_2)\T$, considérese una pérdida
+empírica cuadrática $\mathcal{L}(\bm{\theta}) = (\theta_1 - 3)^2 + (\theta_2 - 2)^2$
+(es decir, el mínimo sin restricciones está en $\bm{\theta}^* = (3,2)\T$).
+\begin{enumerate}[label=(\alph*)]
+  \item Dibuje las curvas de nivel de $\mathcal{L}$ y las bolas $\|\bm{\theta}\|_2
+        \leq c$ y $\|\bm{\theta}\|_1 \leq c$ para $c = 1, 2, 3$.
+  \item Para la restricción $\|\bm{\theta}\|_2^2 \leq c^2$, calcule analíticamente
+        el minimizador restringido como función de $c$.
+  \item Para la restricción $\|\bm{\theta}\|_1 \leq c$, determine si el mínimo
+        restringido cae sobre un eje coordenado (solución dispersa) o en un
+        punto interior de un lado del diamante.
+  \item ¿Para qué valor de $c$ la solución LASSO tiene $\theta_1 = 0$?
+\end{enumerate}
+\end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Invarianza de la regularización $\ell_2$ bajo rotación).}
+Sea $\bm{\theta}' = \bm{R}\bm{\theta}$ con $\bm{R}$ ortogonal. Mostrar que:
+\begin{enumerate}[label=(\alph*)]
+  \item $\|\bm{\theta}'\|_2 = \|\bm{\theta}\|_2$ (la regularización $\ell_2$ es
+        invariante bajo rotación del espacio de parámetros).
+  \item $\|\bm{\theta}'\|_1 \neq \|\bm{\theta}\|_1$ en general (la regularización
+        $\ell_1$ no es invariante bajo rotación).
+  \item Discuta la implicación: ¿la interpretación de la dispersidad en LASSO
+        depende de la elección de base en el espacio de parámetros?
+\end{enumerate}
+\end{ejercicio}
+
+%───────────────────────────────────────────────────────────────────────────────
+\label{sec:estrella2}
+\begin{estrella}{Reconstrucción del flujo neutrónico con datos ruidosos}
+
+\textbf{El sistema físico.}
+El reactor del Capítulo~\ref{ch:cap1} ahora opera en condiciones reales: los
+$N$ detectores reportan $\phi_i = \phi(\bm{x}_i) + \varepsilon_i$ donde
+$\varepsilon_i$ es ruido electrónico con varianza $\sigma_\varepsilon^2$. El
+número de funciones base RBF a usar no está fijado: el operador puede elegir
+$p$ entre $1$ y $N$.
+
+\textbf{El dilema operacional.}
+Con $p = N$ (interpolación exacta, $\lambda = 0$): la distribución de potencia
+reconstruida pasa exactamente por cada lectura, pero oscila entre detectores
+---el fenómeno de Runge en versión nuclear. Con $p = 1$ (un solo modo, $\lambda \to \infty$):
+la reconstrucción es suave pero ignora la heterogeneidad real del flujo. El
+parámetro de regularización $\lambda$ controla este balance de forma continua.
+
+\textbf{El criterio de selección.}
+En el reactor, el nivel de ruido $\sigma_\varepsilon^2$ es conocido (calibración
+del sistema de instrumentación). La selección óptima de $\lambda$ puede hacerse
+igualando la norma del término de sesgo con la norma del término de varianza:
+\[
+  N^2\lambda^2 \|\bm{H}_\lambda\,\bm{\theta}_{\text{real}}\|_2^2
+  = \sigma_\varepsilon^2 \sum_{i=1}^p \frac{\sigma_i^2}{(\sigma_i^2 + N\lambda)^2}.
+\]
+Cuando $\sigma_\varepsilon^2$ no se conoce con precisión, la curva L
+(Definición~\ref{def:curva_l}) proporciona el $\lambda^*$ con costo computacional
+$O(p^3)$ más la SVD, frente a $O(kp^3)$ de la validación cruzada $k$-fold.
+
+\textbf{Conexión con el resto del libro.}
+La SVD de la matriz de diseño RBF diagonaliza el problema de reconstrucción:
+los vectores singulares derechos $\bm{w}_i$ son los modos espaciales del flujo
+que los detectores pueden ver, y los valores singulares $\sigma_i$ cuantifican
+con qué precisión. Los modos con $\sigma_i \ll \sqrt{N\lambda}$ son suprimidos
+por la regularización ---exactamente los modos de alta frecuencia espacial que
+el ruido de los detectores no puede distinguir de la señal. En el Capítulo~9,
+este análisis modal se reformula en términos de las funciones propias de la
+ecuación de difusión, que tienen simetría discreta $O_h$ heredada de la geometría
+cúbica del reactor.
+\end{estrella}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+%───────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Regularización de Tikhonov y curva L para flujo neutrónico}
+\textbf{Objetivo:} implementar la regularización de Tikhonov vía SVD y seleccionar
+$\lambda$ por curva L para el problema de reconstrucción del flujo del reactor.
+
+\medskip\noindent\textbf{Datos:}
+$N = 12$ detectores en posiciones $x_i = i \cdot L/(N+1)$ con $L = 100$ cm.
+Lecturas sintéticas: $\phi_i = \sin(\pi x_i/L) + \varepsilon_i$ con
+$\varepsilon_i \sim \mathcal{N}(0, 0.02^2)$ (ruido del 2\% del máximo del flujo).
+Familia: $p = 12$ funciones RBF gaussianas con centros $c_j = x_j$ y $\sigma = 12$ cm.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Construir la matriz de diseño $\bm{V} \in \mathbb{R}^{12\times 12}$ con
+        $V_{ij} = \exp\bigl(-\|x_i - c_j\|^2/(2\sigma^2)\bigr)$.
+  \item Calcular la SVD $\bm{V} = \bm{U}\bm{\Sigma}\bm{W}\T$ y reportar el
+        número de condicionamiento $\kappa(\bm{V})$.
+  \item Para $\lambda \in \{10^{-8}, 10^{-7}, \ldots, 10^{0}\}$ (9 valores),
+        calcular $\bm{\theta}^*_\lambda$ usando la fórmula espectral de la
+        Proposición~\ref{prop:filtro_espectral}. Calcular
+        $E_{\text{train}}(\lambda)$ y $\|\bm{\theta}^*_\lambda\|_2$.
+  \item Trazar la curva L en escala log-log e identificar visualmente
+        la esquina. Reportar el $\lambda^*$ correspondiente.
+  \item Graficar $\phi_\lambda^*(x)$ en 200 puntos uniformes en $[0, L]$
+        para $\lambda = 0$ (pseudoinversa), $\lambda = \lambda^*$ y
+        $\lambda = 10^{-1}$ (sobresuavizado).
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+Para $\lambda = \lambda^*$ (típicamente $\approx 10^{-5}$ a $10^{-4}$):
+el error RMS entre $\phi_\lambda^*(x)$ y $\sin(\pi x/L)$ en 200 puntos debe
+ser $< 0.05$ (unidades del flujo máximo). Para $\lambda = 0$, el error RMS
+debe ser $> 0.5$ debido al sobreajuste.
+
+\medskip\noindent\textbf{Extensión:}
+Repetir con $N = 6$ detectores (sistema subdeterminado, $p > N$). En este caso,
+la pseudoinversa da infinitas soluciones; la regularización selecciona la de
+norma mínima. ¿Cómo cambia la curva L cuando $p > N$?
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Validación cruzada $k$-fold para selección de $\lambda$}
+\textbf{Objetivo:} comparar la curva L con la validación cruzada 5-fold como
+criterios de selección de $\lambda$ en el mismo problema de flujo.
+
+\medskip\noindent\textbf{Datos:}
+Misma configuración que el ejercicio anterior con $N = 20$ detectores y
+$\sigma_\varepsilon = 0.03$.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Implementar la validación cruzada 5-fold: dividir los 20 detectores
+        en 5 grupos de 4. Para cada fold $j$: entrenar con los 16 detectores
+        restantes, evaluar el MSE sobre los 4 del fold. Promediar los 5 errores.
+  \item Repetir para los mismos 9 valores de $\lambda$ del ejercicio anterior.
+  \item Comparar el $\lambda^*_{\text{CV}}$ con el $\lambda^*_{\text{L}}$
+        obtenido por curva L.
+  \item Calcular el tiempo de cómputo de cada método.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+El cociente $\lambda^*_{\text{CV}} / \lambda^*_{\text{L}}$ debe estar en el
+intervalo $[0.1, 10]$: ambos métodos deben dar órdenes de magnitud similares.
+El tiempo de la validación cruzada debe ser aproximadamente $5\times$ el de
+la curva L.
+
+\medskip\noindent\textbf{Extensión:}
+Repetir el experimento 100 veces con distintas realizaciones del ruido y
+calcular la distribución de $\lambda^*_{\text{CV}}$ y $\lambda^*_{\text{L}}$.
+¿Cuál tiene menor varianza? ¿Cuál tiene menor sesgo respecto al $\lambda$
+que minimiza el error verdadero (conocido por la función sintética)?
+\end{ejerciciocomp}
+
+%───────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+La regularización de Tikhonov fue formulada por Andrei Nikolaevich Tikhonov en
+1963 en el contexto de ecuaciones integrales de Fredholm de primer tipo, que son
+el prototipo de problema inverso mal condicionado~\cite{tikhonov1963solution}.
+En el contexto de mínimos cuadrados estadísticos, la misma solución fue propuesta
+independientemente por Hoerl y Kennard (1970) bajo el nombre de \textit{ridge
+regression}. La conexión entre ambas formulaciones —probabilística y variacional—
+se hace explícita en la interpretación bayesiana del Capítulo~7.
+
+La descomposición sesgo-varianza en la forma del Teorema~\ref{thm:biasvar} es
+estándar; una presentación rigurosa con condiciones mínimas sobre el ruido se
+encuentra en Hastie, Tibshirani y Friedman~\cite{hastie2009elements}. La extensión
+al caso no lineal (redes neuronales) es más sutil porque el estimador depende no
+linealmente de los datos; el análisis correspondiente usa herramientas de funciones
+de influencia y bootstrap.
+
+La SVD como herramienta para entender la regularización es el tema central del
+libro clásico de Hansen~\cite{hansen1998rank}, donde se desarrollan también el
+criterio de la curva L y el criterio de la validación cruzada generalizada (GCV).
+La analogía entre la regularización de Tikhonov y el filtro de Wiener aparece
+explícitamente en el Capítulo~5 de ese texto.
+
+El despliegue espectral neutrónico (\textit{neutron spectrum unfolding}) como
+aplicación de la regularización de Tikhonov en física nuclear está documentado en
+McElroy et al.\ (SAND-II, 1967) y en Reginatto~\cite{reginatto2010overview}.
+La curva L como criterio de selección de $\lambda$ fue analizada sistemáticamente
+por Hansen~\cite{hansen1998rank}, donde se presentan también aplicaciones a
+tomografía sísmica, deconvolución espectral y tomografía de emisión de positrones.
+
+El LASSO fue introducido por Tibshirani~\cite{tibshirani1996regression} en 1996.
+La interpretación geométrica mediante la bola $\ell_1$ es la presentación estándar;
+la prueba de que la solución es dispersa con probabilidad uno en el caso continuo
+(cuando el mínimo no regularizado cae fuera de la bola) se demuestra en el
+Capítulo~3 de Wainwright~\cite{wainwright2019high}. El algoritmo de gradiente
+proximal para resolver el LASSO se trata en el Apéndice del Capítulo~5.
+\end{notasbib}
