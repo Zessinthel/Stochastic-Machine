@@ -1,6 +1,3 @@
-%───────────────────────────────────────────────────────────────────────────────
-% PREFACIO (texto completo)
-%───────────────────────────────────────────────────────────────────────────────
 \chapter*{Prefacio}
 \addcontentsline{toc}{chapter}{Prefacio}
 
@@ -11,9 +8,159 @@
 \bigskip
 
 El universo no computa con certeza. Un reactor nuclear no produce exactamente
-la misma traza de potencia dos veces...
+la misma traza de potencia dos veces: las fluctuaciones son reales, medibles,
+y llevan información. Un modelo de difusión no genera la misma imagen desde
+el mismo ruido inicial si perturbamos sus pesos: la incertidumbre está en el
+corazón del proceso. La física estadística lo sabe desde Boltzmann. Este libro
+propone que el aprendizaje automático moderno es, en un sentido preciso, la
+misma física operando en dimensiones que Boltzmann nunca imaginó.
 
-% ... (todo el resto del prefacio) ...
+La tesis central es esta: las redes neuronales, el descenso de gradiente
+estocástico, los modelos de difusión y el transporte óptimo no son herramientas
+computacionales importadas a la física desde la informática. Son física.
+La ecuación de Fokker-Planck que describe la distribución estacionaria del
+SGD es la misma que describe la distribución de neutrones en un sistema de
+fisión crítico. El \textit{score} $\nabla\log p_t$ que guía la generación
+de imágenes es la misma cantidad que aparece en la condición de balance
+detallado de la física estadística de equilibrio. El puente de
+Schrödinger que unifica los modelos de difusión es el mismo problema
+variacional que Schrödinger formuló en 1931 pensando en partículas
+brownianas, no en imágenes. Estas no son analogías: son identidades
+matemáticas. El Apéndice~\ref{ap:info_mecanica} las presenta todas juntas
+en una sola tabla.
+
+\subsection*{El lector al que está dirigido este libro}
+
+Este libro está escrito para un estudiante de posgrado en física ---o de
+último año de licenciatura con motivación suficiente--- que ha tomado los
+cursos estándar de mecánica clásica, electromagnetismo, mecánica cuántica,
+mecánica estadística y métodos matemáticos. Se asume familiaridad con
+ecuaciones diferenciales ordinarias y parciales, álgebra lineal y cálculo
+multivariable. Se asume que el lector sabe programar en algún lenguaje
+científico, aunque nunca ha implementado una red neuronal.
+
+No se asume conocimiento de física nuclear ni de física de altas energías.
+Los conceptos de estos dominios aparecen únicamente en las secciones
+opcionales descritas más adelante, y siempre con definición explícita.
+La complejidad matemática escala gradualmente; cada sección indica su
+nivel de exigencia en dos ejes independientes: dificultad matemática y
+dificultad física, representados mediante estrellas al inicio de cada
+sección.
+
+\subsection*{Estructura del libro y cómo leerlo}
+
+El libro se organiza en doce capítulos que forman tres arcos encadenados.
+
+Los \textbf{Capítulos~1--4} construyen la red neuronal desde cero: qué es
+un perceptrón multicapa, cómo se parametriza el paisaje de pérdida, qué
+hace el descenso de gradiente, y por qué la backpropagation es exactamente
+el método adjunto de Pontryagin aplicado al grafo computacional.
+
+Los \textbf{Capítulos~5--9} introducen el ruido, la incertidumbre y la
+estructura. El Capítulo~5 establece la conexión central del libro: el SGD
+con ruido de mini-lote es una ecuación de Langevin, y su distribución
+estacionaria es la distribución de Gibbs de la mecánica estadística. Los
+Capítulos~6--7 desarrollan la backpropagation como adjunto continuo y la
+inferencia bayesiana como fundamento probabilístico del aprendizaje. Los
+Capítulos~8--9 completan el arsenal práctico: regularización, normalización,
+arquitecturas equivariantes y Neural ODEs.
+
+Los \textbf{Capítulos~10--12} culminan el arco. El Capítulo~10 construye
+el cálculo de Itô con rigor: la variación cuadrática del movimiento
+browniano, la integral de Itô como límite $L^2$, y la fórmula de Itô como
+regla de la cadena estocástica. El Capítulo~11 deriva la ecuación de
+Fokker-Planck, el teorema de Anderson sobre la reversión temporal de SDEs,
+y el denoising score matching como pérdida computable. El Capítulo~12
+ensambla todo en algoritmos concretos: DDPM, score SDE, DDIM, flow matching
+y classifier-free guidance, con sus arquitecturas U-Net y DiT.
+
+\subsection*{Los apéndices}
+
+El libro incluye cinco apéndices diseñados para hacer el texto
+autocontenido sin sobrecargar los capítulos. El
+\textbf{Apéndice~\ref{ap:probabilidad}} cubre los conceptos de
+probabilidad que van más allá del currículo estándar de física: filtración,
+esperanza condicional como proyección $L^2$, martingalas y el lema de
+Borel-Cantelli. El \textbf{Apéndice~\ref{ap:info_mecanica}} es el argumento
+central del libro en forma comprimida: la identidad entre entropía de
+Boltzmann y entropía de Shannon, la distribución de Gibbs como máxima
+entropía, el H-teorema como decrecimiento de la KL, y la tabla completa
+de correspondencias física estadística--aprendizaje automático. El
+\textbf{Apéndice~\ref{ap:algebra_lineal}} cubre la SVD, la pseudoinversa,
+las normas matriciales, el hessiano y el espacio $L^2$ como espacio de
+Hilbert. El \textbf{Apéndice~\ref{ap:algoritmos}} consolida los algoritmos
+de implementación: Euler-Maruyama, Milstein, el bucle de entrenamiento por
+denoising score matching, y una guía de referencia de las funciones de
+NumPy, PyTorch y JAX. El \textbf{Apéndice~\ref{ap:glosario}} es un
+diccionario de correspondencias entre el vocabulario del aprendizaje
+automático y su análogo físico.
+
+\subsection*{La Estrella Polar: un hilo narrativo opcional}
+
+Al final de cada capítulo, el lector encontrará una sección delimitada
+llamada \textbf{Estrella Polar}. Estas secciones son completamente
+opcionales: pueden omitirse sin perder ningún concepto del texto principal
+ni interrumpir la continuidad entre capítulos.
+
+Las Estrellas Polares aplican los resultados de cada capítulo a sistemas
+físicos concretos. Los Capítulos~1 a~8 las usan para la cinética puntual
+estocástica del reactor de investigación IAN-R1: un sistema de fisión con
+seis grupos de neutrones precursores donde los conceptos del libro ---la
+ecuación de Langevin, el balance detallado, el filtrado bayesiano, la
+ecuación de Fokker-Planck con coeficientes variables--- tienen
+interpretación física inmediata y parámetros verificables
+experimentalmente. A partir del Capítulo~9, un segundo sistema aparece
+junto al reactor: la simulación de cascadas electromagnéticas en
+calorímetros de física de altas energías. En el Capítulo~12, ambos
+sistemas se integran en una narrativa unificada que demuestra que las
+mismas herramientas matemáticas se transfieren entre dominios físicos sin
+modificación.
+
+Para el lector que las siga, las Estrellas Polares construyen una narrativa
+paralela y autocontenida. Para el lector que las omita, el libro es un
+texto autónomo de procesos estocásticos y aprendizaje automático para
+físicos, sin dependencia alguna de la física nuclear ni de la física de
+altas energías.
+
+\subsection*{Los anglicismos técnicos}
+
+Los términos \textit{score matching}, \textit{flow matching},
+\textit{dropout}, \textit{batch normalization} y similares se conservan
+en inglés. Un físico que acceda a la literatura científica actual necesita
+reconocerlos. Cuando existe una traducción consolidada se usa; cuando no,
+se emplea el término original con definición explícita la primera vez que
+aparece.
+
+\subsection*{Convenciones notacionales}
+
+\begin{itemize}
+  \item Escalares: letras minúsculas en itálica ($x,\, t,\, \lambda$).
+  \item Vectores columna: letras minúsculas en negrita
+        ($\bm{x},\, \bm{n},\, \bm{\phi}$).
+  \item Matrices y tensores: letras mayúsculas en negrita
+        ($\bm{D},\, \bm{\Sigma},\, \bm{J}$).
+  \item Conjuntos y espacios de funciones: letras caligráficas
+        ($\mathcal{L},\, \mathcal{A},\, \mathcal{N}$).
+  \item Esperanza: $\langle\,\cdot\,\rangle$ en contexto físico,
+        $\mathbb{E}[\,\cdot\,]$ en contexto probabilístico. Ambas
+        notaciones son intercambiables.
+  \item Procesos estocásticos: $\bm{X}_t$ para el proceso como objeto
+        matemático, $\bm{x}$ para una realización particular.
+  \item Función de \textit{score}:
+        $\bm{s}(\bm{x},t) = \nabla_{\bm{x}}\log p(\bm{x},t)$.
+  \item Reactividad nuclear (solo en secciones Estrella Polar):
+        $\varrho$, para distinguirla de la densidad de masa $\rho$.
+\end{itemize}
+
+\subsection*{Sobre el título}
+
+\textit{La máquina estocástica} no es una metáfora. El universo procesa
+información: un sistema de fisión computa cuántos neutrones sobreviven cada
+generación, un proceso de difusión computa qué configuraciones son
+termodinámicamente probables, una red neuronal computa qué distribución de
+parámetros minimiza una energía libre. Ninguna de estas computaciones es
+determinista. Todas están gobernadas por las mismas ecuaciones. Este libro
+estudia esas ecuaciones.
 
 \vspace{1.2cm}
 \begin{flushright}
