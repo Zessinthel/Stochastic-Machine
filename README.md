@@ -1,238 +1,179 @@
-# latex-catppuccin-academic
+# La máquina estocástica
 
-A modular LaTeX template for academic documents — lecture notes, theses, technical reports — styled with the [Catppuccin](https://catppuccin.com) color palette.
+**Procesos aleatorios, redes neuronales y modelos generativos para físicos**
 
-Built for computational physics: mathematics, stochastic processes, machine learning, and numerical methods. Every visual element — theorems, equations, tables, algorithms, code listings, plots — follows the Catppuccin palette coherently and adapts automatically when switching between flavors.
+*J. A. Chala Casanova*
 
-![Preview](figs/preview.png)
+---
 
-## Features
+## Qué es este libro
 
-### Theming
+Un texto para estudiantes de posgrado en física que quieren llegar a los modelos generativos modernos (difusión, flow matching) desde las herramientas que ya dominan: mecánica estadística, ecuaciones diferenciales estocásticas, teoría de la información.
 
-- **Full Catppuccin palette** across all elements: titles, hyperlinks, code listings, algorithms, `tcolorbox` environments, `pgfplots` graphs, table headers, and captions. All follow the [Catppuccin style guide](https://catppuccin.com/style-guide).
-- **Four flavors**: Latte (light), Frappé, Macchiato, Mocha (dark). Switch by changing one line in `themes/catppuccin-palette.tex`.
-- **Dark theme support**: a `\darktheme` toggle automatically adjusts page color, text color, and tcolorbox backgrounds (`CtpBase`-relative instead of `white`-relative) for correct rendering in dark flavors.
-- **Custom theme fallback**: `themes/custom-theme.tex` for non-Catppuccin color schemes using the same semantic color names.
+La tesis central es que el aprendizaje automático moderno **es** física estadística en dimensión alta. La ecuación de Fokker-Planck que describe la distribución estacionaria del SGD es la misma que describe la distribución de neutrones en un sistema de fisión crítico. El score $\nabla\log p_t$ que guía la generación de imágenes es la misma cantidad que aparece en la condición de balance detallado. El puente de Schrödinger que unifica los modelos de difusión es el mismo problema variacional que Schrödinger formuló en 1931 pensando en partículas brownianas. No son analogías: son identidades matemáticas.
 
-### Semantic equation coloring
+## Estructura
 
-A three-axis system for color-coding equations by meaning, not appearance (`config/equation-styles.tex`):
+El libro tiene 12 capítulos en tres arcos, 5 apéndices y un sistema de secciones opcionales ("Estrellas Polares") que aplican cada capítulo a sistemas físicos concretos.
 
-- **Axis 1 — Syntactic role** (stable across contexts): `\eqop` (operators), `\eqfn` (functions), `\eqdm` (differentials), `\eqdom` (domains).
-- **Axis 2 — Epistemic status** (the dimension typography *cannot* encode): `\equ` (unknown/sought), `\eqk` (known/data), `\eqcon` (universal constants). In `f(x;θ)`, physics treats `x` as unknown and `θ` as data; ML inverts this. The color makes the inversion explicit.
-- **Axis 3 — Mathematical type** (subtle reinforcement): `\eqvec` (vectors), `\eqten` (tensors/matrices).
-- **Compound macros**: `\eqpdv`, `\eqgrad`, `\eqdvg`, `\eqSDE` for common patterns.
-- **Global toggle**: `\eqcolorsfalse` disables all equation coloring for B/W printing.
+### Arco I — La red neuronal desde cero (Caps. 1–4)
 
-### Tables
+| Cap. | Título | Contenido central |
+|------|--------|-------------------|
+| 1 | El problema de aproximación de funciones | Familias paramétricas, ecuaciones normales, RBFs como puente a redes neuronales, fenómeno de Runge |
+| 2 | Sobreajuste, regularización y la descomposición espectral | Sesgo-varianza, Tikhonov, SVD como modos normales del ajuste, filtro de Wiener |
+| 3 | Geometría del espacio de parámetros | Gradiente, hessiano, índice de Morse, convexidad, saddle points en alta dimensión (GOE) |
+| 4 | Redes neuronales: el aproximador universal | MLP, activaciones (sigmoide = Fermi-Dirac, ReLU), teorema universal, profundidad vs. anchura |
 
-Comprehensive table system (`config/tables-config.tex`) with three overflow strategies:
+Un ejemplo unificado del **oscilador armónico** recorre los cuatro capítulos como laboratorio práctico.
 
-- **Prevention**: `tabularx` with custom column types `Y` (centered) and `Z` (right-aligned), all vertically centered via `m{}` columns.
-- **Correction**: `fittable` environment that measures width and rescales only if needed.
-- **Precision**: fixed-width columns `L{w}`, `C{w}`, `R{w}` with automatic text wrapping.
-- **Styling**: `\headerrow` for colored headers, `\rowcolor{tablerowalt}` for alternating rows, `\thead` for bold header text, `\tablenote` for footnotes. Automatic `\arrayrulecolor` from the theme.
-- **Numerical alignment**: `siunitx` S-columns for decimal-aligned data with SI units.
-- **Spanish**: `Cuadro` renamed to `Tabla` automatically.
+### Arco II — Ruido, incertidumbre y estructura (Caps. 5–9)
 
-### Code listings (10 languages)
+| Cap. | Título | Contenido central |
+|------|--------|-------------------|
+| 5 | SGD y la ecuación de Langevin | SGD como SDE de Langevin, Fokker-Planck del SGD, distribución de Gibbs, $T_{\text{eff}} = \eta c/2$ |
+| 6 | Backpropagation como método adjunto | Principio de Pontryagin, adjunto continuo, gradient checkpointing |
+| 7 | Probabilidad, inferencia y el fundamento estadístico | MLE, MAP, ELBO, VAE, truco de reparametrización, cotas VC |
+| 8 | El MLP en la práctica | Ciclo de entrenamiento, dropout, normalización, double descent (Marchenko-Pastur) |
+| 9 | Arquitecturas especializadas | CNNs (Lema de Schur), GNNs (Weisfeiler-Leman), transformers, equivarianza SO(3) (Clebsch-Gordan), Neural ODEs |
 
-Syntax highlighting for ten languages (`config/listings-catppuccin.tex`), each with full keyword classification mapped to Catppuccin colors:
+### Arco III — Hacia los modelos generativos (Caps. 10–12)
 
-| Language    | Style name    | Keywords | Builtins | Types | Functions | Modules | Macros |
-|-------------|---------------|:--------:|:--------:|:-----:|:---------:|:-------:|:------:|
-| Python      | `python`      | ✓        | ✓        | ✓     | ✓         | ✓       | ✓      |
-| C           | `c`           | ✓        | ✓        | ✓     | ✓         | —       | ✓      |
-| C++         | `cpp`         | ✓        | ✓        | ✓     | ✓         | ✓       | —      |
-| Rust        | `rust`        | ✓        | ✓        | ✓     | ✓         | ✓       | ✓      |
-| Go          | `go`          | ✓        | ✓        | ✓     | ✓         | ✓       | —      |
-| Julia       | `julia`       | ✓        | ✓        | ✓     | ✓         | ✓       | ✓      |
-| MATLAB      | `matlab`      | ✓        | ✓        | ✓     | ✓         | ✓       | —      |
-| Fortran     | `fortran`     | ✓        | ✓        | ✓     | ✓         | ✓       | ✓      |
-| x86-64 ASM  | `asm`         | ✓        | ✓        | ✓     | ✓         | —       | ✓      |
-| Mathematica | `mathematica` | ✓        | ✓        | ✓     | ✓         | ✓       | —      |
+| Cap. | Título | Contenido central |
+|------|--------|-------------------|
+| 10 | Cálculo de Itô | Variación cuadrática, integral de Itô, fórmula de Itô, Feynman-Kac |
+| 11 | De Fokker-Planck al score matching | FP por dualidad $L^2$, teorema de Anderson, DSM, puente de Schrödinger, transporte óptimo, flow matching |
+| 12 | Modelos de difusión y flow matching | DDPM, score SDE, DDIM, rectified flow, OT flow matching, CFG, U-Net, DiT, latent diffusion |
 
-Color mapping follows the Catppuccin style guide: keywords → Mauve, builtins → Red, strings → Green, comments → Overlay2 (italic), types → Yellow, functions → Blue, modules → Teal, macros → Rosewater.
+### Apéndices
 
-Full UTF-8 support via `literate` mappings (Spanish accents, Greek letters, mathematical symbols).
+| Ap. | Contenido |
+|-----|-----------|
+| A | Probabilidad avanzada (filtración, esperanza condicional, martingalas) |
+| B | Información y mecánica estadística (Shannon = Boltzmann, Gibbs, H-teorema, tabla de correspondencias ML–física) |
+| C | Álgebra lineal (SVD, pseudoinversa, $L^2$ como Hilbert) |
+| D | Algoritmos de implementación (Euler-Maruyama, Milstein, DSM loop, referencia NumPy/PyTorch/JAX) |
+| E | Diccionario ML–física (glosario temático con análogos físicos) |
 
-### Plots
+### Estrellas Polares
 
-`pgfplots` configuration (`config/pgfplots-config.tex`) with:
+Secciones opcionales al final de cada capítulo que aplican los resultados a dos sistemas físicos: la cinética puntual estocástica del reactor de investigación IAN-R1 (Caps. 1–8) y la simulación de cascadas electromagnéticas en calorímetros de altas energías (Caps. 9–12). Pueden omitirse sin perder continuidad.
 
-- **Cycle list**: 8 distinguishable Catppuccin colors with unique markers per curve.
-- **Axis styles**: `catppuccin-clean` (publication-ready) and `catppuccin-filled` (with `CtpMantle` background for presentations).
-- **Colormaps**: `catppuccin-heat` (sequential: Base → Blue → Mauve → Red → Yellow) and `catppuccin-diverge` (divergent: Blue → neutral → Red) for surfaces and heatmaps.
-- **Themed elements**: legend, grid, ticks, error bars, and colorbar all use palette colors.
+## Público objetivo
 
-### Captions
+Estudiante de posgrado en física (o de último año de licenciatura con motivación suficiente) que ha tomado cursos de mecánica clásica, electromagnetismo, mecánica cuántica, mecánica estadística y métodos matemáticos. Se asume familiaridad con EDOs/EDPs, álgebra lineal y cálculo multivariable. Se asume que sabe programar pero nunca ha implementado una red neuronal. No se asume conocimiento de física nuclear ni de altas energías.
 
-Styled captions (`config/captions-config.tex`):
+## Convenciones
 
-- Figures: label in `CtpBlue`
-- Tables: label in `CtpMauve`
-- Code listings: label in `CtpGreen`, renamed to "Código" in Spanish
-- Subfigures: label in `CtpSapphire`
-- Text in `CtpSubtext0`, hang format with endash separator.
+- Escalares: itálica ($x, t, \lambda$). Vectores: negrita minúscula ($\bm{x}, \bm{\theta}$). Matrices: negrita mayúscula ($\bm{W}, \bm{H}$).
+- Notación $f(\bm{x};\bm{\theta})$: punto y coma separa entradas de parámetros.
+- Cada sección indica su nivel de exigencia en dos ejes: dificultad matemática y dificultad física (★ a ★★★★★).
+- Anglicismos técnicos conservados en inglés (*score matching*, *flow matching*, *dropout*, *batch normalization*).
+- Sistema de coloreo semántico de ecuaciones (3 ejes: rol sintáctico, estatus epistémico, tipo matemático). Desactivable con `\eqcolorsfalse`.
 
-### Mathematics and physics
+## Compilación
 
-- **`physics` package** integrated: `\abs`, `\norm`, `\grad`, `\div`, `\curl`, `\laplacian`, `\dv`, `\pdv`, `\bra`, `\ket`, `\braket`, `\comm`, etc.
-- **`siunitx`** for consistent SI units and numerical formatting (Spanish locale).
-- **Custom macros** (`config/macros.tex`): number sets (`\R`, `\N`, `\Z`, `\C`, `\Q`), optimization (`\argmin`, `\argmax`), ML/statistics (`\Loss`, `\E`, `\KL`, `\Var`, `\Cov`), physics aliases (`\Lap`, `\Div`, `\keff`, `\score`, `\FP`, `\SDE`).
+Requiere una instalación completa de TeX Live o MiKTeX.
 
-### Document structure
+```bash
+# Con latexmk (recomendado)
+latexmk -pdf main.tex
 
-- **Modular architecture**: configuration split across `config/`, `environments/`, `themes/`, `frontmatter/`, `chapters/`, `backmatter/`.
-- **Metadata-driven**: `metadata.tex` controls title, subtitle, author, date, dedication, epigraph, acknowledgements, and PDF metadata — no need to edit `main.tex`.
-- **Smart references**: `cleveref` with Spanish names (`\cref{eq:foo}` → "ec. 1.1", `\Cref{fig:bar}` → "Figura 2.3").
-- **Appendix support**: `appendix` package with `\begin{appendices}...\end{appendices}`.
-- **PDF features**: `hyperref` with themed link colors + `bookmark` for clean PDF outlines. PDF metadata populated from `metadata.tex`.
-- **Spanish language**: `babel` with `es-noshorthands`, `csquotes`, proper `\tablename`, `\lstlistingname`.
+# Manual
+pdflatex main.tex
+bibtex main
+pdflatex main.tex
+pdflatex main.tex
+```
 
-### Environment system
-
-Generator-based architecture (`environments/generator.tex`) for theorem-like environments:
-
-| Environment        | Color      | Counter | Purpose                      |
-|--------------------|------------|:-------:|------------------------------|
-| `definicion`       | Blue       | ✓       | Definitions                  |
-| `teorema`          | Mauve      | ✓       | Theorems                     |
-| `proposicion`      | Green      | ✓       | Propositions                 |
-| `ejemplo`          | Peach      | ✓       | Examples                     |
-| `observacion`      | Overlay0   | —       | Remarks                      |
-| `fisicaconexion`   | Sapphire   | —       | Physics connections          |
-| `estrella`         | Yellow     | ✓       | "Polar Star" problems        |
-| `ejerciciocomp`    | Pink       | ✓       | Computational exercises      |
-| `ejercicio`        | —          | ✓       | Theoretical exercises (plain)|
-| `notasbib`         | Gray       | —       | Bibliographic notes          |
-
-### Additional features
-
-- **Algorithm styling**: `algorithm2e` with colored keywords, comments, line numbers, and vertical connector lines matching the palette.
-- **Float control**: `placeins` (`\FloatBarrier`), `wrapfig`, `subcaption`.
-- **TikZ libraries**: `calc`, `decorations.pathreplacing`, `patterns`, `matrix`, `tikz-cd` (commutative diagrams).
-- **PDF inclusion**: `pdfpages` for inserting external PDFs.
-- **`cancel`** for crossing out terms in derivations.
-- **Difficulty indicator**: `\dificultad{math}{physics}` renders a star-rated box.
-
-## Project structure
+## Estructura del proyecto
 
 ```
 .
-├── main.tex                     # Root document (load order matters)
-├── metadata.tex                 # Document metadata
-├── references.bib               # BibTeX bibliography
+├── main.tex                     # Documento raíz
+├── metadata.tex                 # Título, autor, metadatos PDF
+├── references.bib               # Bibliografía centralizada
 ├── config/
-│   ├── packages.tex             # All package loading (30+ packages)
-│   ├── geometry.tex             # Page layout, headers/footers
-│   ├── hyperref.tex             # Hyperlink config (loads after theme)
-│   ├── macros.tex               # Math/physics macros (complements physics pkg)
-│   ├── tcolorbox-config.tex     # Base tcolorbox style
-│   ├── titles-config.tex        # Chapter/section formatting
-│   ├── listings-catppuccin.tex  # Code listings (10 languages)
-│   ├── algorithms.tex           # Algorithm2e styling
-│   ├── tables-config.tex        # Table overflow, columns, colors
-│   ├── equation-styles.tex      # Semantic equation coloring (3-axis)
-│   ├── pgfplots-config.tex      # Plot styles, cycle list, colormaps
-│   └── captions-config.tex      # Caption formatting
+│   ├── packages.tex             # Carga de paquetes (~30)
+│   ├── geometry.tex             # Layout de página, headers/footers
+│   ├── hyperref.tex             # Configuración de hipervínculos
+│   ├── macros.tex               # Macros de matemáticas/física
+│   ├── tcolorbox-config.tex     # Estilo base de cajas
+│   ├── titles-config.tex        # Formato de capítulos/secciones
+│   ├── listings-catppuccin.tex  # Listings de código (10 lenguajes)
+│   ├── algorithms.tex           # Estilo de Algorithm2e
+│   ├── tables-config.tex        # Tablas con overflow y colores
+│   ├── equation-styles.tex      # Coloreo semántico de ecuaciones
+│   ├── pgfplots-config.tex      # Estilos de gráficas
+│   └── captions-config.tex      # Formato de captions
 ├── environments/
-│   ├── generator.tex            # Environment factory
-│   ├── instances.tex            # Concrete environments
-│   └── specials.tex             # Exercises, difficulty, bib notes
+│   ├── generator.tex            # Fábrica de entornos
+│   ├── instances.tex            # Entornos concretos
+│   └── specials.tex             # Ejercicios, dificultad, notas bib
 ├── themes/
-│   ├── catppuccin-palette.tex   # Main theme (Latte/Frappé/Macchiato/Mocha)
-│   ├── catppuccin-latte.tex     # Alternate config
-│   └── custom-theme.tex         # Non-Catppuccin fallback
+│   ├── catppuccin-palette.tex   # Tema principal (Latte/Frappé/Macchiato/Mocha)
+│   ├── catppuccin-latte.tex     # Configuración alternativa
+│   └── custom-theme.tex         # Fallback sin Catppuccin
 ├── frontmatter/
-│   ├── titlepage.tex            # Title page layout
-│   ├── preliminary.tex          # Dedication, epigraph, acknowledgements
-│   └── preface.tex              # Preface
+│   ├── titlepage.tex            # Página de título
+│   ├── preliminary.tex          # Dedicatoria, epígrafe
+│   └── preface.tex              # Prefacio
 ├── chapters/
-│   └── chapter1.tex             # Template demo (all features)
+│   ├── chapter1.tex             # Cap. 1: Aproximación de funciones
+│   ├── chapter2.tex             # Cap. 2: Sobreajuste y regularización
+│   ├── ...
+│   └── chapter12.tex            # Cap. 12: Modelos de difusión
 ├── backmatter/
-│   └── appendixA.tex            # Code listings gallery (10 languages)
-├── figs/                        # Figures directory
-└── code/                        # Code snippets directory
+│   ├── appendixA.tex            # Probabilidad avanzada
+│   ├── ...
+│   └── appendixE.tex            # Diccionario ML–física
+├── figs/                        # Figuras
+└── code/                        # Código auxiliar
 ```
 
-## Load order
+## Entornos disponibles
 
-The order in `main.tex` matters. The current sequence:
+| Entorno | Color | Contador | Uso |
+|---------|-------|:--------:|-----|
+| `definicion` | Azul | ✓ | Definiciones formales |
+| `teorema` | Malva | ✓ | Teoremas con demostración |
+| `proposicion` | Verde | ✓ | Proposiciones y lemas |
+| `ejemplo` | Durazno | ✓ | Ejemplos desarrollados |
+| `observacion` | Gris | — | Comentarios y observaciones |
+| `fisicaconexion` | Zafiro | — | Conexiones con la física |
+| `estrella` | Amarillo | ✓ | Secciones de Estrella Polar |
+| `ejerciciocomp` | Rosa | ✓ | Ejercicios computacionales |
+| `ejercicio` | — | ✓ | Ejercicios teóricos (sin caja) |
+| `notasbib` | Gris claro | — | Notas bibliográficas |
 
+## Temas visuales
+
+Basado en la paleta [Catppuccin](https://catppuccin.com). Para cambiar de sabor:
+
+```latex
+% En themes/catppuccin-palette.tex
+\usepackage[Latte,styleAll]{catppuccinpalette}    % claro (por defecto)
+%\usepackage[Mocha,styleAll]{catppuccinpalette}   % oscuro
 ```
-packages → geometry → metadata → THEME → hyperref → macros →
-tcolorbox → environments → titles → listings → algorithms →
-tables → equations → pgfplots → captions → DOCUMENT
-```
 
-The theme must load before `hyperref` (link colors), `listings` (syntax colors), `tables` (header colors), `equations` (semantic colors), `pgfplots` (cycle list), and `captions` (label colors).
+Para sabores oscuros (Frappé, Macchiato, Mocha), descomentar `\darkthemetrue`.
 
-## Quick start
+## Estado del proyecto
 
-1. **Clone**
-   ```bash
-   git clone git@github.com:Zessinthel/latex-catppuccin-academic.git
-   cd latex-catppuccin-academic
-   ```
+| Componente | Estado |
+|------------|--------|
+| Caps. 1–4 (Arco I) | v3 — reescritura completa con narrativa reforzada, ejemplo del oscilador, RBFs |
+| Caps. 5–9 (Arco II) | v2 — estable |
+| Caps. 10–12 (Arco III) | v2 — estable |
+| Apéndices A–E | v2 — estable |
+| Prefacio | v2 — estable |
+| Plantilla LaTeX | Estable |
+| Bibliografía | Actualizada (Caps. 1–4 v3) |
 
-2. **Edit `metadata.tex`** with your document info.
+## Licencia
 
-3. **Choose a flavor** in `themes/catppuccin-palette.tex`:
-   ```latex
-   \usepackage[Latte,styleAll]{catppuccinpalette}    % light
-   %\usepackage[Mocha,styleAll]{catppuccinpalette}   % dark
-   ```
-   For dark flavors, also uncomment `\darkthemetrue`.
+Plantilla LaTeX bajo licencia [MIT](LICENSE). Contenido del libro © J. A. Chala Casanova. Paleta Catppuccin © contribuidores de Catppuccin.
 
-4. **Compile**
-   ```bash
-   latexmk -pdf main.tex
-   ```
-   Or manually:
-   ```bash
-   pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
-   ```
+## Autor
 
-## Requirements
-
-A full TeX Live or MiKTeX installation with these packages (all standard):
-
-**Core**: `tcolorbox`, `algorithm2e`, `listings`, `tikz`, `pgfplots`, `natbib`, `titlesec`, `fancyhdr`, `hyperref`, `microtype`, `booktabs`, `inconsolata`, `catppuccinpalette`.
-
-**Mathematics**: `amsmath`, `amssymb`, `amsthm`, `mathtools`, `bm`, `physics`, `cancel`, `siunitx`.
-
-**Tables**: `tabularx`, `longtable`, `multirow`, `colortbl`, `array`.
-
-**Figures**: `graphicx`, `caption`, `subcaption`, `float`, `wrapfig`, `placeins`.
-
-**Structure**: `appendix`, `pdfpages`, `cleveref`, `bookmark`, `csquotes`, `footmisc`.
-
-**Diagrams**: `tikz-cd`, `pgffor`.
-
-**Programming**: `etoolbox`, `xparse`, `enumitem`, `pifont`.
-
-## Customization
-
-**Switching flavors**: change the `\usepackage[Latte,...]{catppuccinpalette}` option. For dark flavors, uncomment `\darkthemetrue`.
-
-**Equation coloring**: edit the color assignments in `config/equation-styles.tex` (e.g., `\colorlet{equ}{CtpPeach}` → any other `Ctp*` color). Disable globally with `\eqcolorsfalse`.
-
-**Adding languages**: define a new style in `config/listings-catppuccin.tex` following the existing pattern. The 8 keyword classes map to fixed colors.
-
-**Adding chapters**: create `chapters/chapterN.tex` and add `\include{chapters/chapterN}` in `main.tex`.
-
-**Table colors**: edit `\colorlet{tableheadcolor}{...}` and related in `config/tables-config.tex`.
-
-**Plot colors**: edit the cycle list in `config/pgfplots-config.tex` or create custom colormaps.
-
-**Extending macros**: add commands to `config/macros.tex`. The `physics` package covers most standard notation; only add what it doesn't provide.
-
-## License
-
-This template is released under the [MIT License](LICENSE). The Catppuccin color palette is © Catppuccin contributors, used under their license terms.
-
-## Author
-
-**Antonio Casanova** — [GitHub](https://github.com/Zessinthel) · [GitLab](https://gitlab.com/Zessinthel)
+**J. A. Chala Casanova** — [GitHub](https://github.com/Zessinthel) · [GitLab](https://gitlab.com/Zessinthel)
