@@ -3,31 +3,37 @@
 
 \begin{flushright}
 \itshape
-``El aprendizaje automático es física aplicada a altas dimensiones.''
+``The underlying physical laws necessary for the mathematical theory of a\\
+large part of physics and the whole of chemistry are thus completely known,\\
+and the difficulty is only that the exact application of these laws leads to\\
+equations much too complicated to be soluble.''\\[4pt]
+\upshape --- P.\,A.\,M.\ Dirac (1929)
 \end{flushright}
 \bigskip
 
-El universo no computa con certeza. Un reactor nuclear no produce exactamente
-la misma traza de potencia dos veces: las fluctuaciones son reales, medibles,
-y llevan información. Un modelo de difusión no genera la misma imagen desde
-el mismo ruido inicial si perturbamos sus pesos: la incertidumbre está en el
-corazón del proceso. La física estadística lo sabe desde Boltzmann. Este libro
-propone que el aprendizaje automático moderno es, en un sentido preciso, la
-misma física operando en dimensiones que Boltzmann nunca imaginó.
+Dirac tenía razón: las leyes se conocen, pero las ecuaciones son intratables.
+Noventa y cinco años después, la situación es la misma y distinta. Las
+ecuaciones siguen siendo intratables —ningún computador resolverá la ecuación
+de Schrödinger para $10^{23}$ partículas—, pero ha aparecido una clase de
+herramientas que no intentan resolverlas: las \emph{aprenden}. Una red neuronal
+no integra la ecuación de Navier-Stokes; aproxima el mapa entre condiciones
+iniciales y soluciones a partir de ejemplos. Un modelo de difusión no resuelve
+la ecuación de Fokker-Planck; la invierte estocásticamente para generar muestras
+de distribuciones complejas. La pregunta que organiza este libro es: ¿qué
+tienen estas herramientas en común con la física que el lector ya conoce?
 
-La tesis central es esta: las redes neuronales, el descenso de gradiente
-estocástico, los modelos de difusión y el transporte óptimo no son herramientas
-computacionales importadas a la física desde la informática. Son física.
-La ecuación de Fokker-Planck que describe la distribución estacionaria del
-SGD es la misma que describe la distribución de neutrones en un sistema de
-fisión crítico. El \textit{score} $\nabla\log p_t$ que guía la generación
+La respuesta es: todo. Las redes neuronales, el descenso de gradiente
+estocástico, los modelos de difusión y el transporte óptimo no son
+herramientas computacionales importadas a la física desde la informática. Son
+física. La ecuación de Fokker-Planck que describe la distribución estacionaria
+del SGD es la misma que describe la distribución de neutrones en un medio
+difusivo. El \textit{score} $\nabla_{\bm{x}}\log p_t$ que guía la generación
 de imágenes es la misma cantidad que aparece en la condición de balance
-detallado de la física estadística de equilibrio. El puente de
-Schrödinger que unifica los modelos de difusión es el mismo problema
-variacional que Schrödinger formuló en 1931 pensando en partículas
-brownianas, no en imágenes. Estas no son analogías: son identidades
-matemáticas. El Apéndice~\ref{ap:info_mecanica} las presenta todas juntas
-en una sola tabla.
+detallado de la mecánica estadística de equilibrio. El puente de Schrödinger
+que unifica los modelos de difusión es el mismo problema variacional que
+Schrödinger formuló en 1931 pensando en partículas brownianas, no en
+imágenes. Estas no son analogías: son identidades matemáticas. El
+Apéndice~\ref{ap:info_mecanica} las presenta todas juntas en una sola tabla.
 
 \subsection*{El lector al que está dirigido este libro}
 
@@ -50,29 +56,53 @@ sección.
 \subsection*{Estructura del libro y cómo leerlo}
 
 El libro se organiza en doce capítulos que forman tres arcos encadenados.
+Un ejemplo unificado ---el ajuste de la señal de un oscilador armónico
+simple--- recorre los primeros cuatro capítulos como laboratorio práctico,
+permitiendo al lector comparar cada herramienta nueva contra las anteriores
+en un sistema que conoce de memoria.
 
-Los \textbf{Capítulos~1--4} construyen la red neuronal desde cero: qué es
-un perceptrón multicapa, cómo se parametriza el paisaje de pérdida, qué
-hace el descenso de gradiente, y por qué la backpropagation es exactamente
-el método adjunto de Pontryagin aplicado al grafo computacional.
+Los \textbf{Capítulos~1--4} construyen el problema de aproximación de
+funciones y las herramientas para resolverlo. El Capítulo~1 parte de la
+pregunta que abre el libro ---cómo aproximar una función desconocida a
+partir de datos finitos--- y desarrolla las familias paramétricas, las
+ecuaciones normales (como el equilibrio de un resorte en $\mathbb{R}^p$),
+y las funciones de base radial como puente entre la interpolación clásica
+y las redes neuronales. El Capítulo~2 formaliza el compromiso
+sesgo-varianza, introduce la regularización de Tikhonov, y revela mediante
+la SVD que la regularización es un filtro espectral ---idéntico al filtro de
+Wiener de la teoría de señales. El Capítulo~3 estudia la geometría del
+paisaje de pérdida: gradiente, hessiano, índice de Morse, convexidad, y la
+observación (apoyada en la teoría de matrices aleatorias) de que en alta
+dimensión los mínimos locales son exponencialmente raros. El Capítulo~4
+introduce el perceptrón multicapa como familia de funciones con bases
+adaptativas, conecta las funciones de activación con la física
+(la sigmoide es la distribución de Fermi-Dirac, la tanh es la función de
+Langevin paramagnética), y demuestra el teorema de aproximación universal.
 
 Los \textbf{Capítulos~5--9} introducen el ruido, la incertidumbre y la
 estructura. El Capítulo~5 establece la conexión central del libro: el SGD
 con ruido de mini-lote es una ecuación de Langevin, y su distribución
-estacionaria es la distribución de Gibbs de la mecánica estadística. Los
-Capítulos~6--7 desarrollan la backpropagation como adjunto continuo y la
-inferencia bayesiana como fundamento probabilístico del aprendizaje. Los
-Capítulos~8--9 completan el arsenal práctico: regularización, normalización,
-arquitecturas equivariantes y Neural ODEs.
+estacionaria es la distribución de Gibbs de la mecánica estadística. El
+Capítulo~6 desarrolla la backpropagation como caso discreto del método
+adjunto de Pontryagin. El Capítulo~7 provee el fundamento probabilístico:
+la pérdida MSE es el MLE gaussiano, la regularización $\ell_2$ es un prior
+gaussiano, y la ELBO es la energía libre variacional de Helmholtz. Los
+Capítulos~8 y~9 completan el arsenal: regularización práctica, normalización,
+el fenómeno \textit{double descent}, y las arquitecturas especializadas
+(CNNs como equivarianza de traslación, GNNs, transformers, redes
+equivariantes de grupo con coeficientes de Clebsch-Gordan, Neural ODEs).
 
 Los \textbf{Capítulos~10--12} culminan el arco. El Capítulo~10 construye
 el cálculo de Itô con rigor: la variación cuadrática del movimiento
 browniano, la integral de Itô como límite $L^2$, y la fórmula de Itô como
 regla de la cadena estocástica. El Capítulo~11 deriva la ecuación de
-Fokker-Planck, el teorema de Anderson sobre la reversión temporal de SDEs,
-y el denoising score matching como pérdida computable. El Capítulo~12
-ensambla todo en algoritmos concretos: DDPM, score SDE, DDIM, flow matching
-y classifier-free guidance, con sus arquitecturas U-Net y DiT.
+Fokker-Planck por dualidad $L^2$, demuestra el teorema de Anderson sobre
+la reversión temporal de SDEs, desarrolla el score matching como pérdida
+computable, y conecta los modelos de difusión con el puente de Schrödinger
+y el transporte óptimo. El Capítulo~12 ensambla todo en algoritmos
+concretos: DDPM, score SDE, DDIM, flow matching, OT flow matching y
+classifier-free guidance, con las arquitecturas U-Net y DiT en el espacio
+latente.
 
 \subsection*{Los apéndices}
 
@@ -97,15 +127,17 @@ automático y su análogo físico.
 
 \subsection*{La Estrella Polar: un hilo narrativo opcional}
 
-Al final de cada capítulo, el lector encontrará una sección delimitada
-llamada \textbf{Estrella Polar}. Estas secciones son completamente
-opcionales: pueden omitirse sin perder ningún concepto del texto principal
-ni interrumpir la continuidad entre capítulos.
+Al final de cada capítulo, después de los ejercicios, el lector encontrará
+una sección independiente llamada \textbf{Estrella Polar}. Estas secciones
+son completamente opcionales: pueden omitirse sin perder ningún concepto del
+texto principal ni interrumpir la continuidad entre capítulos. Cada Estrella
+Polar es autocontenida y no se mezcla con la narrativa del capítulo que la
+precede.
 
 Las Estrellas Polares aplican los resultados de cada capítulo a sistemas
-físicos concretos. Los Capítulos~1 a~8 las usan para la cinética puntual
-estocástica del reactor de investigación IAN-R1: un sistema de fisión con
-seis grupos de neutrones precursores donde los conceptos del libro ---la
+físicos concretos. Los Capítulos~1 a~8 las usan para la predicción del
+flujo neutrónico en el reactor de investigación IAN-R1: un sistema de fisión
+con seis grupos de neutrones precursores donde los conceptos del libro ---la
 ecuación de Langevin, el balance detallado, el filtrado bayesiano, la
 ecuación de Fokker-Planck con coeficientes variables--- tienen
 interpretación física inmediata y parámetros verificables
