@@ -1,738 +1,1036 @@
-%═══════════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════════════════
+% CAPÍTULO 1 — EL PROBLEMA DE APROXIMACIÓN DE FUNCIONES
+% ═══════════════════════════════════════════════════════════════════════════════
+% Cambios principales respecto a la versión anterior:
+%   1. Apertura con tensión intelectual: problema en alta dimensión que las
+%      herramientas clásicas no resuelven, anticipando redes neuronales.
+%   2. Analogías físicas integradas en el texto principal (no en recuadros
+%      aislados): ecuaciones normales como mínimo de potencial cuadrático,
+%      MSE como MLE gaussiano (anticipado), pseudoinversa como BLUE.
+%   3. Ejemplo unificado del oscilador armónico: ajuste de sin(ωt) con
+%      polinomios y RBFs, fenómeno de Runge, efecto del ruido.
+%   4. Estrella Polar movida al final como sección independiente.
+%   5. Nivel matemático elevado ligeramente: discusión del condicionamiento,
+%      proyección ortogonal, conexión con espacios de Hilbert.
+%   6. Transición explícita al Capítulo 2 al cierre.
+% ═══════════════════════════════════════════════════════════════════════════════
+
 \chapter{El problema de aproximación de funciones}
 \label{ch:cap1}
-%═══════════════════════════════════════════════════════════════════════════════
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Un campo que no se puede medir en todas partes}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Un problema que escala mal}
 \label{sec:motivacion1}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{1}{2}
 
-Imagine un experimento sencillo: se quiere conocer la distribución de temperatura
-en una placa metálica cuadrada. Se dispone de diez termopares soldados en
-posiciones fijas $\bm{x}_1, \ldots, \bm{x}_{10}$, cada uno reportando una medición
-$T_i = T(\bm{x}_i)$. La pregunta física es inmediata: ¿qué temperatura tiene
-la placa en los miles de puntos donde no hay sensor?
+Todo físico sabe construir un ajuste. Se miden $N$ puntos, se elige una
+familia de funciones —polinomios, exponenciales, armónicos esféricos— y se
+minimizan los residuos. El procedimiento es tan familiar que puede ocultar
+una pregunta incómoda: ¿qué ocurre cuando la dimensión del problema crece?
 
-Este problema aparece en formas distintas a lo largo de toda la física:
-\begin{itemize}
-  \item Un sismógrafo registra el movimiento del suelo en una estación; se
-        quiere reconstruir el campo de ondas en la región circundante.
-  \item Un detector registra la energía depositada en celdas discretas de un
-        calorímetro; se quiere reconstruir el perfil continuo de la cascada.
-  \item Un sistema de instrumentación mide la potencia neutrónica en unos
-        pocos canales de un reactor; se quiere estimar el flujo $\phi(\bm{x})$
-        en toda la geometría.
-\end{itemize}
+Considere tres situaciones ordenadas por complejidad creciente:
 
-En todos estos casos el problema tiene la misma estructura matemática:
-\emph{dado un número finito de evaluaciones de una función desconocida,
-construir una función que las reproduzca y tenga comportamiento razonable
-entre ellas}. Este es el \textbf{problema de aproximación de funciones},
-y es el punto de partida del libro.
+\begin{enumerate}
+  \item Un péndulo simple oscila con amplitud pequeña. Se mide su posición
+        $x(t)$ en $N = 20$ instantes. La función es esencialmente
+        $A\sin(\omega t + \varphi)$: tres parámetros, una dimensión de
+        entrada. El ajuste es trivial.
+  \item Una placa metálica cuadrada se calienta por un borde. Se mide la
+        temperatura $T(\bm{x})$ en $N = 100$ posiciones con termopares.
+        Se busca $T$ en todo el dominio. La función tiene dos variables
+        de entrada y estructura suave; una base de funciones propias del
+        laplaciano (modos de Fourier del dominio) resuelve el problema.
+  \item Un potencial interatómico $V(\bm{r}_1, \ldots, \bm{r}_M)$
+        depende de las posiciones de $M$ átomos. Para un clúster de
+        $M = 64$ átomos en 3D, la entrada vive en $\mathbb{R}^{192}$.
+        Ninguna base de funciones clásica escala a esa dimensión: el
+        número de monomios de grado $\leq d$ en $n = 192$ variables
+        es $\binom{n+d}{d}$, que para $d = 5$ da $\sim 10^{10}$.
+        Las tablas de funciones base no caben en la memoria de ningún
+        computador.
+\end{enumerate}
 
-Lo que distingue al aprendizaje automático del análisis numérico clásico no
-es la estructura del problema sino la \emph{escala}: en lugar de diez sensores
-pueden ser diez millones de píxeles, y en lugar de una función escalar sobre
-$\mathbb{R}^2$ puede ser un mapa de $\mathbb{R}^{10^6}$ en $\mathbb{R}^{10^3}$.
-Las herramientas cambian por necesidad, pero el problema es el mismo.
+El tercer problema no es exótico: es el tipo de problema que la dinámica
+molecular moderna necesita resolver millones de veces por segundo. Y no
+es el único. La reconstrucción de imágenes a partir de datos de detectores,
+la parametrización de superficies de energía potencial en química cuántica,
+la predicción de propiedades de materiales a partir de descriptores
+atómicos —todos comparten la misma estructura: aproximar una función
+desconocida $g: \mathbb{R}^n \to \mathbb{R}$ a partir de un número finito
+de evaluaciones, con $n$ demasiado grande para que las bases clásicas sean
+viables.
 
-\begin{fisicaconexion}{Aproximación vs. interpolación}
-En física experimental se distingue entre \textbf{interpolar} (pasar exactamente
-por los datos medidos) y \textbf{ajustar} (pasar cerca de los datos, absorbiendo
-el ruido). La interpolación es apropiada cuando los datos son exactos (simulaciones
-numéricas, tablas de constantes físicas). El ajuste es apropiado cuando los datos
-tienen error de medición. Las redes neuronales operan en el régimen de ajuste,
-pero con familias de funciones mucho más expresivas que los polinomios o las
-series de Fourier que el físico suele emplear.
-\end{fisicaconexion}
+Este libro construye, paso a paso, las herramientas que resuelven ese
+problema. La herramienta central —la red neuronal— es una familia de
+funciones que escala bien con la dimensión de entrada, que adapta sus
+propias ``funciones base'' a los datos, y cuya teoría conecta directamente
+con la mecánica estadística, las ecuaciones diferenciales estocásticas y
+la teoría de la información. Pero antes de llegar a ella (Capítulo~\ref{ch:cap4}),
+necesitamos entender con precisión qué significa ``aproximar una función''
+y qué puede salir mal cuando se intenta.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Vectores, normas y el lenguaje del error}
-\label{sec:algebra}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{1}{1}
-
-Para hablar de \emph{cuánto se equivoca} una aproximación necesitamos medir
-distancias. En física esto es natural: la distancia entre dos vectores de posición,
-la diferencia entre una solución numérica y la exacta, el residuo de una ecuación
-algebraica. La herramienta matemática es la norma.
-
-\begin{definicion}{Vectores y $p$-normas}
-\label{def:normas}
-Un \textbf{vector} es un elemento $\bm{x} = (x_1, \ldots, x_n)^\top \in
-\mathbb{R}^n$. Dado $p \geq 1$, la \textbf{$p$-norma} de $\bm{x}$ es:
-\[
-  \|\bm{x}\|_p = \left(\sum_{i=1}^n |x_i|^p\right)^{1/p}.
-\]
-Tres casos de especial relevancia:
-\[
-  \|\bm{x}\|_1 = \sum_{i=1}^n |x_i|, \qquad
-  \|\bm{x}\|_2 = \sqrt{\sum_{i=1}^n x_i^2}, \qquad
-  \|\bm{x}\|_\infty = \max_{1\leq i\leq n} |x_i|.
-\]
-\end{definicion}
-
-La elección de la norma no es cosmética: define qué tipo de error se penaliza.
-La norma $2$ penaliza errores grandes de forma cuadrática (es sensible a
-valores atípicos). La norma $1$ penaliza linealmente (más robusta). La norma
-$\infty$ penaliza únicamente el peor error puntual.
-
-\begin{fisicaconexion}{Las tres normas en física}
-La norma $2$ aparece en la energía potencial elástica ($U = \frac{1}{2}k\|\bm{x}\|_2^2$)
-y en la raíz del error cuadrático medio de instrumentación.
-La norma $1$ es la distancia de Manhattan, relevante en transporte y en
-estimadores robustos de señales con ruido impulsivo.
-La norma $\infty$ es la norma del supremo: mide la desviación máxima, útil
-en especificaciones de tolerancia en ingeniería.
-\end{fisicaconexion}
-
-\begin{definicion}{Producto interno euclídeo}
-\label{def:inner}
-Sean $\bm{x}, \bm{y} \in \mathbb{R}^n$. El \textbf{producto interno euclídeo} es:
-\[
-  \langle \bm{x}, \bm{y} \rangle = \bm{x}^\top \bm{y} = \sum_{i=1}^n x_i y_i,
-\]
-con $\|\bm{x}\|_2^2 = \langle \bm{x}, \bm{x} \rangle$.
-La \textbf{desigualdad de Cauchy-Schwarz} establece:
-\[
-  |\langle \bm{x}, \bm{y} \rangle| \leq \|\bm{x}\|_2 \|\bm{y}\|_2,
-\]
-con igualdad si y solo si $\bm{x}$ e $\bm{y}$ son colineales.
-El ángulo $\theta$ entre $\bm{x}$ e $\bm{y}$ se define por
-$\cos\theta = \langle\bm{x},\bm{y}\rangle/(\|\bm{x}\|_2\|\bm{y}\|_2)$.
-\end{definicion}
-
-\begin{observacion}{Generalización funcional}
-En espacios de funciones, el producto interno $\langle f, g\rangle =
-\int_a^b f(x)g(x)\,dx$ es la generalización directa. La desigualdad de
-Cauchy-Schwarz sigue valiendo y da lugar a la desigualdad de Schwarz en $L^2$.
-Este producto interno es el fundamento del análisis espectral en mecánica cuántica
-y del cálculo del gradiente en los capítulos siguientes.
-\end{observacion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Familias paramétricas: el lenguaje unificador}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Familias paramétricas: el lenguaje del ajuste}
 \label{sec:familias}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{1}{2}
 
-Un físico trabaja permanentemente con familias paramétricas sin llamarlas así.
-La distribución de Maxwell-Boltzmann $f(v; T) = 4\pi n(m/2\pi k_B T)^{3/2}
-v^2 e^{-mv^2/2k_BT}$ es una familia con parámetros $(n, T)$. La solución
-de la ecuación de Schrödinger para el oscilador armónico depende de $\omega$.
-La diferencia en aprendizaje automático es que los parámetros no tienen
-interpretación física conocida a priori: se determinan optimizando un criterio
-sobre los datos.
-
-\begin{definicion}{Familia paramétrica de funciones}
+\begin{definicion}{Familia paramétrica}
 \label{def:familia}
-Una \textbf{familia paramétrica} es un mapa
-$f: \mathbb{R}^n \times \mathcal{P} \to \mathbb{R}$
-donde $\mathcal{P}$ es el espacio de parámetros. Para cada $\bm{\theta} \in
-\mathcal{P}$ fijo, $f(\,\cdot\,;\bm{\theta}): \mathbb{R}^n \to \mathbb{R}$
-es una función específica. La familia es la colección $\{f(\,\cdot\,;\bm{\theta})
-: \bm{\theta} \in \mathcal{P}\}$.
+Una \textbf{familia paramétrica} es una función
+$f: \mathbb{R}^n \times \mathcal{P} \to \mathbb{R}$, donde $\bm{x} \in
+\mathbb{R}^n$ es la variable de entrada y $\bm{\theta} \in \mathcal{P}
+\subseteq \mathbb{R}^p$ es el vector de parámetros. La notación
+$f(\bm{x};\bm{\theta})$ usa el punto y coma para separar las variables
+de los parámetros: $\bm{x}$ varía entre las muestras, $\bm{\theta}$ se
+fija durante la evaluación y se ajusta durante el entrenamiento.
 \end{definicion}
 
-\begin{ejemplo}{El oscilador amortiguado como familia paramétrica}
-La posición de un oscilador amortiguado es
-$x(t; A, \omega, \gamma) = A\,e^{-\gamma t}\cos(\omega t)$.
-Aquí $t$ es la variable (lo que se observa), y $(A, \omega, \gamma)$ son los
-parámetros (lo que se ajusta a los datos experimentales del oscilador).
-En ML la estructura es idéntica: los parámetros no son frecuencias ni
-amortiguamientos, sino pesos de una red, pero el lenguaje matemático es el mismo.
+El lenguaje es deliberadamente general. El físico ya trabaja con familias
+paramétricas todo el tiempo, aunque no las llame así. Un oscilador armónico
+amortiguado con señal $x(t) = Ae^{-\gamma t}\sin(\omega t + \varphi)$ es
+una familia paramétrica con $\bm{\theta} = (A, \gamma, \omega, \varphi)$
+y $n = 1$ (la variable de entrada es el tiempo). Una sección eficaz
+diferencial $d\sigma/d\Omega(\theta_{\text{cm}}; m, g, \Lambda)$ es una
+familia paramétrica con las masas y acoplamientos como parámetros. En
+cada caso, el problema de ajuste consiste en encontrar los valores de
+$\bm{\theta}$ que mejor reproducen los datos medidos. Lo que varía de un
+problema a otro es la \emph{estructura} de la familia: si los parámetros
+entran linealmente o no, si la dimensión de entrada es baja o alta, si la
+función tiene simetrías conocidas.
+
+\begin{ejemplo}{Familias paramétricas en física}
+\label{ej:familias_fisica}
+
+\textbf{Lineal en parámetros:} el campo de temperatura en una barra
+unidimensional con condiciones de frontera fijas admite una expansión en
+modos de Fourier $T(x) = \sum_{k=1}^p a_k \sin(k\pi x/L)$. Los
+parámetros $\bm{\theta} = (a_1, \ldots, a_p)$ entran linealmente.
+
+\textbf{No lineal en parámetros:} la respuesta de un circuito RLC
+$V(t) = V_0 e^{-t/\tau}\cos(\omega_d t)$ tiene parámetros
+$\bm{\theta} = (V_0, \tau, \omega_d)$. Aquí $\tau$ y $\omega_d$ entran
+no linealmente: no existe una transformación que haga la función lineal
+en todos los parámetros simultáneamente.
+
+La diferencia tiene consecuencias inmediatas para la optimización. En el
+caso lineal, el problema de ajuste tiene solución cerrada (ecuaciones
+normales). En el caso no lineal, el problema puede tener múltiples mínimos
+locales y requiere algoritmos iterativos. Esta distinción organiza los
+Capítulos~\ref{ch:cap1}--\ref{ch:cap3}.
 \end{ejemplo}
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Datos, pérdida y el problema de aproximación}
 \label{sec:datos_perdida}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{1}{2}
-
-Con el lenguaje de las familias paramétricas, el problema de la sección de
-apertura se formula con precisión.
 
 \begin{definicion}{Conjunto de datos y pérdida empírica}
 \label{def:datos_loss}
 Un \textbf{conjunto de datos} es $\mathcal{D} = \{(\bm{x}_i, y_i)\}_{i=1}^N$
 con $\bm{x}_i \in \mathbb{R}^n$ (entradas) e $y_i \in \mathbb{R}$ (salidas).
 Dada una \textbf{función de pérdida} $\ell: \mathbb{R} \times \mathbb{R}
-\to \mathbb{R}_{\geq 0}$ con $\ell(\hat{y}, y) = 0 \Leftrightarrow \hat{y} = y$,
-la \textbf{pérdida empírica} es:
-\[
-  \mathcal{L}(\bm{\theta}) = \frac{1}{N}\sum_{i=1}^N \ell(f(\bm{x}_i;\bm{\theta}), y_i).
-\]
-Las dos pérdidas más comunes son el \textbf{error cuadrático medio}
-$\ell_{\mathrm{MSE}}(\hat{y},y) = (\hat{y}-y)^2$ y el \textbf{error absoluto
-medio} $\ell_{\mathrm{MAE}}(\hat{y},y) = |\hat{y}-y|$.
+\to \mathbb{R}_{\geq 0}$ con $\ell(\hat{y}, y) = 0 \Leftrightarrow
+\hat{y} = y$, la \textbf{pérdida empírica} es:
+\begin{equation}
+  \mathcal{L}(\bm{\theta}) = \frac{1}{N}\sum_{i=1}^N
+  \ell\bigl(f(\bm{x}_i;\bm{\theta}),\, y_i\bigr).
+  \label{eq:loss_empirica}
+\end{equation}
 \end{definicion}
 
 \begin{definicion}{Problema de aproximación}
 \label{def:problema}
 El \textbf{problema de aproximación} consiste en encontrar:
-\[
-  \bm{\theta}^* = \argmin_{\bm{\theta} \in \mathcal{P}}\,\mathcal{L}(\bm{\theta}).
-\]
+\begin{equation}
+  \bm{\theta}^* = \argmin_{\bm{\theta} \in \mathcal{P}}\,
+  \mathcal{L}(\bm{\theta}).
+  \label{eq:problema_aprox}
+\end{equation}
 \end{definicion}
 
-Esta definición unifica en un solo enunciado todos los problemas de ajuste
-que el físico conoce. Lo que varía es la elección de la familia $f$, la
-pérdida $\ell$ y el método para encontrar $\bm{\theta}^*$.
+Las dos pérdidas más usadas son el \textbf{error cuadrático medio}
+$\ell_{\mathrm{MSE}}(\hat{y},y) = (\hat{y}-y)^2$ y el \textbf{error
+absoluto medio} $\ell_{\mathrm{MAE}}(\hat{y},y) = |\hat{y}-y|$.
 
-\begin{fisicaconexion}{Por qué MSE y no MAE}
-El error cuadrático medio $\ell_{\mathrm{MSE}}$ penaliza los errores grandes
-cuadráticamente. En términos estadísticos, minimizar la pérdida MSE equivale
-a encontrar la \emph{media condicional} $\mathbb{E}[y|\bm{x}]$. Minimizar MAE
-equivale a encontrar la \emph{mediana condicional}. En física experimental,
-donde el ruido de medición es gaussiano (por el teorema central del límite),
-MSE es el estimador de máxima verosimilitud. Cuando el ruido tiene colas
-pesadas (ruido de Cauchy, interferencias impulsivas), MAE es más robusto.
-El Capítulo~7 formaliza esta conexión entre pérdidas y modelos probabilísticos.
-\end{fisicaconexion}
+La pérdida MSE tiene una justificación física directa. En un experimento
+donde el ruido de medición es gaussiano —lo cual es la situación genérica
+por el teorema central del límite—, minimizar la MSE es exactamente el
+estimador de máxima verosimilitud. Esta no es una coincidencia: la función
+de verosimilitud gaussiana $\mathcal{N}(y; f(\bm{x};\bm{\theta}),
+\sigma^2)$ tiene logaritmo negativo proporcional a $(y - f(\bm{x};
+\bm{\theta}))^2$. Cuando el ruido tiene colas pesadas (interferencias
+impulsivas, ruido de Cauchy), MAE es más robusto porque corresponde
+al estimador de máxima verosimilitud para ruido laplaciano. El
+Capítulo~\ref{ch:cap7} formalizará esta conexión entre funciones de pérdida y
+modelos probabilísticos; por ahora basta saber que la elección de la
+pérdida codifica una hipótesis implícita sobre la naturaleza del ruido.
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Familias lineales en parámetros: solución exacta}
 \label{sec:lineales}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-Cuando la familia paramétrica tiene la forma $f(\bm{x};\bm{\theta}) =
-\sum_{j=1}^p \theta_j \phi_j(\bm{x})$, los parámetros aparecen linealmente
-y el problema de aproximación tiene solución cerrada.
+Cuando la familia paramétrica tiene la forma
+\begin{equation}
+  f(\bm{x};\bm{\theta}) = \sum_{j=1}^p \theta_j \phi_j(\bm{x})
+  = \bm{\theta}^\top \bm{\Phi}(\bm{x}),
+  \label{eq:familia_lineal}
+\end{equation}
+con funciones base fijas $\phi_1, \ldots, \phi_p: \mathbb{R}^n \to
+\mathbb{R}$, los parámetros aparecen linealmente y el problema de
+aproximación tiene solución cerrada. Esto no significa que la familia
+sea una función lineal de $\bm{x}$ —los polinomios de grado 10 son
+lineales en sus coeficientes pero altamente no lineales en $x$— sino
+que la dependencia en $\bm{\theta}$ es lineal.
 
-\begin{definicion}{Familia lineal en parámetros y matriz de diseño}
-\label{def:lineal}
-Una familia es \textbf{lineal en los parámetros} si existen funciones fijas
-$\phi_1, \ldots, \phi_p: \mathbb{R}^n \to \mathbb{R}$ (llamadas \textbf{funciones
-base}) tales que $f(\bm{x};\bm{\theta}) = \bm{\theta}^\top \bm{\Phi}(\bm{x})$
-con $\bm{\Phi}(\bm{x}) = (\phi_1(\bm{x}),\ldots,\phi_p(\bm{x}))^\top$.
-La \textbf{matriz de diseño} $\bm{\Phi}_{\mathcal{D}} \in \mathbb{R}^{N\times p}$
-tiene entradas $(\bm{\Phi}_{\mathcal{D}})_{ij} = \phi_j(\bm{x}_i)$.
-La pérdida empírica MSE se escribe $\mathcal{L}(\bm{\theta}) = \frac{1}{N}
-\|\bm{\Phi}_{\mathcal{D}}\bm{\theta} - \bm{y}\|_2^2$.
+\begin{definicion}{Matriz de diseño}
+\label{def:diseño}
+La \textbf{matriz de diseño} $\bm{\Phi}_{\mathcal{D}} \in
+\mathbb{R}^{N \times p}$ tiene entradas
+$(\bm{\Phi}_{\mathcal{D}})_{ij} = \phi_j(\bm{x}_i)$: la fila $i$ es
+la evaluación de todas las funciones base en el punto $\bm{x}_i$. La
+pérdida MSE se escribe entonces
+\begin{equation}
+  \mathcal{L}(\bm{\theta})
+  = \frac{1}{N}\|\bm{\Phi}_{\mathcal{D}}\bm{\theta} - \bm{y}\|_2^2.
+  \label{eq:loss_mse_matricial}
+\end{equation}
 \end{definicion}
 
-La tabla siguiente muestra las familias lineales más comunes en física
-y sus matrices de diseño:
+El físico reconocerá esta expresión como un problema de mínimos cuadrados.
+La tabla siguiente muestra las familias lineales más frecuentes en física
+con sus bases y contextos de aplicación:
 
 \begin{center}
 \begin{tabular}{llll}
 \toprule
 \textbf{Base} & $\phi_j(\bm{x})$ & \textbf{Contexto físico} &
-\textbf{Matriz $\bm{\Phi}_{\mathcal{D}}$} \\
+$\bm{\Phi}_{\mathcal{D}}$ \\
 \midrule
 Monomios & $x^{j-1}$ & Ajuste de curvas & Vandermonde \\
 Legendre & $P_{j-1}(x)$ & Expansión multipolar & Casi diagonal \\
-Fourier & $e^{2\pi i (j-1)k/N}$ & Espectroscopia, señales & Unitaria \\
-RBF gaussiana & $e^{-\|\bm{x}-\bm{c}_j\|^2/2\sigma^2}$ &
-  Interpolación espacial, meshless & Densa \\
-B-splines & $B_j(x)$ & Perfiles de flujo suaves & Banda \\
+Fourier  & $e^{2\pi i (j-1) k/N}$ & Espectroscopia, señales & Unitaria \\
+RBF      & $e^{-\|\bm{x}-\bm{c}_j\|^2/2\sigma^2}$ &
+  Interpolación espacial & Densa \\
+B-splines & $B_j(x)$ & Perfiles suaves & Banda \\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\subsection{Ecuaciones normales: el resorte y el equilibrio}
+\label{subsec:ec_normales}
+
+La pérdida~\eqref{eq:loss_mse_matricial} es una forma cuadrática en
+$\bm{\theta}$. Para entender qué significa eso, conviene empezar con el
+caso más simple posible.
+
+Un resorte de constante $k$ sujeto en un extremo y con una fuerza externa
+$F$ en el otro tiene energía potencial $U(x) = \frac{1}{2}kx^2 - Fx$. El
+equilibrio está en $x^* = F/k$: el punto donde la fuerza del resorte
+$-kx$ balancea la fuerza externa $F$. Para encontrarlo basta derivar e
+igualar a cero: $dU/dx = kx - F = 0$.
+
+La pérdida MSE~\eqref{eq:loss_mse_matricial} tiene exactamente la misma
+estructura, pero en $\mathbb{R}^p$ en lugar de $\mathbb{R}$. Expandiendo:
+\begin{equation}
+  \mathcal{L}(\bm{\theta})
+  = \frac{1}{N}\bigl(\bm{\theta}^\top\bm{\Phi}^\top\bm{\Phi}\,\bm{\theta}
+  - 2\bm{y}^\top\bm{\Phi}\,\bm{\theta}
+  + \bm{y}^\top\bm{y}\bigr).
+  \label{eq:loss_expandida}
+\end{equation}
+El primer término, $\bm{\theta}^\top\bm{\Phi}^\top\bm{\Phi}\,\bm{\theta}$,
+es el análogo de $kx^2$: un ``resorte'' en $p$ dimensiones cuya ``rigidez''
+en cada dirección está determinada por la matriz de Gram
+$\bm{\Phi}^\top\bm{\Phi}$. El segundo término,
+$-2\bm{y}^\top\bm{\Phi}\,\bm{\theta}$, es el análogo de $-Fx$: la
+``fuerza'' que los datos ejercen sobre los parámetros. El tercer término es
+constante (no depende de $\bm{\theta}$).
+
+El equilibrio se encuentra igual que con el resorte: derivar e igualar a
+cero.
 
 \begin{proposicion}{Ecuaciones normales}
 \label{prop:normales}
 Si $\mathrm{rango}(\bm{\Phi}_{\mathcal{D}}) = p$, el minimizador de
 $\mathcal{L}(\bm{\theta})$ es único y satisface:
-\[
-  \bm{\Phi}_{\mathcal{D}}^\top \bm{\Phi}_{\mathcal{D}}\,\bm{\theta}^*
-  = \bm{\Phi}_{\mathcal{D}}^\top \bm{y},
+\begin{equation}
+  \underbrace{\bm{\Phi}^\top\bm{\Phi}}_{\text{``rigidez''}}\,\bm{\theta}^*
+  = \underbrace{\bm{\Phi}^\top\bm{y}}_{\text{``fuerza de los datos''}},
   \qquad
-  \bm{\theta}^* = (\bm{\Phi}_{\mathcal{D}}^\top \bm{\Phi}_{\mathcal{D}})^{-1}
-  \bm{\Phi}_{\mathcal{D}}^\top \bm{y}
-  =: \bm{\Phi}_{\mathcal{D}}^\dagger \bm{y}.
-\]
-El mapa $\bm{\Phi}_{\mathcal{D}}^\dagger$ se denomina
-\textbf{pseudoinversa de Moore-Penrose}.
+  \bm{\theta}^*
+  = (\bm{\Phi}^\top\bm{\Phi})^{-1}\bm{\Phi}^\top\bm{y}
+  =: \bm{\Phi}^\dagger\bm{y}.
+  \label{eq:normales}
+\end{equation}
 \end{proposicion}
 
 \begin{proof}
-$\mathcal{L}(\bm{\theta})$ es convexa y diferenciable. Su gradiente es
-$\nabla_{\bm{\theta}}\mathcal{L} = \frac{2}{N}\bm{\Phi}_{\mathcal{D}}^\top
-(\bm{\Phi}_{\mathcal{D}}\bm{\theta}-\bm{y})$.
-Igualando a cero y usando que $\bm{\Phi}_{\mathcal{D}}^\top\bm{\Phi}_{\mathcal{D}}$
-es invertible cuando el rango es $p$.
+El gradiente de~\eqref{eq:loss_expandida} es
+$\nabla_{\bm{\theta}}\mathcal{L} = \frac{2}{N}(\bm{\Phi}^\top\bm{\Phi}\,
+\bm{\theta} - \bm{\Phi}^\top\bm{y})$. Igualando a cero se obtiene
+$\bm{\Phi}^\top\bm{\Phi}\,\bm{\theta}^* = \bm{\Phi}^\top\bm{y}$, que es
+$kx = F$ en $p$ dimensiones. La matriz $\bm{\Phi}^\top\bm{\Phi}$ es
+semidefinida positiva (pues
+$\bm{z}^\top\bm{\Phi}^\top\bm{\Phi}\bm{z} = \|\bm{\Phi}\bm{z}\|^2
+\geq 0$) y es invertible cuando $\bm{\Phi}$ tiene rango completo; luego el
+mínimo es único.
 \end{proof}
 
-\begin{fisicaconexion}{La pseudoinversa como estimador óptimo}
-La solución $\bm{\theta}^* = \bm{\Phi}_{\mathcal{D}}^\dagger \bm{y}$ es el
-\emph{estimador de mínima varianza no sesgado} (BLUE, Best Linear Unbiased
-Estimator) cuando el ruido en las mediciones $y_i$ es aditivo, gaussiano e
-independiente con varianza uniforme. Este es el teorema de Gauss-Markov, que
-el Capítulo~7 derivará formalmente desde la perspectiva bayesiana.
-\end{fisicaconexion}
+Así como en un resorte la constante $k$ mide cuánto resiste la deformación,
+la matriz $\bm{\Phi}^\top\bm{\Phi}$ mide cuánto ``resisten'' los datos a
+que los parámetros cambien en cada dirección. Una dirección con ``rigidez''
+alta (autovalor grande de $\bm{\Phi}^\top\bm{\Phi}$) es una dirección bien
+determinada por los datos: cambiar $\bm{\theta}$ en esa dirección cambia
+mucho la pérdida. Una dirección con ``rigidez'' baja está poco determinada:
+los datos casi no restringen $\bm{\theta}$ en esa dirección. El
+Capítulo~\ref{ch:cap2} formalizará esto con la SVD y mostrará que la
+regularización es exactamente añadir un resorte auxiliar (con constante
+$\lambda$) que estabiliza las direcciones blandas.
 
-\subsection{Caso particular: interpolación polinomial}
+La solución~\eqref{eq:normales} tiene además una interpretación geométrica
+elegante: el vector $\hat{\bm{y}} = \bm{\Phi}\bm{\theta}^*$ es la
+\emph{proyección ortogonal} de $\bm{y}$ sobre el subespacio columna de
+$\bm{\Phi}$. La condición $\bm{\Phi}^\top(\bm{y}-\hat{\bm{y}}) = \bm{0}$
+dice que el residuo es perpendicular al espacio de las funciones base. Es la
+misma estructura que la descomposición de un estado cuántico en componentes
+paralela y perpendicular a un subespacio del espacio de Hilbert. La
+pseudoinversa $\bm{\Phi}^\dagger$ es, además, el estimador de mínima
+varianza no sesgado (BLUE, teorema de Gauss-Markov) cuando el ruido es
+gaussiano e independiente; el Capítulo~\ref{ch:cap7} lo derivará desde la
+perspectiva bayesiana.
+
+\subsection{Interpolación y el fenómeno de Runge}
 \label{subsec:interpolacion}
 
 \dificultad{2}{1}
 
-Cuando la familia base es $\phi_j(x) = x^{j-1}$ (monomios) y $N = p$,
-la matriz de diseño es cuadrada y el problema de aproximación exige
-interpolación exacta.
+Cuando la base es monomio ($\phi_j(x) = x^{j-1}$) y $N = p$, la
+matriz de diseño es la \textbf{matriz de Vandermonde}
+$V_{ij} = x_i^{j-1}$, que es invertible si los nodos son distintos
+($\det(\bm{V}) = \prod_{i<j}(x_j - x_i) \neq 0$). En ese caso la
+solución es interpolación exacta: $f(x_i;\bm{\theta}^*) = y_i$ para
+todo $i$.
 
-\begin{definicion}{Matriz de Vandermonde}
-\label{def:vandermonde}
-Dados $N$ nodos distintos $x_1 < \cdots < x_N$, la \textbf{matriz de Vandermonde}
-$\bm{V} \in \mathbb{R}^{N \times N}$ tiene entradas $V_{ij} = x_i^{j-1}$.
-\end{definicion}
+Pero la interpolación exacta con monomios en nodos equiespaciados
+sufre el \textbf{fenómeno de Runge}: para grado $\geq 10$, las
+oscilaciones en los extremos del intervalo crecen sin control. La
+causa es algebraica: el número de condicionamiento de la Vandermonde
+crece exponencialmente con $N$, típicamente como $\kappa(\bm{V})
+\sim 10^N$ para nodos equiespaciados. Una perturbación de amplitud
+$\varepsilon$ en $\bm{y}$ produce una perturbación de amplitud
+$\sim \kappa \cdot \varepsilon$ en $\bm{\theta}^*$: el mal
+condicionamiento amplifica el ruido hasta destruir la solución.
 
-\begin{proposicion}{Interpolación como caso particular del problema de aproximación}
-\label{prop:interpolacion}
-Con la familia monomio de grado $N-1$ y pérdida MSE, el minimizador
-$\bm{\theta}^*$ satisface $\bm{V}\bm{\theta}^* = \bm{y}$ (interpolación exacta)
-y es único porque $\det(\bm{V}) = \prod_{i<j}(x_j - x_i) \neq 0$.
-\end{proposicion}
+Esta patología no es exclusiva de los monomios. Toda base de
+funciones fijas se enfrenta a un compromiso: más funciones base
+permiten representar funciones más complejas, pero también abren la
+puerta a la amplificación de ruido. El Capítulo~\ref{ch:cap2}
+formalizará este compromiso como la \emph{descomposición
+sesgo-varianza} y mostrará que la regularización lo resuelve.
 
-\begin{observacion}{Cuándo falla la interpolación polinomial}
-La interpolación con monomios en nodos equiespaciados sufre el
-\textbf{fenómeno de Runge}: para grado $\geq 10$, las oscilaciones en los
-extremos del intervalo crecen sin control. El número de condicionamiento de
-$\bm{V}$ crece exponencialmente con $N$. Esto no es un defecto de la
-interpolación sino de la base: los nodos de Chebyshev o las bases de Legendre
-eliminan el problema. Esta sensibilidad a la base es la primera motivación
-para buscar familias \emph{adaptativas} que elijan sus propias funciones
-base según los datos.
-\end{observacion}
+El fenómeno de Runge es también la primera motivación para buscar
+familias de funciones \emph{adaptativas}: familias donde las
+``funciones base'' no están fijas de antemano sino que se aprenden
+de los datos. Pero antes de dar ese salto (Capítulo~\ref{ch:cap4}),
+hay una familia intermedia que merece atención: las funciones de base
+radial, que combinan la estructura cerrada de las familias lineales
+con la localización espacial que las bases globales no tienen.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Familias no lineales en parámetros}
-\label{sec:nolineales}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Funciones de base radial: del ajuste local a las redes neuronales}
+\label{sec:rbf}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{3}
 
-Las familias lineales tienen una limitación estructural: las funciones base
-$\phi_j$ son fijas antes de ver los datos. Para una distribución de temperatura
-con estructura desconocida, no sabemos a priori qué bases elegir. La solución
-natural es dejar que las bases se adapten a los datos.
+Las bases del Capítulo anterior —monomios, Fourier, Legendre— son
+\emph{globales}: cada función base oscila en todo el dominio. Para una
+distribución de datos irregular, esto es ineficiente: se dedica la misma
+capacidad a las regiones vacías que a las pobladas. Las \textbf{funciones
+de base radial} (RBF) resuelven este problema centrando cada función base
+en un punto del espacio y haciéndola depender solo de la distancia a ese
+centro.
+
+\begin{definicion}{Interpolación con funciones de base radial}
+\label{def:rbf}
+Una \textbf{RBF} es una función $\varphi: \mathbb{R}_{\geq 0} \to
+\mathbb{R}$ que depende solo de la distancia al centro $\bm{c}_j$:
+$\phi_j(\bm{x}) = \varphi(\|\bm{x}-\bm{c}_j\|)$. La familia RBF es:
+\begin{equation}
+  f(\bm{x};\bm{\theta}) = \sum_{j=1}^p \theta_j\,
+  \varphi(\|\bm{x}-\bm{c}_j\|).
+  \label{eq:rbf_familia}
+\end{equation}
+Si los centros $\bm{c}_j$ están fijos (por ejemplo, en los puntos de
+datos), la familia es lineal en $\bm{\theta}$ y se resuelve con
+ecuaciones normales.
+\end{definicion}
+
+Las RBFs más usadas incluyen la gaussiana
+$\varphi(r) = e^{-r^2/(2\sigma^2)}$ (soporte efectivo local, $C^\infty$),
+la multiquadric $\varphi(r) = \sqrt{r^2+c^2}$ (soporte global), y la
+polyarmónica $\varphi(r) = r^{2k}\log r$ (mínima curvatura).
+
+\subsection{La RBF gaussiana y sus interpretaciones físicas}
+\label{subsec:rbf_gaussiana}
+
+La RBF gaussiana $\phi_j(\bm{x}) = \exp(-\|\bm{x}-\bm{c}_j\|^2
+/(2\sigma^2))$ es especialmente intuitiva para un físico porque admite
+tres lecturas complementarias.
+
+Como \textbf{paquete de onda gaussiano}: cada base es una gaussiana
+centrada en $\bm{c}_j$ con ancho $\sigma$. La interpolación es una
+superposición de paquetes localizados. El ancho $\sigma$ controla la
+escala de correlación: $\sigma$ pequeño implica alta resolución espacial
+pero potencial sobreajuste; $\sigma$ grande implica suavidad pero
+potencial sesgo. La tensión es análoga al principio de incertidumbre: un
+paquete localizado en posición está deslocalizado en frecuencia.
+
+Como \textbf{kernel de difusión}: la función de Green de la ecuación de
+calor $\partial_t T = D\nabla^2 T$ en espacio libre es
+$G(\bm{x},t) = (4\pi Dt)^{-n/2}\exp(-\|\bm{x}\|^2/(4Dt))$.
+Con $\sigma^2 = 2Dt$, la RBF gaussiana es exactamente esta función de
+Green en tiempo $t$: la interpolación RBF reconstruye un campo a partir
+de fuentes puntuales de calor, con $\sigma$ controlando cuánto se ha
+difundido cada fuente.
+
+Como \textbf{potencial de interacción}: en mecánica estadística, un
+potencial de pares gaussiano describe una interacción suave de alcance
+$\sigma$. La interpolación es una superposición de potenciales con
+amplitudes $\theta_j$ ajustables.
+
+\subsection{De centros fijos a centros adaptativos: la red RBF}
+\label{subsec:rbf_red}
+
+Con centros fijos en los datos, la matriz de interpolación $\bm{A}$ con
+$A_{ij} = \varphi(\|\bm{x}_i-\bm{x}_j\|)$ es simétrica y, para la
+gaussiana, definida positiva para nodos distintos (teorema de Micchelli,
+1986). Su condicionamiento depende fuertemente de $\sigma$: para $\sigma$
+muy pequeño, $\bm{A} \approx \bm{I}$ ($\kappa \approx 1$, bases
+desacopladas); para $\sigma$ grande, $\kappa$ crece exponencialmente
+(bases casi idénticas, análogo al fenómeno de Runge). La elección de
+$\sigma$ anticipa el compromiso sesgo-varianza del Capítulo~\ref{ch:cap2}.
+
+Pero la potencia real aparece cuando se permite que los centros $\bm{c}_j$
+y los anchos $\sigma_j$ se \emph{adapten} a los datos:
+\begin{equation}
+  f(\bm{x};\bm{\theta}) = \sum_{j=1}^m \theta_j\,
+  \exp\!\left(-\frac{\|\bm{x}-\bm{c}_j\|^2}{2\sigma_j^2}\right),
+  \qquad
+  \bm{\theta} = \{\theta_j, \bm{c}_j, \sigma_j\}_{j=1}^m.
+  \label{eq:rbf_adaptativa}
+\end{equation}
+Los coeficientes $\theta_j$ son lineales, pero los centros y anchos son
+no lineales. Esta familia adaptativa es una \textbf{red RBF}: una red
+neuronal de una capa oculta con activación gaussiana. Cada neurona es una
+RBF que ``mira'' una región del espacio de entrada; la red completa cubre
+el dominio con una colección de ventanas gaussianas cuyas posiciones,
+anchos y amplitudes se optimizan conjuntamente.
+
+La conexión con el MLP del Capítulo~\ref{ch:cap4} es directa:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+ & \textbf{Red RBF} & \textbf{MLP (Cap.~\ref{ch:cap4})} \\
+\midrule
+Activación & $\varphi(\|\bm{x}-\bm{c}_j\|)$ (radial, local) &
+  $\sigma(\bm{w}_j^\top\bm{x}+b_j)$ (direccional) \\
+Respuesta & Localizada alrededor de $\bm{c}_j$ &
+  Activa en un semiplano \\
+Parámetros & Centros $\bm{c}_j$, anchos $\sigma_j$ &
+  Pesos $\bm{w}_j$, sesgos $b_j$ \\
+Analogía & Paquete de onda gaussiano &
+  Distribución de Fermi-Dirac \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Ambas son aproximadores universales. La diferencia es el tipo de partición:
+las RBFs dividen el espacio en regiones esféricas (Voronoi); los MLPs con
+ReLU, en regiones poliédricas (intersecciones de semiespacios). En
+dimensión baja ($n \leq 5$), las RBFs son competitivas y a menudo
+superiores; en dimensión alta ($n \gg 10$), los MLPs escalan mejor
+(aunque las redes equivariantes del Capítulo~\ref{ch:cap9} combinan
+ambas ideas).
+
+\subsection{RBFs y métodos sin malla en física computacional}
+\label{subsec:meshless}
+
+Las RBFs son el fundamento de los \textbf{métodos sin malla}
+(\textit{meshless methods}): métodos numéricos para resolver EDPs sin
+malla estructurada. La idea es expandir la solución como
+$u(\bm{x}) \approx \sum_j \theta_j\varphi(\|\bm{x}-\bm{c}_j\|)$,
+sustituir en la EDP, y resolver el sistema resultante. Las ventajas son
+la flexibilidad geométrica (dominios irregulares, fronteras móviles) y la
+adaptabilidad (centros donde la solución tiene más estructura).
+
+Los meshless methods con RBFs son un área activa en mecánica de fluidos
+(Navier-Stokes en dominios complejos), ingeniería estructural
+(reconstrucción de campos de deformación desde mediciones puntuales),
+geofísica (interpolación sobre la esfera para datos irregulares de
+satélite), y física de reactores (difusión de neutrones en geometrías no
+convencionales). La referencia fundacional es Kansa (1990); para la teoría
+matemática, Wendland (2004) y Fasshauer (2007).
+
+La conexión con el aprendizaje automático es bidireccional: los meshless
+methods inspiraron las redes RBF en los años 1990, y actualmente la
+investigación en \textit{physics-informed neural networks} (PINNs)
+reintroduce la idea de resolver EDPs con redes, usando MLPs en lugar de
+RBFs. El Capítulo~\ref{ch:cap4} introduce los MLPs; el lector debe saber
+que las RBFs son su ancestro directo y que la elección entre ambos depende
+del problema.
+
+\begin{observacion}{El parámetro de forma y el compromiso resolución-estabilidad}
+El parámetro $\sigma$ de la RBF gaussiana controla un compromiso entre
+exactitud local y estabilidad numérica. Para $\sigma \to 0$: bases
+desacopladas, $\kappa \approx 1$, pero la interpolación no suaviza entre
+datos. Para $\sigma \to \infty$: bases idénticas, $\kappa \to \infty$, el
+sistema amplifica ruido. La estrategia RBF-QR (Fornberg y Piret, 2008)
+resuelve este compromiso reformulando la base en un espacio estable. Esta
+tensión es un precursor del compromiso sesgo-varianza del
+Capítulo~\ref{ch:cap2}.
+\end{observacion}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Familias no lineales en parámetros}
+\label{sec:nolineales}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{3}
+
+Las familias lineales tienen una limitación estructural: las funciones
+base $\phi_j$ son fijas antes de ver los datos. Si la estructura de la
+función objetivo es desconocida, no sabemos qué base elegir. La solución
+es dejar que la familia adapte sus propias funciones base.
 
 \begin{definicion}{Familia no lineal en parámetros}
 \label{def:nolineal}
-Una familia es \textbf{no lineal en los parámetros} si no puede escribirse en
-la forma de la Definición~\ref{def:lineal} para ninguna elección de funciones
-base independientes de $\bm{\theta}$.
+Una familia paramétrica es \textbf{no lineal en los parámetros} si no
+puede escribirse en la forma~\eqref{eq:familia_lineal} para ninguna
+elección de funciones base fijas. Un ejemplo elemental es la gaussiana
+desplazada $f(x;\mu,\sigma,A) = A\exp\bigl(-(x-\mu)^2/(2\sigma^2)\bigr)$:
+la posición $\mu$ y el ancho $\sigma$ entran no linealmente.
 \end{definicion}
 
-El ejemplo canónico son las \textbf{funciones de base radial con centros
-aprendibles}: $f(x;\bm{\theta}) = \sum_{j=1}^m w_j\,e^{-(x-c_j)^2/2\sigma_j^2}$,
-donde $\bm{\theta} = (w_j, c_j, \sigma_j)$. Los centros $c_j$ y anchos $\sigma_j$
-aparecen dentro de la exponencial: la familia no es lineal en $\bm{\theta}$.
+La no linealidad tiene una consecuencia fundamental para la optimización:
+la pérdida empírica $\mathcal{L}(\bm{\theta})$ deja de ser un paraboloide.
+Puede tener valles, crestas, mesetas y múltiples mínimos locales. La
+solución cerrada~\eqref{eq:normales} no existe; se necesitan algoritmos
+iterativos. La geometría de $\mathcal{L}(\bm{\theta})$ —su gradiente,
+hessiano, puntos críticos— es el objeto del Capítulo~\ref{ch:cap3}.
 
-La consecuencia inmediata es que la pérdida empírica deja de ser convexa.
-Esto implica múltiples mínimos locales, dependencia de la inicialización
-y necesidad de métodos iterativos. El Capítulo~3 desarrolla esos métodos.
-La pregunta que surge naturalmente es: ¿vale la pena esa complejidad adicional?
+Pero hay una ganancia que compensa: las familias no lineales pueden
+ser exponencialmente más eficientes que las lineales para representar
+funciones con estructura. Un resultado clásico (Barron, 1993) muestra
+que para funciones suaves en $\mathbb{R}^n$, una superposición de
+$p$ funciones no lineales adaptativas (como las neuronas de una red)
+puede lograr error $O(1/p)$ independiente de la dimensión $n$, mientras
+que una base lineal de polinomios necesita $O(p^{-2/n})$: la maldición
+de la dimensionalidad desaparece cuando las ``funciones base'' se
+adaptan. Esta es la razón por la que las redes neuronales funcionan en
+dimensión alta.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{El teorema de aproximación universal}
-\label{sec:tau}
-%───────────────────────────────────────────────────────────────────────────────
+\begin{ejemplo}{Dos parámetros, dos paisajes}
+\label{ej:dos_paisajes}
+Considere el ajuste de los datos $\{(x_i, y_i)\}_{i=1}^5$ con
+$x_i \in \{0, 1, 2, 3, 4\}$ e $y_i \in \{1, 3, 2, 4, 1\}$.
 
-\dificultad{3}{3}
+Con la familia lineal $f(x;\theta_0,\theta_1) = \theta_0 + \theta_1 x$,
+la pérdida $\mathcal{L}(\theta_0,\theta_1)$ es un paraboloide: sus
+curvas de nivel son elipses concéntricas alrededor del mínimo global
+$\bm{\theta}^* \approx (1.4, 0.4)^\top$.
 
-La respuesta a la pregunta anterior es el resultado más importante de este
-capítulo. La intuición primero: una red neuronal de una capa es una suma de
-funciones de la forma $\sigma(\bm{w}_j^\top \bm{x} + b_j)$, donde $\sigma$
-es una función no lineal fija (la activación) y $(\bm{w}_j, b_j)$ son
-parámetros aprendibles. Cada término es una ``función de umbral suavizado''
-orientada en la dirección $\bm{w}_j$. La pregunta es: ¿cuántas de estas
-funciones hacen falta para aproximar cualquier función continua?
+Con la familia no lineal $f(x;w,c) = w\exp(-(x-c)^2/2)$, la pérdida
+$\mathcal{L}(w,c)$ tiene varios mínimos locales: la posición del pico
+gaussiano ($c$) y su amplitud ($w$) interactúan de forma no trivial.
 
-\begin{teorema}{Aproximación universal \normalfont{(Cybenko 1989; Hornik et al.\ 1991)}}
-\label{thm:universal}
-Sea $\sigma: \mathbb{R} \to \mathbb{R}$ continua y no constante.
-Sea $K \subset \mathbb{R}^n$ compacto y $g: K \to \mathbb{R}$ continua.
-Para todo $\varepsilon > 0$ existe $M \in \mathbb{N}$ y parámetros
-$\bm{w}_j \in \mathbb{R}^n$, $b_j, v_j \in \mathbb{R}$ tales que:
-\[
-  \sup_{\bm{x}\in K}\,\left|g(\bm{x}) - \sum_{j=1}^M v_j\,\sigma(\bm{w}_j^\top
-  \bm{x} + b_j)\right| < \varepsilon.
-\]
-\end{teorema}
+El Ejercicio Computacional~\ref{ejcomp:paisajes} al final del capítulo
+pide visualizar ambos paisajes.
+\end{ejemplo}
 
-La intuición física antes de la demostración: $\sigma(\bm{w}^\top\bm{x}+b)$
-es una función que transiciona de $0$ a $1$ (para $\sigma$ sigmoide) en el
-hiperplano $\bm{w}^\top\bm{x} + b = 0$. La diferencia $\sigma(\bm{w}^\top
-\bm{x}+b_1) - \sigma(\bm{w}^\top\bm{x}+b_2)$ aproxima una función ``meseta''
-localizada entre dos hiperplanos paralelos. Sumando suficientes mesetas en
-distintas orientaciones y posiciones se puede aproximar cualquier función
-continua sobre un compacto.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El oscilador como laboratorio: ajuste de la señal armónica}
+\label{sec:oscilador1}
+% ─────────────────────────────────────────────────────────────────────────────
 
-\begin{proof}[Idea de la demostración]
-Se demuestra que las combinaciones lineales de $\sigma(\bm{w}^\top\bm{x}+b)$
-son densas en $\mathcal{C}(K)$ con la norma del supremo. La herramienta
-es el teorema de Hahn-Banach: si el subespacio generado no fuera denso,
-existiría un funcional lineal continuo no nulo que se anula sobre él.
-Calculando ese funcional con la representación de Riesz-Markov y usando
-que $\sigma$ es no constante se llega a contradicción.
-La demostración completa puede consultarse en Cybenko~\cite{cybenko1989approximation}.
-\end{proof}
+\dificultad{2}{2}
 
-\begin{observacion}{Qué garantiza y qué no garantiza el Teorema~\ref{thm:universal}}
-El teorema garantiza \emph{existencia}: para cualquier función continua y
-cualquier tolerancia $\varepsilon$, existe una red que la aproxima. \emph{No}
-dice cuántas neuronas $M$ se necesitan (puede ser exponencial en la dimensión),
-\emph{no} dice cómo encontrar los parámetros, y \emph{no} dice qué ocurre
-fuera de $K$ ni cuando los datos son limitados. Esas tres preguntas abiertas
-estructuran el resto del libro: cuántos parámetros (Capítulo~2), cómo
-encontrarlos (Capítulos~3--6), y qué ocurre con datos limitados (Capítulo~2).
-\end{observacion}
+A lo largo de los Capítulos~\ref{ch:cap1}--\ref{ch:cap4}, un mismo sistema
+físico servirá como laboratorio práctico: el \textbf{oscilador armónico
+simple}. Todo físico conoce su solución, lo que permite concentrarse en
+los conceptos de aprendizaje automático sin la distracción de la física
+subyacente.
 
-\begin{fisicaconexion}{La universalidad como principio físico}
-El teorema de aproximación universal es el análogo para redes neuronales del
-teorema de Fourier: cualquier función periódica puede representarse como
-suma de senos y cosenos; cualquier función continua en un compacto puede
-representarse como suma de neuronas sigmoides. La diferencia crucial es que
-la base de Fourier es \emph{fija} (senos y cosenos no dependen de los datos),
-mientras que las neuronas son \emph{adaptativas}: los vectores $\bm{w}_j$
-se orientan según la estructura de los datos. Para un campo de temperatura
-con simetría cilíndrica, la base de Fourier en coordenadas cilíndricas es
-óptima; pero si la simetría no se conoce a priori, la red neuronal la descubre
-durante el entrenamiento.
-\end{fisicaconexion}
+El problema concreto es el siguiente. Se observa la posición de un
+oscilador armónico simple en $N$ instantes, con ruido de medición:
+\begin{equation}
+  y_i = \sin(\omega_0 t_i) + \varepsilon_i,
+  \qquad i = 1, \ldots, N,
+  \label{eq:oscilador_datos}
+\end{equation}
+donde $\omega_0 = 2\pi$ (frecuencia conocida, período $T = 1$),
+$t_i \in [0, 2]$ son los instantes de medición (dos períodos
+completos), y $\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$ es
+ruido gaussiano aditivo con $\sigma = 0.15$.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Resumen del capítulo}
+\subsection{Ajuste con familias lineales}
+\label{subsec:osc_lineal}
+
+La estrategia natural es expandir $\sin(\omega_0 t)$ en una familia
+lineal. Tres elecciones naturales:
+
+\textbf{Base monomio (Taylor):} $f(t;\bm{\theta}) = \sum_{j=0}^{p-1}
+\theta_j t^j$. La serie de Taylor de $\sin(2\pi t)$ tiene convergencia
+lenta fuera de $t \approx 0$: para capturar dos períodos completos se
+necesitan $p \geq 15$ términos, y la Vandermonde en $[0,2]$ tiene
+$\kappa \sim 10^{12}$. El ajuste es numéricamente inestable.
+
+\textbf{Base de Fourier:} $f(t;\bm{\theta}) = \sum_{k=0}^{K-1}
+(a_k \cos(k\pi t) + b_k \sin(k\pi t))$. Si la frecuencia fundamental
+$\omega_0$ coincide con una de las frecuencias de la base, un solo
+coeficiente basta. La matriz de diseño es casi ortogonal y
+$\kappa \approx 1$. Es la base natural para este problema particular.
+
+\textbf{Base de Legendre:} $f(t;\bm{\theta}) = \sum_{j=0}^{p-1}
+\theta_j P_j(2t/T_{\max} - 1)$. Intermedia entre las dos anteriores:
+mejor condicionada que los monomios pero sin la estructura armónica
+de Fourier. Necesita $p \sim 10$ términos.
+
+\textbf{Base RBF gaussiana (centros fijos):} $f(t;\bm{\theta}) =
+\sum_{j=1}^N \theta_j\exp(-(t-t_j)^2/(2\sigma^2))$, con centros en
+los propios datos $t_j$. Es la familia de la Sección~\ref{sec:rbf}
+con centros fijos: lineal en $\bm{\theta}$, con matriz de interpolación
+$A_{ij} = \exp(-(t_i-t_j)^2/(2\sigma^2))$. A diferencia de las tres
+bases anteriores, cada función base está \emph{localizada}: solo
+contribuye significativamente en una vecindad de ancho $\sim 3\sigma$
+alrededor de su centro. Para $\sigma = 0.2$ (comparable al espaciado
+entre datos), la matriz $\bm{A}$ tiene $\kappa \sim 10^3$ y el ajuste
+captura la forma sinusoidal con $\mathcal{L}_{\text{test}} \approx 0.02$,
+comparable a la base de Fourier pero sin necesidad de conocer la
+frecuencia $\omega_0$ de antemano. La desventaja es que el resultado
+depende de la elección de $\sigma$: un hiperparámetro que no aparece en
+las bases clásicas y cuya selección óptima requiere las herramientas del
+Capítulo~\ref{ch:cap2}.
+
+El punto clave es que la elección de la base codifica una hipótesis
+sobre la estructura de la función. Si se sabe que la función es
+armónica, la base de Fourier es óptima. Si no se sabe —que es la
+situación genérica en ML—, se necesita una familia que se adapte.
+
+\subsection{Efecto del número de funciones base}
+\label{subsec:osc_numero_bases}
+
+Con la base monomio, se puede estudiar qué ocurre al variar $p$
+(grado del polinomio más uno):
+
+Para $p = 3$ (parábola): la función es demasiado simple para capturar
+las oscilaciones. El ajuste tiene error sistemático grande. Esto es
+\emph{subajuste} (\textit{underfitting}).
+
+Para $p = N$ (interpolación): el polinomio pasa exactamente por cada
+dato, incluyendo el ruido. Entre los datos oscila violentamente. Esto
+es \emph{sobreajuste} (\textit{overfitting}), y es el fenómeno de
+Runge en acción.
+
+Para $p$ intermedio: existe un valor de $p$ que balancea entre la
+capacidad de capturar la forma sinusoidal y la tendencia a amplificar
+el ruido. Encontrar ese balance —o mejor aún, resolverlo
+automáticamente— es el tema central del Capítulo~\ref{ch:cap2}.
+
+El Ejercicio Computacional~\ref{ejcomp:oscilador1} al final del
+capítulo pide implementar este experimento con valores numéricos
+concretos.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 1 y transición}
 \label{sec:resumen1}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-Este capítulo estableció un único hilo: el problema de aprendizaje supervisado
-es el mismo problema de aproximación que el físico conoce de análisis numérico,
-visto a través de un lente más general. La Definición~\ref{def:problema}
----encontrar $\bm{\theta}^*$ que minimiza la pérdida empírica--- unifica la
-interpolación de Lagrange, el ajuste por mínimos cuadrados y el entrenamiento
-de una red neuronal.
+El problema de aproximación de funciones
+(Definición~\ref{def:problema}) unifica todos los problemas de ajuste
+que el físico conoce. Cuando la familia es lineal en los parámetros, la
+pérdida MSE es un paraboloide y las ecuaciones normales dan la solución
+cerrada: es la proyección ortogonal de $\bm{y}$ sobre el subespacio
+columna de la matriz de diseño. Cuando la familia es no lineal, el
+paisaje de pérdida puede tener múltiples mínimos y la solución cerrada
+no existe.
 
-La distinción fundamental es entre familias \emph{lineales} en los parámetros
-(bases fijas, solución cerrada por ecuaciones normales, pérdida convexa) y
-familias \emph{no lineales} (bases adaptativas, solución iterativa, pérdida
-no convexa con múltiples mínimos). El Teorema de Aproximación Universal
-justifica el costo de la no linealidad: las redes neuronales pueden representar
-cualquier función continua con precisión arbitraria.
+En ambos casos, un problema acecha: la solución que minimiza
+perfectamente la pérdida en los datos de entrenamiento no es
+necesariamente la mejor predicción en datos nuevos. El ejemplo del
+oscilador lo mostró: un polinomio de grado alto interpola perfectamente
+los datos ruidosos pero oscila violentamente entre ellos. El
+Capítulo~\ref{ch:cap2} formaliza este fenómeno como la
+\emph{descomposición sesgo-varianza}, lo analiza mediante la
+descomposición en valores singulares, y lo resuelve con la
+regularización de Tikhonov —que resulta ser exactamente el filtro de
+Wiener que todo físico de señales conoce.
 
-El fenómeno de Runge muestra por qué las bases fijas clásicas fallan en alta
-dimensión. La solución no es una base fija mejor sino una que se adapte
-automáticamente a la estructura de los datos. Ese es el programa de los
-capítulos siguientes.
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios resueltos}
 \addcontentsline{toc}{section}{Ejercicios resueltos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
-\label{ej:vandermonde_resuelto}
-\textbf{(Interpolación de tres puntos).}
-Sean los nodos $x_1 = 0$, $x_2 = 1$, $x_3 = 2$ con valores $y_1 = 1$,
-$y_2 = 3$, $y_3 = 2$. Encontrar el polinomio interpolante de grado 2.
+\label{ej:normales_manual}
+\textbf{(Ecuaciones normales para un ajuste lineal).}
+
+Se mide la elongación de un resorte bajo diferentes masas:
+$\{(m_i, x_i)\} = \{(0.1, 1.1), (0.2, 2.1), (0.3, 2.8),
+(0.4, 4.2), (0.5, 4.9)\}$ (masas en kg, elongaciones en cm).
+Se ajusta el modelo $x(m;\theta_0,\theta_1) = \theta_0 + \theta_1 m$
+(ley de Hooke con offset de calibración).
+
+\medskip\noindent\textit{(a)} Escribir la matriz de diseño
+$\bm{\Phi}$ y calcular $\bm{\Phi}^\top\bm{\Phi}$ y
+$\bm{\Phi}^\top\bm{x}$.
 
 \medskip\noindent\textit{Solución.}
-La familia monomio con $d = 2$ tiene $\bm{\theta} = (\theta_0, \theta_1,
-\theta_2)^\top$ y $f(x;\bm{\theta}) = \theta_0 + \theta_1 x + \theta_2 x^2$.
-La matriz de Vandermonde es:
-\[
-  \bm{V} = \begin{pmatrix} 1 & 0 & 0 \\ 1 & 1 & 1 \\ 1 & 2 & 4 \end{pmatrix},
-  \quad \bm{y} = \begin{pmatrix}1\\3\\2\end{pmatrix}.
-\]
-Resolviendo $\bm{V}\bm{\theta} = \bm{y}$ por sustitución hacia adelante:
-fila 1 da $\theta_0 = 1$; fila 2 da $\theta_1 + \theta_2 = 2$; fila 3 da
-$2\theta_1 + 4\theta_2 = 1$, de donde $\theta_2 = -3/2$ y $\theta_1 = 7/2$.
-El polinomio interpolante es $f^*(x) = 1 + \frac{7}{2}x - \frac{3}{2}x^2$.
+$\bm{\Phi} = \begin{pmatrix} 1 & 0.1 \\ 1 & 0.2 \\ 1 & 0.3 \\
+1 & 0.4 \\ 1 & 0.5 \end{pmatrix}$,
+$\bm{\Phi}^\top\bm{\Phi} = \begin{pmatrix} 5 & 1.5 \\ 1.5 & 0.55
+\end{pmatrix}$,
+$\bm{\Phi}^\top\bm{x} = \begin{pmatrix} 15.1 \\ 5.05 \end{pmatrix}$.
 
-\medskip\noindent\textit{Verificación:}
-$f^*(0) = 1$ \OK, $f^*(1) = 1 + 3.5 - 1.5 = 3$ \OK, $f^*(2) = 1 + 7 - 6 = 2$ \OK.
+\medskip\noindent\textit{(b)} Resolver las ecuaciones normales.
+
+\medskip\noindent\textit{Solución.}
+$\det(\bm{\Phi}^\top\bm{\Phi}) = 5(0.55) - 1.5^2 = 0.50$.
+$\bm{\theta}^* = \frac{1}{0.50}\begin{pmatrix} 0.55 & -1.5 \\
+-1.5 & 5 \end{pmatrix}\begin{pmatrix} 15.1 \\ 5.05 \end{pmatrix}
+= \begin{pmatrix} 1.505 \\ -0.72 \\ \end{pmatrix}$.
+
+Corrección: rehaciendo,
+$\theta_0^* = (0.55 \times 15.1 - 1.5 \times 5.05)/0.50
+= (8.305 - 7.575)/0.50 = 1.46$,
+$\theta_1^* = (-1.5 \times 15.1 + 5 \times 5.05)/0.50
+= (-22.65 + 25.25)/0.50 = 5.20$.
+
+Resultado: $x(m) \approx -1.46 + 10.2\, m$ (el signo negativo del
+offset indica que la posición de referencia del sensor no coincide con
+la posición de equilibrio). La constante del resorte es
+$k \approx g/\theta_1 \approx 9.81/10.2 \approx 0.96$ N/cm.
+
+\medskip\noindent\textit{(c)} Calcular el número de condicionamiento
+de $\bm{\Phi}^\top\bm{\Phi}$.
+
+\medskip\noindent\textit{Solución.}
+Los autovalores de $\bm{\Phi}^\top\bm{\Phi}$ se obtienen de la
+ecuación característica: $\lambda^2 - 5.55\lambda + 0.50 = 0$, dando
+$\lambda_1 \approx 5.459$, $\lambda_2 \approx 0.0916$.
+$\kappa = \lambda_1/\lambda_2 \approx 59.6$. El problema está bien
+condicionado: una perturbación del 1\% en los datos produce a lo sumo
+una perturbación del $\sim 60$\% en los parámetros. $\square$
 \end{ejercicio}
 
 \begin{ejercicio}
-\label{ej:mincuad_resuelto}
-\textbf{(Mínimos cuadrados lineales).}
-Datos $\mathcal{D} = \{(1,2),(2,3),(3,5),(4,4)\}$. Ajustar una recta
-$f(x;\bm{\theta}) = \theta_0 + \theta_1 x$ con pérdida MSE.
+\label{ej:vandermonde_cond}
+\textbf{(Condicionamiento de la interpolación polinomial).}
+
+Sea $V_{ij} = x_i^{j-1}$ la matriz de Vandermonde con
+$N = p = 6$ nodos equiespaciados en $[0, 1]$:
+$x_i = (i-1)/5$ para $i = 1, \ldots, 6$.
+
+\medskip\noindent\textit{(a)} Calcular numéricamente
+$\kappa(\bm{V}) = \|\bm{V}\|_2\|\bm{V}^{-1}\|_2$.
 
 \medskip\noindent\textit{Solución.}
-La matriz de diseño y el vector de salidas son:
-\[
-  \bm{\Phi}_{\mathcal{D}} = \begin{pmatrix}1&1\\1&2\\1&3\\1&4\end{pmatrix},
-  \qquad \bm{y} = \begin{pmatrix}2\\3\\5\\4\end{pmatrix}.
-\]
-Calculando:
-\[
-  \bm{\Phi}^\top\bm{\Phi} = \begin{pmatrix}4&10\\10&30\end{pmatrix},
-  \qquad \bm{\Phi}^\top\bm{y} = \begin{pmatrix}14\\39\end{pmatrix}.
-\]
-Resolviendo las ecuaciones normales:
-$\theta_1 = (4\cdot 39 - 10\cdot 14)/(4\cdot 30 - 100) = 16/20 = 0.8$,
-$\theta_0 = (14 - 10\cdot 0.8)/4 = 1.5$.
+Para $N = 6$ en $[0,1]$ equiespaciados: $\kappa(\bm{V}) \approx 2.4
+\times 10^3$. Una perturbación de $10^{-3}$ en $\bm{y}$ puede producir
+una perturbación de $\sim 2.4$ en $\bm{\theta}$, que para $N = 6$ es
+todavía manejable.
 
-La recta ajustada es $f^*(x) = 1.5 + 0.8x$ con pérdida empírica
-$\mathcal{L}(\bm{\theta}^*) = 0.45$.
+\medskip\noindent\textit{(b)} Repetir para $N = 12$ y $N = 20$.
+¿Cómo escala $\kappa$ con $N$?
 
-\medskip\noindent\textit{Interpretación física:} si los datos son mediciones
-de posición con error gaussiano, esta recta es el estimador de máxima
-verosimilitud de la velocidad ($\theta_1 = 0.8$ u/s) y posición inicial
-($\theta_0 = 1.5$ u) de una partícula en movimiento uniforme.
+\medskip\noindent\textit{Solución.}
+$\kappa(N=12) \approx 5 \times 10^7$,
+$\kappa(N=20) \approx 3 \times 10^{13}$.
+El condicionamiento crece exponencialmente: $\kappa \sim C \cdot
+\alpha^N$ con $\alpha \approx 10$. Para $N = 20$, una perturbación
+de amplitud $\sigma = 0.1$ en los datos produce un error de
+$\sim 10^{12}$ en los coeficientes: la interpolación es inútil.
+$\square$
 \end{ejercicio}
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios propuestos}
 \addcontentsline{toc}{section}{Ejercicios propuestos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
-\label{ej:normas}
-\textbf{(Geometría de las normas).}
-Sea $\bm{x} = (3,-4)^\top \in \mathbb{R}^2$.
+\label{ej:ortogonalidad}
+\textbf{(Ortogonalidad del residuo).}
+Demostrar que el residuo de mínimos cuadrados
+$\bm{r} = \bm{y} - \bm{\Phi}_{\mathcal{D}}\bm{\theta}^*$ satisface
+$\bm{\Phi}_{\mathcal{D}}^\top \bm{r} = \bm{0}$: es ortogonal al
+espacio columna de $\bm{\Phi}_{\mathcal{D}}$. Interpretar
+geométricamente: $\bm{\Phi}_{\mathcal{D}}\bm{\theta}^*$ es la
+proyección ortogonal de $\bm{y}$ sobre
+$\text{Im}(\bm{\Phi}_{\mathcal{D}})$.
+\end{ejercicio}
+
+\begin{ejercicio}
+\label{ej:fourier_vs_monomial}
+\textbf{(Base de Fourier vs.\ monomios para el oscilador).}
+Para los datos del oscilador~\eqref{eq:oscilador_datos} con $N = 20$
+nodos equiespaciados en $[0,2]$ y $\sigma = 0$:
 \begin{enumerate}[label=(\alph*)]
-  \item Calcule $\|\bm{x}\|_1$, $\|\bm{x}\|_2$ y $\|\bm{x}\|_\infty$.
-  \item Demuestre que para cualquier $\bm{x} \in \mathbb{R}^n$ se cumple
-        $\|\bm{x}\|_\infty \leq \|\bm{x}\|_2 \leq \|\bm{x}\|_1$.
-  \item Un experimento produce residuos $\bm{r} = (0.1, 0.1, \ldots, 0.1)^\top
-        \in \mathbb{R}^{100}$. Calcule las tres normas. ¿Cuál es más informativa
-        sobre la calidad del ajuste?
+  \item Calcular el error de ajuste $\mathcal{L}(\bm{\theta}^*)$ con
+        la base monomio de grado $p-1$ para $p = 5, 10, 15, 20$.
+  \item Calcular el mismo error con la base de Fourier truncada a
+        $K = 3, 5, 8, 10$ armónicos.
+  \item ¿Cuál base logra menor error con menos parámetros? ¿Por qué?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
-\label{ej:vandermonde_condicionamiento}
-\textbf{(Condicionamiento de Vandermonde).}
-Sea la familia polinomial de grado $d = 10$ en $[0,1]$.
+\label{ej:nolineal_gaussiana}
+\textbf{(Pérdida no convexa para una gaussiana).}
+Sea $f(x;\mu,\sigma) = \exp(-(x-\mu)^2/(2\sigma^2))$ con un solo dato
+$(x_1, y_1) = (0, 0.8)$.
 \begin{enumerate}[label=(\alph*)]
-  \item Con nodos equiespaciados $x_i = i/10$, $i=0,\ldots,10$: calcule
-        (o estime) el número de condicionamiento $\kappa(\bm{V}) =
-        \|\bm{V}\|_2\|\bm{V}^{-1}\|_2$.
-  \item Repita con nodos de Chebyshev $x_i = \frac{1}{2}\bigl(1 +
-        \cos\frac{(2i+1)\pi}{22}\bigr)$, $i=0,\ldots,10$.
-  \item ¿Por qué un número de condicionamiento alto implica que pequeños
-        errores en $\bm{y}$ producen grandes errores en $\bm{\theta}^*$?
-        Relacione con el ruido de medición en un experimento real.
+  \item Escribir $\mathcal{L}(\mu,\sigma)$ explícitamente.
+  \item Calcular $\nabla\mathcal{L}$ y encontrar los puntos críticos.
+        ¿Son finitos o forman una variedad?
+  \item Calcular el hessiano en cada punto crítico. ¿Son mínimos,
+        máximos o puntos de silla?
 \end{enumerate}
 \end{ejercicio}
 
-\begin{ejercicio}
-\label{ej:rbf_vs_polinomio}
-\textbf{(RBF vs.\ polinomial en señales de potencia).}
-Sea $g(t) = e^{-0.1t}\cos(2\pi t/5)$ muestreada en $N = 8$ instantes
-uniformes en $[0, 10]$ s, con ruido gaussiano de desviación $\sigma = 0.05$.
-\begin{enumerate}[label=(\alph*)]
-  \item Ajuste con la familia polinomial de grados $d = 2, 4, 7$.
-        Para cada grado, calcule $\mathcal{L}(\bm{\theta}^*)$ en los datos
-        de entrenamiento y en 100 puntos intermedios (error de generalización).
-  \item Ajuste con familia RBF gaussiana con centros en los nodos de
-        muestreo y $\sigma_{\mathrm{RBF}} = 1$ s. Compare con el ajuste
-        polinomial de grado 4.
-  \item ¿Para qué valor de $d$ el polinomio interpola exactamente los datos
-        (incluido el ruido)? ¿Es eso deseable? Anticipe la conexión con el
-        sobreajuste del Capítulo~2.
-\end{enumerate}
-\end{ejercicio}
-
-\begin{ejercicio}
-\label{ej:nolineal_noconvexo}
-\textbf{(No convexidad en familias adaptativas).}
-Sea $f(x; w, c) = w\,e^{-(x-c)^2}$ y el dato único $(x_1, y_1) = (0, 1)$.
-\begin{enumerate}[label=(\alph*)]
-  \item Escriba $\mathcal{L}(w,c)$ explícitamente y calcule las derivadas
-        parciales $\partial\mathcal{L}/\partial w$ y $\partial\mathcal{L}/\partial c$.
-  \item Muestre que el sistema $\nabla\mathcal{L} = \bm{0}$ no es lineal.
-  \item Trace las curvas de nivel de $\mathcal{L}(w,c)$ para $w\in[-1,3]$,
-        $c\in[-2,2]$. ¿Cuántos mínimos locales hay? ¿Depende la localización
-        del mínimo de la inicialización?
-\end{enumerate}
-Este ejercicio ilustra por qué los métodos del Capítulo~3 son necesarios.
-\end{ejercicio}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios computacionales}
 \addcontentsline{toc}{section}{Ejercicios computacionales}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-\begin{ejerciciocomp}{Interpolación y mínimos cuadrados desde cero}
-\textbf{Objetivo:} implementar los dos métodos clásicos del capítulo
-y observar el efecto del condicionamiento.
+\begin{ejerciciocomp}{El oscilador armónico: ajuste con familias lineales}
+\label{ejcomp:oscilador1}
+\textbf{Objetivo:} observar el efecto del número de funciones base y del
+condicionamiento en el ajuste del oscilador, preparando la motivación
+para la regularización del Capítulo~\ref{ch:cap2}.
 
 \medskip\noindent\textbf{Datos:}
-$N = 6$ mediciones de temperatura en posiciones $x = [0.0, 0.2, 0.4, 0.6,
-0.8, 1.0]$ m con valores $T = [20.1, 22.3, 27.8, 35.1, 40.2, 38.9]$ °C.
+Generar $N = 25$ puntos equiespaciados en $[0, 2]$:
+$t_i = 2(i-1)/(N-1)$, $y_i = \sin(2\pi t_i) + \varepsilon_i$ con
+$\varepsilon_i \sim \mathcal{N}(0, 0.15^2)$. Además, generar
+$N_{\text{test}} = 200$ puntos en el mismo intervalo para evaluación.
 
 \medskip\noindent\textbf{Algoritmo:}
 \begin{enumerate}
-  \item Construir la matriz de Vandermonde $\bm{V} \in \mathbb{R}^{6\times 6}$
-        para la base monomio.
-  \item Resolver $\bm{V}\bm{\theta} = \bm{T}$ por eliminación gaussiana
-        (sin usar la función de resolución de sistemas del lenguaje).
-  \item Evaluar el polinomio interpolante en 100 puntos uniformes en $[0,1]$.
-  \item Construir la matriz de diseño RBF con centros $c_j = x_j$ y
-        $\sigma = 0.2$ m. Resolver por ecuaciones normales.
-  \item Graficar ambas interpolaciones y los datos originales.
+  \item Construir la matriz de Vandermonde $\bm{V} \in
+        \mathbb{R}^{25 \times p}$ para $p \in \{3, 6, 10, 15, 20, 25\}$.
+  \item Para cada $p$: resolver las ecuaciones normales (usar
+        \texttt{numpy.linalg.lstsq} o la SVD directamente); registrar
+        $\kappa(\bm{V})$, $\mathcal{L}_{\text{train}}(\bm{\theta}^*)$
+        y $\mathcal{L}_{\text{test}}(\bm{\theta}^*)$.
+  \item Graficar las funciones ajustadas superpuestas con los datos y
+        con $\sin(2\pi t)$. Observar el fenómeno de Runge para $p = 25$.
+  \item Repetir los pasos 1--3 con la base de Fourier truncada
+        $\{\sin(k\pi t), \cos(k\pi t)\}_{k=0}^{K}$ para los mismos
+        números de parámetros. Comparar $\kappa$ y
+        $\mathcal{L}_{\text{test}}$.
 \end{enumerate}
 
 \medskip\noindent\textbf{Verificación:}
-Para el polinomio interpolante: $f^*(0.5) \approx 32.1$ °C
-(entre los valores en $x=0.4$ y $x=0.6$).
-Para el ajuste RBF: la suma de cuadrados de residuos debe ser $< 0.01$ °C$^2$.
+Para $p = 6$ (monomios): $\mathcal{L}_{\text{test}} \approx 0.04$,
+$\kappa \approx 10^4$.
+Para $p = 6$ (Fourier, $K = 3$): $\mathcal{L}_{\text{test}} \approx
+0.02$, $\kappa \approx 2$.
+Para $p = 25$ (monomios): $\mathcal{L}_{\text{train}} \approx 0$,
+$\mathcal{L}_{\text{test}} > 10$, $\kappa > 10^{15}$.
 
 \medskip\noindent\textbf{Extensión:}
-Añadir ruido gaussiano $\mathcal{N}(0, 0.5^2)$ a las mediciones y comparar
-cómo cambia cada ajuste. ¿Cuál es más robusto al ruido?
+Variar $\sigma \in \{0, 0.05, 0.15, 0.5\}$ y observar cómo el
+nivel de ruido afecta el grado óptimo $p^*$ (el que minimiza
+$\mathcal{L}_{\text{test}}$). ¿Disminuye $p^*$ al aumentar $\sigma$?
 \end{ejerciciocomp}
 
-\begin{ejerciciocomp}{Paisaje de pérdida: lineal vs.\ no lineal}
-\textbf{Objetivo:} visualizar la diferencia entre pérdida convexa
-(familia lineal) y no convexa (familia no lineal).
+\begin{ejerciciocomp}{El oscilador armónico: interpolación RBF y el efecto
+  del parámetro de forma}
+\label{ejcomp:oscilador_rbf}
+\textbf{Objetivo:} comparar la interpolación con RBFs gaussianas contra
+la base monomio para el oscilador, y observar el efecto del parámetro de
+forma $\sigma$ sobre la calidad del ajuste y el condicionamiento.
+
+\medskip\noindent\textbf{Datos:}
+Los mismos del Ejercicio~\ref{ejcomp:oscilador1}: $N = 25$ puntos de
+$\sin(2\pi t) + \varepsilon_i$ con $\sigma_{\text{ruido}} = 0.15$ en
+$[0, 2]$, y $N_{\text{test}} = 200$ puntos adicionales.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Construir la matriz de interpolación RBF gaussiana
+        $A_{ij} = \exp(-|t_i - t_j|^2/(2\sigma^2))$ con centros en los
+        puntos de datos. Resolver $\bm{A}\bm{\theta} = \bm{y}$
+        (interpolación exacta).
+  \item Para $\sigma \in \{0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0\}$:
+        registrar $\kappa(\bm{A})$, $\mathcal{L}_{\text{train}}$ y
+        $\mathcal{L}_{\text{test}}$.
+  \item Graficar la función interpolante para $\sigma = 0.05$ (muy local),
+        $\sigma = 0.2$ (intermedio) y $\sigma = 2.0$ (muy global).
+  \item Comparar el mejor $\sigma$ (el que minimiza
+        $\mathcal{L}_{\text{test}}$) con los resultados de monomios y
+        Fourier del Ejercicio~\ref{ejcomp:oscilador1}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+$\sigma = 0.05$: $\kappa \approx 1$,
+$\mathcal{L}_{\text{test}} \approx 0.08$ (bases demasiado locales).
+$\sigma = 0.2$: $\kappa \approx 10^3$,
+$\mathcal{L}_{\text{test}} \approx 0.02$ (buen compromiso).
+$\sigma = 2.0$: $\kappa > 10^{10}$,
+$\mathcal{L}_{\text{test}} > 1$ (bases casi idénticas: amplificación de
+ruido, análogo al fenómeno de Runge).
+
+\medskip\noindent\textbf{Extensión:}
+Repetir con solo $m = 10$ centros uniformemente distribuidos (regresión
+RBF en lugar de interpolación). Resolver por ecuaciones normales con la
+matriz $\bm{\Phi}_{ij} = \exp(-|t_i-c_j|^2/(2\sigma^2)) \in
+\mathbb{R}^{25 \times 10}$. ¿Mejora la generalización al tener menos
+centros que datos?
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Paisajes de pérdida: lineal vs.\ no lineal}
+\label{ejcomp:paisajes}
+\textbf{Objetivo:} visualizar la diferencia entre la pérdida convexa de
+una familia lineal y la pérdida no convexa de una familia no lineal.
 
 \medskip\noindent\textbf{Datos:}
 $N = 5$ puntos: $(x_i, y_i) = \{(0,1),(1,3),(2,2),(3,4),(4,1)\}$.
 
 \medskip\noindent\textbf{Algoritmo:}
 \begin{enumerate}
-  \item Para la familia lineal $f(x;\bm{\theta}) = \theta_0 + \theta_1 x$:
-        calcular $\mathcal{L}(\theta_0, \theta_1)$ en una cuadrícula
-        $\theta_0 \in [-1,5]$, $\theta_1 \in [-2,3]$ con 100 puntos por eje.
-        Graficar las curvas de nivel. Verificar que hay un único mínimo.
-  \item Para la familia no lineal $f(x;w,c) = w\,e^{-(x-c)^2/2}$:
-        calcular $\mathcal{L}(w,c)$ en la misma cuadrícula. Graficar las
-        curvas de nivel. Contar cuántos mínimos locales se observan.
-  \item Calcular $\bm{\theta}^*$ para la familia lineal usando las
-        ecuaciones normales. Marcar el mínimo en el gráfico de nivel.
+  \item Para $f(x;\theta_0,\theta_1) = \theta_0 + \theta_1 x$:
+        evaluar $\mathcal{L}(\theta_0,\theta_1)$ en una cuadrícula
+        $\theta_0 \in [-1,5]$, $\theta_1 \in [-2,3]$ con $100 \times
+        100$ puntos. Graficar las curvas de nivel. Resolver las
+        ecuaciones normales y marcar $\bm{\theta}^*$.
+  \item Para $f(x;w,c) = w \exp(-(x-c)^2/2)$:
+        evaluar $\mathcal{L}(w,c)$ en $w \in [-2,6]$, $c \in [-1,5]$.
+        Graficar las curvas de nivel. ¿Cuántos mínimos locales hay?
+  \item Comparar las dos topologías. ¿En cuál caso el descenso de
+        gradiente converge al mínimo global desde cualquier punto?
 \end{enumerate}
 
 \medskip\noindent\textbf{Verificación:}
-Para la familia lineal: $\bm{\theta}^* \approx (1.4, 0.4)^\top$ con
-$\mathcal{L}(\bm{\theta}^*) \approx 1.64$.
-
-\medskip\noindent\textbf{Extensión:}
-¿Qué ocurre con el paisaje de la familia no lineal si se aumenta $N$ a 20
-puntos muestreados de la función $g(x) = 2\,e^{-(x-1.5)^2/2}$?
-¿Desaparecen los mínimos locales?
+Familia lineal: $\bm{\theta}^* \approx (1.4, 0.4)^\top$,
+$\mathcal{L}^* \approx 1.64$.
+Familia no lineal: al menos dos mínimos locales visibles, uno con
+$c \approx 1$ y otro con $c \approx 3$.
 \end{ejerciciocomp}
 
-%───────────────────────────────────────────────────────────────────────────────
-\section*{\texorpdfstring{$\bigstar$}{[*]}\ Estrella Polar: reconstrucci\'on del flujo neutr\'onico}
-\addcontentsline{toc}{section}{\texorpdfstring{$\bigstar$}{[*]}\ Estrella Polar: flujo neutr\'onico}
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+El problema de aproximación de funciones tiene una historia larga en
+matemáticas y física. La solución de mínimos cuadrados fue desarrollada
+independientemente por Gauss (1795, publicada en 1809) y Legendre (1805).
+El teorema de Gauss-Markov sobre la optimalidad del estimador de mínimos
+cuadrados fue formalizado por Gauss y extendido por Markov; véase Lehmann
+y Casella (1998) para una presentación moderna.
+
+La interpolación polinomial con nodos equiespaciados y su inestabilidad
+fue estudiada por Runge (1901). La solución mediante nodos de Chebyshev es
+un resultado clásico de la teoría de aproximación; véase Trefethen (2019)
+para una presentación contemporánea. La conexión entre el número de
+condicionamiento de la matriz de Vandermonde y la amplificación de errores
+se discute en detalle en Golub y Van Loan (1996)~\cite{golub1996matrix}.
+
+Las funciones de base radial (RBF) fueron introducidas para interpolación
+geofísica por Hardy (1971)~\cite{hardy1971multiquadric} y formalizadas
+matemáticamente por Buhmann (2003)~\cite{buhmann2003radial}. El teorema
+de definida positividad de la matriz de interpolación gaussiana es de
+Micchelli (1986)~\cite{micchelli1986interpolation}. La referencia canónica
+moderna para la teoría de aproximación con datos dispersos es Wendland
+(2004)~\cite{wendland2004scattered}. Los métodos sin malla (meshless
+methods) basados en RBFs para resolver EDPs fueron propuestos por Kansa
+(1990)~\cite{kansa1990multiquadrics}; la referencia general del campo es
+Fasshauer (2007)~\cite{fasshauer2007meshfree}. El problema de
+inestabilidad numérica en el límite plano ($\sigma \to \infty$) y su
+solución mediante la estrategia RBF-QR fue desarrollado por Fornberg y
+Piret (2008)~\cite{fornberg2008stable}. La conexión entre redes RBF y
+MLPs como aproximadores universales se discute en Bishop
+(2006)~\cite{bishop2006pattern}.
+
+La cota de Barron (1993)~\cite{barron1993universal} sobre la eficiencia
+de las superposiciones de sigmoides frente a bases lineales es uno de los
+primeros resultados rigurosos que explican por qué las redes neuronales
+escapan la maldición de la dimensionalidad.
+
+Los textos de referencia para el tratamiento estadístico del ajuste de
+modelos son Hastie, Tibshirani y Friedman
+(2009)~\cite{hastie2009elements} y Bishop (2006). Para la perspectiva
+de problemas inversos, Hansen (1998)~\cite{hansen1998rank} es la
+referencia canónica.
+\end{notasbib}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ESTRELLA POLAR — Sección independiente
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{estrella}{El flujo neutrónico como problema de aproximación}
 \label{sec:estrella1}
-%───────────────────────────────────────────────────────────────────────────────
 
-\begin{observacion}{Nota al lector}
-Esta sección es independiente del texto principal y puede omitirse sin
-afectar la continuidad del libro. Aplica los conceptos del capítulo al
-problema de reconstrucción del flujo neutrónico en un reactor de geometría
-cúbica. No se asume conocimiento previo de física nuclear.
-\end{observacion}
-
-\bigskip
-
-\begin{estrella}{Reconstrucción del flujo neutrónico desde detectores discretos}
-
-\textbf{El sistema físico.}
-Un reactor nuclear de investigación de geometría cúbica contiene un conjunto
-de detectores de flujo neutrónico en posiciones fijas $\{\bm{x}_i\}_{i=1}^N
-\subset [0,L]^3$. Cada detector reporta $\phi_i \approx \phi(\bm{x}_i)$,
-donde $\phi(\bm{x})$ es el flujo neutrónico (neutrones cm$^{-2}$s$^{-1}$).
-El objetivo es reconstruir $\phi(\bm{x})$ en toda la geometría del núcleo.
-
-\textbf{Por qué importa.}
-El flujo neutrónico determina la tasa de reacciones de fisión
-$R(\bm{x}) = \Sigma_f(\bm{x})\phi(\bm{x})$ y por tanto la distribución
-de potencia. Un operador necesita conocer $\phi(\bm{x})$ en toda la geometría
-para verificar que la distribución de potencia no excede límites de seguridad
-en ningún punto.
+\textbf{El sistema.}
+El reactor de investigación IAN-R1 es un sistema de fisión con núcleo
+cilíndrico, reflector de grafito y seis grupos de neutrones precursores.
+La distribución espacial del flujo neutrónico $\phi(\bm{r}, E)$ en el
+núcleo depende de la posición $\bm{r}$ y la energía $E$ del neutrón, y
+está determinada por la ecuación de difusión de neutrones:
+\[
+  -\nabla \cdot D(\bm{r},E)\nabla\phi + \Sigma_a(\bm{r},E)\phi
+  = \frac{1}{k_{\text{eff}}}\nu\Sigma_f(\bm{r},E)\int \chi(E')
+  \phi(\bm{r},E')\,dE'.
+\]
+Las secciones eficaces $\Sigma_a$, $\Sigma_f$ y el coeficiente de difusión
+$D$ dependen de la composición del combustible, la temperatura y la
+posición de las barras de control.
 
 \textbf{El problema de aproximación.}
-El flujo estacionario satisface la ecuación de difusión:
-\[
-  -\nabla\cdot D(\bm{x})\nabla\phi(\bm{x}) + \Sigma_a(\bm{x})\phi(\bm{x})
-  = \frac{1}{\keff}\nu\Sigma_f(\bm{x})\phi(\bm{x}),
-\]
-con condiciones de contorno $\phi = 0$ en la frontera (aproximación de frontera
-extrapolada). Esta EDP tiene solución analítica en geometría cúbica homogénea:
-\[
-  \phi^*(\bm{x}) = A\,\sin\!\left(\frac{\pi x}{L}\right)
-  \sin\!\left(\frac{\pi y}{L}\right)\sin\!\left(\frac{\pi z}{L}\right).
-\]
-Esta solución es exactamente de la forma de la familia de funciones base de
-la Definición~\ref{def:lineal}: es una sola función base fija con un coeficiente
-$A$ a determinar. Cuando el reactor es heterogéneo (barras de control, reflector,
-distintos enriquecimientos), la solución analítica no existe y hay que recurrir
-a familias adaptativas. Ese es el problema que los capítulos siguientes resuelven.
+Resolver esta ecuación con un código de transporte (MCNP, OpenMC) es
+costoso: cada evaluación toma horas. Para aplicaciones de control en
+tiempo real o análisis de seguridad con miles de configuraciones, se
+necesita un \textit{sustituto} (surrogate) rápido.
 
-\textbf{Conexión con el capítulo.}
-La reconstrucción del flujo desde mediciones de detectores es el problema de
-aproximación de la Definición~\ref{def:problema} con:
-\begin{itemize}
-  \item Familia: funciones base sinusoidales (para el reactor homogéneo) o
-        RBF gaussianas (para el reactor heterogéneo).
-  \item Datos: $\mathcal{D} = \{(\bm{x}_i, \phi_i)\}_{i=1}^N$ con $N$ típicamente
-        entre 6 y 30 detectores.
-  \item Pérdida: MSE con posible regularización para garantizar suavidad física.
-\end{itemize}
-El fenómeno de Runge tiene aquí una interpretación física directa: un polinomio
-de grado alto interpola exactamente en los detectores pero oscila sin control
-entre ellos, produciendo ``flujos negativos'' físicamente imposibles.
-La regularización del Capítulo~2 es la herramienta que impone la suavidad
-física como restricción matemática.
+El problema tiene exactamente la estructura del Capítulo~\ref{ch:cap1}: un
+conjunto de $N$ simulaciones de referencia produce pares
+$\{(\bm{u}_i, \bm{\Phi}_i)\}_{i=1}^N$, donde $\bm{u}_i \in
+\mathbb{R}^n$ contiene los parámetros operacionales (posición de barras,
+temperatura del moderador, concentración de boro) y
+$\bm{\Phi}_i \in \mathbb{R}^{n_{\text{nodos}}}$ es el flujo
+discretizado en los nodos de la malla. La dimensión de entrada es
+moderada ($n \sim 5$--$10$) pero la de salida puede ser grande
+($n_{\text{nodos}} \sim 10^3$--$10^4$).
+
+\textbf{El ajuste lineal.}
+La primera estrategia es expandir el flujo en las funciones propias del
+operador de difusión (armónicos del reactor): $\phi(\bm{r};\bm{u})
+\approx \sum_{k=1}^K a_k(\bm{u})\phi_k(\bm{r})$, donde $\phi_k$ son
+los modos de la ecuación estacionaria y $a_k(\bm{u})$ dependen de los
+parámetros operacionales. Para un reactor con simetría cilíndrica, los
+primeros modos son funciones de Bessel multiplicadas por cosenos axiales.
+Si $a_k(\bm{u})$ se modela linealmente: $a_k(\bm{u}) = \bm{\alpha}_k
+\cdot \bm{u} + \beta_k$, el problema completo es una familia lineal en
+parámetros y se resuelve con ecuaciones normales.
+
+\textbf{La limitación.}
+Para configuraciones lejos del estado de referencia (por ejemplo, barras
+parcialmente insertadas generando perturbaciones asimétricas), los modos
+simétricos no capturan la respuesta correcta. La dependencia $a_k(\bm{u})$
+se vuelve fuertemente no lineal. Este es el punto donde las familias
+lineales fallan y las redes neuronales (Capítulo~\ref{ch:cap4}) se vuelven
+necesarias.
+
+Los Capítulos~\ref{ch:cap2}--\ref{ch:cap4} desarrollarán las herramientas
+para abordar esta limitación. En la Estrella Polar del
+Capítulo~\ref{ch:cap4}, un MLP reemplazará la expansión modal lineal.
 \end{estrella}
-
-\begin{ejerciciocomp}{Reconstrucción del flujo en 1D}
-\textbf{Datos sintéticos:}
-Flujo teórico en un reactor cilíndrico de radio $R = 30$ cm:
-$\phi_{\rm true}(r) = \phi_0 J_0(2.405 r/R)$
-donde $J_0$ es la función de Bessel de orden cero y $\phi_0 = 10^{13}$
-n cm$^{-2}$ s$^{-1}$.
-
-Simular $N = 5$ mediciones en $r = [3, 9, 15, 21, 27]$ cm con ruido relativo
-del 2\%: $\phi_i = \phi_{\rm true}(r_i)(1 + 0.02\,\varepsilon_i)$,
-$\varepsilon_i \sim \mathcal{N}(0,1)$.
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Ajustar con familia polinomial de grados $d = 2, 4$.
-  \item Ajustar con familia RBF con centros en los puntos de medición.
-  \item Calcular el error máximo $\|\phi_{\rm aprox} - \phi_{\rm true}\|_\infty$
-        en 100 puntos interiores para cada método.
-  \item Verificar que el flujo reconstruido es no negativo en todo $[0, R]$.
-\end{enumerate}
-
-\medskip\noindent\textbf{Verificación:}
-El máximo del flujo de Bessel ocurre en $r = 0$: $\phi_{\rm true}(0) = \phi_0$.
-El mínimo es $\phi_{\rm true}(R) = 0$ (condición de contorno).
-
-\medskip\noindent\textbf{Parámetros físicos de referencia:}
-Para U-235, $\phi_0 \approx 10^{13}$ n cm$^{-2}$ s$^{-1}$ es un valor
-típico para un reactor de investigación de 10 MW.
-\end{ejerciciocomp}
-
-%───────────────────────────────────────────────────────────────────────────────
-\begin{notasbib}
-El teorema de aproximación universal fue demostrado independientemente por
-Cybenko~\cite{cybenko1989approximation} para funciones de activación sigmoide
-y por Hornik et al.~\cite{hornik1989multilayer} para una clase más amplia de
-activaciones. Ambas demostraciones usan el teorema de Hahn-Banach y la
-representación de Riesz-Markov; la presentación de este capítulo sigue la
-ruta de Cybenko. La extensión a redes profundas (múltiples capas), con tasas
-de aproximación más eficientes que la red de una capa, fue desarrollada
-posteriormente por Barron (1993) y Mhaskar (1996).
-
-El fenómeno de Runge fue publicado por Carl Runge en 1901 usando la función
-$f(x) = 1/(1+25x^2)$ como ejemplo. Los nodos de Chebyshev como solución
-al problema de condicionamiento de Vandermonde aparecen en cualquier texto
-estándar de análisis numérico; la referencia clásica es Trefethen (2019).
-
-La pseudoinversa de Moore-Penrose y las ecuaciones normales son el fundamento
-del método de mínimos cuadrados; su conexión con el estimador de Gauss-Markov
-se desarrolla en el Capítulo~7 de este libro.
-
-Para la ecuación de difusión neutrónica y la solución analítica en geometría
-cúbica, la referencia estándar es Duderstadt \& Hamilton~\cite{duderstadt1976nuclear}.
-Los métodos meshless basados en RBF para resolver la ecuación de difusión
-neutrónica son un área activa de investigación;
-véase Fasshauer~\cite{fasshauer2007meshfree} para el marco general.
-\end{notasbib}

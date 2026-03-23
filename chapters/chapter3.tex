@@ -1,1246 +1,630 @@
-%═══════════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════════════════
+% CAPÍTULO 3 — GEOMETRÍA DEL ESPACIO DE PARÁMETROS Y PAISAJES DE PÉRDIDA
+% ═══════════════════════════════════════════════════════════════════════════════
+% Cambios principales:
+%   1. Apertura con la analogía de superficie de energía potencial (PES):
+%      el paisaje de pérdida ES un potencial de energía en R^p.
+%   2. Hessiano como curvatura, índice de Morse como clasificador de puntos
+%      críticos. Conexión con estados de transición en química.
+%   3. Convexidad presentada como la condición de estabilidad del potencial.
+%   4. Alta dimensión: argumento heurístico con matrices aleatorias (GOE)
+%      para la preponderancia de saddle points.
+%   5. Descenso de gradiente como dinámica sobremortigada (anticipo del Cap. 5).
+%   6. Oscilador: paisaje convexo (lineal) vs. no convexo (no lineal).
+%   7. Estrella Polar independiente al final.
+% ═══════════════════════════════════════════════════════════════════════════════
+
 \chapter{Geometría del espacio de parámetros y paisajes de pérdida}
 \label{ch:cap3}
-%═══════════════════════════════════════════════════════════════════════════════
 
-El Capítulo~\ref{ch:cap2} cerró con una advertencia: cuando la familia paramétrica
-es no lineal en $\bm{\theta}$, la pérdida empírica deja de ser una forma cuadrática
-convexa. Esto significa que el paisaje de $\mathcal{L}:\mathbb{R}^p \to \mathbb{R}$
-puede tener valles, crestas, mesetas y múltiples hoyos. Antes de diseñar un
-algoritmo para descender por ese paisaje, conviene estudiarlo con cuidado.
-
-Este capítulo desarrolla las herramientas del cálculo diferencial en $\mathbb{R}^p$
-que describen la geometría local y global de $\mathcal{L}$. El gradiente dice en
-qué dirección la función crece más rápido. El hessiano describe la curvatura local.
-La convexidad es la propiedad que garantiza un paisaje sin trampas. Y la no
-convexidad, que es la situación real de las redes neuronales, tiene una estructura
-en alta dimensión que resulta sorprendentemente manejable por razones que solo se
-ven cuando $p$ es grande.
-
-Para el físico, este capítulo es cálculo diferencial en alta dimensión: las mismas
-herramientas que se usan para analizar potenciales de energía en mecánica, campos
-escalares en electrodinámica o funcionales en mecánica cuántica, aplicadas ahora
-a la función de pérdida como objeto de estudio en sí mismo.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{La pérdida empírica como función escalar en \texorpdfstring{$\mathbb{R}^p$}{Rp}}
-\label{sec:loss_funcion}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{1}{1}
-
-\begin{definicion}{Pérdida empírica como función de los parámetros}
-\label{def:loss_funcion}
-Sea $f:\mathbb{R}^n \times \mathbb{R}^p \to \mathbb{R}$ una familia paramétrica
-y $\mathcal{D} = \{(\bm{x}_i, y_i)\}_{i=1}^N$ un conjunto de datos. La
-\textbf{pérdida empírica} se considera como función exclusivamente de $\bm{\theta}$:
-\[
-  \mathcal{L}: \mathbb{R}^p \longrightarrow \mathbb{R},
-  \qquad
-  \mathcal{L}(\bm{\theta}) = \frac{1}{N}\sum_{i=1}^N \ell\bigl(f(\bm{x}_i;\bm{\theta}),\,y_i\bigr).
-\]
-Los datos $\mathcal{D}$ son fijos; solo $\bm{\theta}$ varía. El dominio es
-$\mathbb{R}^p$, donde $p$ es el número de parámetros del modelo.
-\end{definicion}
-
-La diferenciabilidad de $\mathcal{L}$ se hereda de la de sus componentes por la
-regla de la cadena.
-
-\begin{proposicion}{Diferenciabilidad de la pérdida empírica}
-\label{prop:diff_loss}
-Si $f(\bm{x}_i;\cdot):\mathbb{R}^p \to \mathbb{R}$ es de clase $C^k$ en $\bm{\theta}$
-para todo $i$, y la función de pérdida $\ell:\mathbb{R}\times\mathbb{R}\to\mathbb{R}$
-es de clase $C^k$, entonces $\mathcal{L} \in C^k(\mathbb{R}^p)$.
-\end{proposicion}
-
-\begin{proof}
-$\mathcal{L}$ es suma finita de composiciones $\bm{\theta} \mapsto
-\ell(f(\bm{x}_i;\bm{\theta}), y_i)$. Cada composición es $C^k$ por la regla de
-la cadena para funciones $C^k$. La suma finita preserva la clase de diferenciabilidad.
-\end{proof}
-
-En casi todos los modelos de interés práctico se tiene $\mathcal{L} \in C^2(\mathbb{R}^p)$:
-la pérdida MSE con familia polinomial es $C^\infty$; con activaciones suaves como
-tanh o sigmoide la red neuronal también lo es; solo las activaciones no diferenciables
-como ReLU rompen esta regularidad en un conjunto de medida cero.
-
-\subsection{Superficies de nivel y conjuntos de sublevel}
-\label{subsec:nivel}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El paisaje de pérdida como superficie de energía}
+\label{sec:paisaje_intro}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{1}{2}
 
-La geometría de $\mathcal{L}$ se visualiza a través de sus superficies de nivel.
+El Capítulo~\ref{ch:cap2} cerró con una observación: cuando la familia
+paramétrica es no lineal en $\bm{\theta}$, la pérdida empírica deja de
+ser un paraboloide. Antes de diseñar un algoritmo que descienda por ese
+paisaje, conviene estudiarlo.
 
-\begin{definicion}{Superficie de nivel y conjunto de sublevel}
-\label{def:nivel}
-Sea $c \in \mathbb{R}$. La \textbf{superficie de nivel} de $\mathcal{L}$ para el
-valor $c$ es:
-\[
-  \mathcal{S}_c = \bigl\{\bm{\theta} \in \mathbb{R}^p : \mathcal{L}(\bm{\theta}) = c\bigr\}.
-\]
-El \textbf{conjunto de sublevel} es:
-\[
-  \mathcal{L}_c = \bigl\{\bm{\theta} \in \mathbb{R}^p : \mathcal{L}(\bm{\theta}) \leq c\bigr\}.
-\]
-\end{definicion}
+La herramienta conceptual más productiva es una que el físico ya posee:
+la \textbf{superficie de energía potencial} (PES). En mecánica clásica,
+el estado de un sistema conservativo queda determinado por la posición
+$\bm{q}$ en el espacio de configuración y el potencial
+$U(\bm{q}): \mathbb{R}^p \to \mathbb{R}$. Los puntos de equilibrio son
+los extremos de $U$; su estabilidad la determina la curvatura local
+(hessiano). La dinámica del sistema es descenso de gradiente (en el
+régimen sobremortigado) o movimiento hamiltoneano (con inercia).
 
-Para la familia lineal con pérdida MSE, $\mathcal{L}(\bm{\theta}) =
-\frac{1}{N}\|\bm{V}\bm{\theta}-\bm{y}\|_2^2$ es una forma cuadrática: sus
-superficies de nivel son \textbf{elipsoides} en $\mathbb{R}^p$ centrados en
-$\bm{\theta}^*$, y sus ejes están alineados con los vectores singulares derechos
-$\bm{w}_i$ de $\bm{V}$ con longitudes proporcionales a $1/\sigma_i$. El mínimo
-se encuentra en el centro del elipsoide. Para una red neuronal, la misma geometría
-local existe en torno a cada punto crítico, pero globalmente las superficies de nivel
-pueden ser no conexas y tener topología complicada.
+La pérdida empírica $\mathcal{L}(\bm{\theta})$ tiene exactamente la
+misma estructura: es una función escalar sobre $\mathbb{R}^p$ cuyo
+valor se quiere minimizar. Los parámetros $\bm{\theta}$ juegan el papel
+de las coordenadas generalizadas $\bm{q}$. El gradiente
+$\nabla_{\bm{\theta}}\mathcal{L}$ es la ``fuerza'' que impulsa al
+optimizador. El hessiano
+$\bm{H} = \nabla^2_{\bm{\theta}}\mathcal{L}$ es la curvatura local que
+determina la naturaleza de cada punto crítico. Las cuencas de atracción
+de los mínimos locales son las regiones del espacio de parámetros que
+convergen al mismo mínimo bajo descenso de gradiente.
 
-\begin{observacion}{Alta dimensión e intuición geométrica}
-En $\mathbb{R}^2$ o $\mathbb{R}^3$ se puede visualizar directamente la forma de
-$\mathcal{L}$. Para $p = 10^6$ la visualización directa es imposible, y la
-intuición geométrica formada en baja dimensión puede ser engañosa. Un resultado
-famoso de geometría en alta dimensión ilustra esta ruptura de intuición: casi toda
-la volumen de una bola de radio $r$ en $\mathbb{R}^p$ está concentrada en una
-cáscara delgada de grosor $O(r/p)$ cerca de la superficie. Los métodos de análisis
-de alta dimensión (concentración de medida, geometría estocástica) revelan que las
-redes neuronales operan en un régimen cuyas propiedades son cualitativamente
-distintas de las que la intuición de baja dimensión sugiere. A lo largo del capítulo
-se señalarán los puntos donde esa distinción es relevante.
-\end{observacion}
+Lo que hace al problema de ML cualitativamente diferente de la mecánica
+clásica es la \emph{dimensión}: un MLP modesto tiene
+$p \sim 10^3$--$10^6$ parámetros. La geometría de $\mathcal{L}$ en
+$\mathbb{R}^{10^6}$ no es una extrapolación directa de la experiencia
+en $\mathbb{R}^2$ o $\mathbb{R}^3$. La intuición geométrica falla de
+formas específicas y predecibles que solo se ven cuando $p$ es grande.
+Este capítulo desarrolla las herramientas para navegar esa geometría.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{El gradiente: dirección y magnitud del cambio}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Gradiente: la dirección de máximo ascenso}
 \label{sec:gradiente}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-\dificultad{2}{2}
+\dificultad{1}{1}
 
 \begin{definicion}{Gradiente de la pérdida}
 \label{def:gradiente}
-Sea $\mathcal{L} \in C^1(\mathbb{R}^p)$. El \textbf{gradiente} de $\mathcal{L}$
-en $\bm{\theta}$ es el vector:
-\[
-  \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})
-  = \left(\frac{\partial\mathcal{L}}{\partial\theta_1},\;
-           \frac{\partial\mathcal{L}}{\partial\theta_2},\;
-           \ldots,\;
-           \frac{\partial\mathcal{L}}{\partial\theta_p}\right)^\top
-  \in \mathbb{R}^p.
-\]
-La \textbf{derivada direccional} de $\mathcal{L}$ en $\bm{\theta}$ a lo largo
-de un vector unitario $\bm{v} \in \mathbb{R}^p$ ($\|\bm{v}\|_2 = 1$) es:
-\[
-  D_{\bm{v}}\mathcal{L}(\bm{\theta})
-  = \lim_{h \to 0} \frac{\mathcal{L}(\bm{\theta}+h\bm{v}) - \mathcal{L}(\bm{\theta})}{h}
-  = \bigl\langle \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}),\, \bm{v} \bigr\rangle.
-\]
+Para $\mathcal{L} \in C^1(\mathbb{R}^p)$, el \textbf{gradiente}
+$\nabla_{\bm{\theta}}\mathcal{L} \in \mathbb{R}^p$ es el vector cuya
+componente $j$-ésima es $\partial\mathcal{L}/\partial\theta_j$.
 \end{definicion}
 
-La segunda igualdad en la definición de derivada direccional es consecuencia de la
-diferenciabilidad de $\mathcal{L}$: la linealización de primer orden de $\mathcal{L}$
-alrededor de $\bm{\theta}$ es $\mathcal{L}(\bm{\theta}+h\bm{v}) \approx
-\mathcal{L}(\bm{\theta}) + h\langle\nabla_{\bm{\theta}}\mathcal{L}, \bm{v}\rangle$,
-de donde se obtiene el resultado dividiendo por $h$ y tomando el límite.
-
-\subsection{El gradiente como dirección de máximo ascenso}
-\label{subsec:max_ascenso}
-
-La siguiente proposición es la justificación matemática precisa de todos los
-algoritmos de descenso de gradiente que se estudiarán en el Capítulo~5.
-
-\begin{proposicion}{El gradiente apunta en la dirección de máximo ascenso}
+\begin{proposicion}{El gradiente como dirección de máximo ascenso}
 \label{prop:max_ascenso}
-Sea $\mathcal{L} \in C^1(\mathbb{R}^p)$ y $\bm{\theta} \in \mathbb{R}^p$
-con $\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}) \neq \bm{0}$. Entonces:
-\[
-  \max_{\|\bm{v}\|_2=1} D_{\bm{v}}\mathcal{L}(\bm{\theta})
-  = \|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\|_2,
-\]
-y el máximo se alcanza en la dirección
-$\bm{v}^* = \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\,/\,\|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\|_2$.
-En consecuencia, la dirección de \textbf{máximo descenso} es
-$-\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\,/\,\|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\|_2$.
+Para cualquier dirección unitaria $\bm{d} \in \mathbb{R}^p$ con
+$\|\bm{d}\|_2 = 1$:
+\begin{equation}
+  \left.\frac{d}{d\epsilon}\mathcal{L}(\bm{\theta}+\epsilon\bm{d})
+  \right|_{\epsilon=0}
+  = \nabla\mathcal{L}(\bm{\theta})^\top\bm{d}
+  \leq \|\nabla\mathcal{L}(\bm{\theta})\|_2,
+  \label{eq:derivada_dir}
+\end{equation}
+con igualdad si y solo si
+$\bm{d} = \nabla\mathcal{L}/\|\nabla\mathcal{L}\|_2$. El gradiente
+apunta en la dirección donde $\mathcal{L}$ crece más rápido; el
+antigradiente $-\nabla\mathcal{L}$ es la dirección de máximo descenso.
 \end{proposicion}
 
-\begin{proof}
-Por definición, $D_{\bm{v}}\mathcal{L}(\bm{\theta}) =
-\langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}), \bm{v}\rangle$.
-Por la desigualdad de Cauchy-Schwarz (Definición~\ref{def:inner}):
-\[
-  \langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}), \bm{v}\rangle
-  \;\leq\; \|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\|_2\,\|\bm{v}\|_2
-  = \|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\|_2,
-\]
-con igualdad si y solo si $\bm{v}$ es paralelo a
-$\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})$. Como $\|\bm{v}\|_2 = 1$,
-el máximo se alcanza en
-$\bm{v}^* = \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\,/\,
-\|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})\|_2$.
-\end{proof}
+Las superficies de nivel
+$\mathcal{S}_c = \{\bm{\theta}: \mathcal{L}(\bm{\theta}) = c\}$ son
+hipersuperficies en $\mathbb{R}^p$ (generalización de las curvas de
+nivel en 2D y de las superficies equipotenciales en electrostática). El
+gradiente es perpendicular a $\mathcal{S}_c$ en cada punto: mover
+$\bm{\theta}$ a lo largo de $\mathcal{S}_c$ no cambia la pérdida;
+moverse en la dirección del gradiente la cambia lo más rápido posible.
 
-\begin{fisicaconexion}{El gradiente en campos escalares físicos}
-La Proposición~\ref{prop:max_ascenso} es un resultado que el físico ya conoce
-en otro lenguaje. El gradiente de un campo escalar apunta en la dirección de
-máximo crecimiento: el gradiente de la temperatura $\nabla T(\bm{r})$ apunta
-hacia el lugar más caliente; el gradiente del potencial eléctrico $\nabla V(\bm{r})$
-apunta hacia el lugar de mayor potencial; el gradiente de la presión $\nabla P(\bm{r})$
-apunta hacia la zona de mayor presión. En todos estos casos, la fuerza física
-asociada es proporcional al \emph{negativo} del gradiente: la corriente de calor
-fluye de mayor a menor temperatura, el campo eléctrico $\bm{E} = -\nabla V$ apunta
-de mayor a menor potencial, el fluido se mueve hacia menor presión. El descenso de
-gradiente en optimización es exactamente esa misma idea: moverse en la dirección
-$-\nabla\mathcal{L}$ como si la función de pérdida fuera un potencial que genera
-una ``fuerza'' que empuja al sistema hacia el mínimo.
-\end{fisicaconexion}
-
-\begin{observacion}{Localidad del gradiente}
-La Proposición~\ref{prop:max_ascenso} afirma que $-\nabla_{\bm{\theta}}\mathcal{L}$
-es la mejor dirección de descenso \emph{localmente}: en el punto $\bm{\theta}$,
-para desplazamientos infinitesimales. Esto no implica que moverse en esa dirección
-indefinidamente sea óptimo. El gradiente cambia a lo largo del camino de descenso,
-y la dirección óptima a cada instante puede diferir significativamente de la
-dirección inicial. Esta distinción es la fuente de los distintos comportamientos
-de los algoritmos de descenso según la tasa de aprendizaje elegida, como se
-analizará en el Capítulo~5.
-\end{observacion}
-
-\subsection{El jacobiano y el gradiente de la pérdida empírica}
-\label{subsec:jacobiano}
-
-Para el cálculo explícito del gradiente de $\mathcal{L}$ es útil introducir el
-jacobiano de la familia respecto a los parámetros.
-
-\begin{definicion}{Jacobiano de la familia paramétrica}
-\label{def:jacobiano}
-Sea $f:\mathbb{R}^n\times\mathbb{R}^p\to\mathbb{R}$ una familia paramétrica de
-clase $C^1$ en $\bm{\theta}$. El \textbf{jacobiano} de $f$ evaluado en el conjunto
-de datos $\mathcal{D}$ es la matriz $\bm{J}_f(\bm{\theta}) \in \mathbb{R}^{N\times p}$
-con entradas:
-\[
-  \bigl(\bm{J}_f(\bm{\theta})\bigr)_{ij}
-  = \frac{\partial f(\bm{x}_i;\bm{\theta})}{\partial\theta_j},
-  \qquad i=1,\ldots,N,\quad j=1,\ldots,p.
-\]
-La $i$-ésima fila de $\bm{J}_f$ es el gradiente de $f(\bm{x}_i;\cdot)$ respecto
-a $\bm{\theta}$, traspuesto.
-\end{definicion}
-
-\begin{proposicion}{Gradiente de la pérdida MSE}
-\label{prop:grad_mse}
-Para la pérdida $\ell_{\mathrm{MSE}}$, el gradiente de la pérdida empírica es:
-\[
-  \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})
-  = \frac{2}{N}\,\bm{J}_f(\bm{\theta})^\top\,\bigl(\bm{f}(\bm{\theta}) - \bm{y}\bigr),
-\]
-donde $\bm{f}(\bm{\theta}) = (f(\bm{x}_1;\bm{\theta}),\ldots,f(\bm{x}_N;\bm{\theta}))^\top
-\in \mathbb{R}^N$ es el vector de predicciones y $\bm{y} = (y_1,\ldots,y_N)^\top$.
-\end{proposicion}
-
-\begin{proof}
-Aplicando la regla de la cadena a cada término de la suma:
-\[
-  \frac{\partial}{\partial\theta_j}(f(\bm{x}_i;\bm{\theta})-y_i)^2
-  = 2\,(f(\bm{x}_i;\bm{\theta})-y_i)\,\frac{\partial f(\bm{x}_i;\bm{\theta})}{\partial\theta_j}.
-\]
-Sumando sobre $i$ y dividiendo por $N$:
-\[
-  \frac{\partial\mathcal{L}}{\partial\theta_j}
-  = \frac{2}{N}\sum_{i=1}^N (f(\bm{x}_i;\bm{\theta})-y_i)
-    \,\bigl(\bm{J}_f(\bm{\theta})\bigr)_{ij}.
-\]
-Reconociendo la estructura de producto matricial,
-$\nabla_{\bm{\theta}}\mathcal{L} = \frac{2}{N}\bm{J}_f^\top(\bm{f}-\bm{y})$.
-\end{proof}
-
-\begin{observacion}{Recuperación de las ecuaciones normales}
-Para la familia lineal, $f(\bm{x}_i;\bm{\theta}) = \bm{v}_i^\top\bm{\theta}$ donde
-$\bm{v}_i^\top$ es la $i$-ésima fila de $\bm{V}$. Entonces $\bm{J}_f(\bm{\theta})
-= \bm{V}$ (el jacobiano es la matriz de diseño, constante en $\bm{\theta}$) y la
-Proposición~\ref{prop:grad_mse} da:
-\[
-  \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta})
-  = \frac{2}{N}\bm{V}^\top(\bm{V}\bm{\theta}-\bm{y}).
-\]
-Igualando a cero se obtienen exactamente las ecuaciones normales de la
-Proposición~\ref{prop:normales}. Para una familia no lineal, $\bm{J}_f$ depende
-de $\bm{\theta}$ y el sistema $\nabla_{\bm{\theta}}\mathcal{L} = \bm{0}$ es
-no lineal: no tiene solución de forma cerrada en general.
-\end{observacion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{El hessiano: curvatura local del paisaje}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Hessiano: curvatura y clasificación de puntos críticos}
 \label{sec:hessiano}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-\dificultad{3}{3}
+\dificultad{2}{3}
 
-El gradiente describe el cambio de primer orden de $\mathcal{L}$. El hessiano
-describe el cambio de segundo orden: la curvatura. Esta información es la que
-distingue entre un mínimo, un máximo y un punto de silla.
-
-\begin{definicion}{Matriz hessiana}
+\begin{definicion}{Hessiano}
 \label{def:hessiano}
-Sea $\mathcal{L} \in C^2(\mathbb{R}^p)$. La \textbf{matriz hessiana} de
-$\mathcal{L}$ en $\bm{\theta}$ es la matriz $\bm{H}(\bm{\theta}) \in
-\mathbb{R}^{p\times p}$ con entradas:
-\[
-  H_{ij}(\bm{\theta})
-  = \frac{\partial^2\mathcal{L}}{\partial\theta_i\,\partial\theta_j}(\bm{\theta}),
-  \qquad i,j = 1,\ldots,p.
-\]
-Por el teorema de Schwarz, $H_{ij} = H_{ji}$ siempre que $\mathcal{L} \in C^2$,
-de modo que $\bm{H}(\bm{\theta})$ es simétrica para todo $\bm{\theta}$.
+Para $\mathcal{L} \in C^2(\mathbb{R}^p)$, el \textbf{hessiano}
+$\bm{H}(\bm{\theta}) \in \mathbb{R}^{p \times p}$ tiene entradas
+$H_{jk} = \partial^2\mathcal{L}/\partial\theta_j\partial\theta_k$.
+Es simétrico (por el teorema de Schwarz).
 \end{definicion}
 
-La importancia del hessiano proviene de la aproximación de Taylor de segundo orden.
-
-\begin{proposicion}{Aproximación cuadrática local}
-\label{prop:taylor2}
-Sea $\mathcal{L} \in C^2(\mathbb{R}^p)$, $\bm{\theta}_0 \in \mathbb{R}^p$ y
-$\bm{d} \in \mathbb{R}^p$. Entonces:
-\[
-  \mathcal{L}(\bm{\theta}_0 + \bm{d})
-  = \mathcal{L}(\bm{\theta}_0)
-  + \langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}_0),\,\bm{d}\rangle
-  + \frac{1}{2}\,\bm{d}^\top\bm{H}(\bm{\theta}_0)\bm{d}
-  + O(\|\bm{d}\|_2^3).
-\]
-\end{proposicion}
-
-Esta expansión es el punto de partida de todos los métodos de optimización de
-segundo orden, en particular del método de Newton que se estudiará en el
-Capítulo~5.
-
-\subsection{Curvatura direccional}
-\label{subsec:curvatura}
-
-\dificultad{3}{3}
-
-En la dirección de un vector unitario $\bm{v}$, la curvatura de $\mathcal{L}$
-en $\bm{\theta}_0$ es:
-\[
-  \kappa_{\bm{v}}(\bm{\theta}_0)
-  = \bm{v}^\top\bm{H}(\bm{\theta}_0)\bm{v}.
-\]
-Cuando $\bm{v} = \bm{e}_j$ (el $j$-ésimo vector canónico), esto es simplemente
-$H_{jj}(\bm{\theta}_0)$, la curvatura a lo largo del eje $\theta_j$.
-
-Como $\bm{H}(\bm{\theta}_0)$ es simétrica, el teorema espectral garantiza que
-existe una base ortonormal de $\mathbb{R}^p$ formada por autovectores
-$\bm{v}_1,\ldots,\bm{v}_p$ con autovalores reales $\mu_1 \geq \mu_2 \geq \cdots
-\geq \mu_p$. En estas direcciones la aproximación cuadrática se desacopla:
-\[
-  \mathcal{L}(\bm{\theta}_0 + \bm{d})
-  \approx \mathcal{L}(\bm{\theta}_0)
-  + \sum_{k=1}^p \Bigl(
-    \langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}_0),\bm{v}_k\rangle\,d_k
-    + \frac{\mu_k}{2}\,d_k^2\Bigr),
-\]
-donde $d_k = \langle\bm{d},\bm{v}_k\rangle$. La función se comporta localmente
-como una suma de parábolas independientes en cada dirección espectral, con curvatura
-$\mu_k$: positiva para $\mu_k > 0$ (cóncava hacia arriba, mínimo local en esa
-dirección), negativa para $\mu_k < 0$ (cóncava hacia abajo, máximo local), y nula
-para $\mu_k = 0$ (plana en esa dirección).
-
-\begin{fisicaconexion}{El hessiano como matriz de modos normales}
-En mecánica clásica, el hessiano del potencial de energía $V(\bm{q})$ evaluado
-en un punto de equilibrio $\bm{q}_0$ (donde $\nabla V(\bm{q}_0) = \bm{0}$) es
-exactamente la \textbf{matriz de constantes de fuerza}: la aproximación armónica
-$V(\bm{q}_0+\bm{u}) \approx V(\bm{q}_0) + \frac{1}{2}\bm{u}^\top\bm{H}_V\bm{u}$
-define un sistema de osciladores acoplados. Diagonalizar $\bm{H}_V$ es precisamente
-encontrar los \textbf{modos normales}: los autovectores son las direcciones de
-vibración desacopladas y los autovalores son las constantes de rigidez en cada
-dirección, proporcionales al cuadrado de las frecuencias propias
-($\omega_k^2 \propto \mu_k$). Un modo con $\mu_k > 0$ corresponde a una dirección
-estable (oscilación); uno con $\mu_k < 0$ corresponde a una dirección inestable
-(la partícula se aleja del equilibrio, análogo a un punto de silla). El análisis
-del hessiano de la función de pérdida en un punto crítico es, formalmente, la misma
-operación que el análisis de modos normales en mecánica.
-\end{fisicaconexion}
-
-\subsection{Hessiano de la pérdida MSE}
-\label{subsec:hess_mse}
-
-\begin{proposicion}{Hessiano de la pérdida MSE}
-\label{prop:hess_mse}
-Para la pérdida $\ell_{\mathrm{MSE}}$, el hessiano de la pérdida empírica es:
-\[
-  \bm{H}(\bm{\theta})
-  = \frac{2}{N}\Bigl[\bm{J}_f(\bm{\theta})^\top\bm{J}_f(\bm{\theta})
-    + \sum_{i=1}^N r_i(\bm{\theta})\,\bm{G}_i(\bm{\theta})\Bigr],
-\]
-donde $r_i(\bm{\theta}) = f(\bm{x}_i;\bm{\theta}) - y_i$ son los \textbf{residuos}
-y $\bm{G}_i(\bm{\theta}) \in \mathbb{R}^{p\times p}$ es la matriz hessiana de
-$f(\bm{x}_i;\cdot)$ en $\bm{\theta}$.
-\end{proposicion}
-
-\begin{proof}
-De la Proposición~\ref{prop:grad_mse}, el $j$-ésimo componente del gradiente es:
-\[
-  \frac{\partial\mathcal{L}}{\partial\theta_j}
-  = \frac{2}{N}\sum_{i=1}^N r_i\,\frac{\partial f(\bm{x}_i;\bm{\theta})}{\partial\theta_j}.
-\]
-Derivando respecto a $\theta_k$:
-\begin{align*}
-  H_{jk} = \frac{\partial^2\mathcal{L}}{\partial\theta_k\partial\theta_j}
-  &= \frac{2}{N}\sum_{i=1}^N \left[
-    \frac{\partial f(\bm{x}_i;\bm{\theta})}{\partial\theta_k}
-    \frac{\partial f(\bm{x}_i;\bm{\theta})}{\partial\theta_j}
-    + r_i\,\frac{\partial^2 f(\bm{x}_i;\bm{\theta})}{\partial\theta_k\partial\theta_j}
-  \right].
-\end{align*}
-Reconociendo $(\bm{J}_f^\top\bm{J}_f)_{jk} = \sum_i
-\frac{\partial f_i}{\partial\theta_j}\frac{\partial f_i}{\partial\theta_k}$
-y $(\bm{G}_i)_{jk} = \frac{\partial^2 f_i}{\partial\theta_j\partial\theta_k}$,
-se obtiene el resultado.
-\end{proof}
-
-\begin{observacion}{La aproximación de Gauss-Newton}
-\label{obs:gaussnewton}
-En el mínimo $\bm{\theta}^*$, si el ajuste es bueno, los residuos $r_i(\bm{\theta}^*)
-\approx 0$ y el segundo término del hessiano es despreciable:
-\[
-  \bm{H}(\bm{\theta}^*) \approx \frac{2}{N}\bm{J}_f(\bm{\theta}^*)^\top\bm{J}_f(\bm{\theta}^*).
-\]
-Esta aproximación, conocida como \textbf{aproximación de Gauss-Newton}, es semidefinida
-positiva (pues $\bm{J}_f^\top\bm{J}_f$ siempre lo es) y es de fácil cómputo porque
-no requiere calcular las segundas derivadas de $f$. Para la familia lineal,
-$\bm{J}_f = \bm{V}$ y el hessiano es exactamente $\frac{2}{N}\bm{V}^\top\bm{V}$,
-constante e independiente de $\bm{\theta}$: el paisaje cuadrático del Capítulo~2
-emerge como caso particular.
-\end{observacion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Puntos críticos y su clasificación}
-\label{sec:criticos}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{2}{3}
-
-\begin{definicion}{Punto crítico}
-\label{def:critico}
-Un punto $\bm{\theta}^* \in \mathbb{R}^p$ es un \textbf{punto crítico} de
-$\mathcal{L} \in C^1(\mathbb{R}^p)$ si:
-\[
-  \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*) = \bm{0}.
-\]
-\end{definicion}
-
-Los puntos críticos son los candidatos a mínimos de $\mathcal{L}$, pero no todos
-los puntos críticos son mínimos.
-
-\begin{proposicion}{Condición necesaria de primer orden}
-\label{prop:cond1}
-Si $\bm{\theta}^*$ es un mínimo local de $\mathcal{L} \in C^1(\mathbb{R}^p)$,
-entonces $\bm{\theta}^*$ es un punto crítico.
-\end{proposicion}
-
-\begin{proof}
-Supóngase que $\bm{\theta}^*$ es mínimo local pero $\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*)
-\neq \bm{0}$. Sea $\bm{v} = -\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*)/
-\|\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*)\|_2$. Por diferenciabilidad:
-\[
-  \mathcal{L}(\bm{\theta}^* + h\bm{v})
+El hessiano es la curvatura local del paisaje. En la expansión de Taylor
+de segundo orden alrededor de un punto crítico $\bm{\theta}^*$ (donde
+$\nabla\mathcal{L} = \bm{0}$):
+\begin{equation}
+  \mathcal{L}(\bm{\theta}^* + \bm{\delta})
   = \mathcal{L}(\bm{\theta}^*)
-  + h\underbrace{\langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*),\bm{v}\rangle}_{-\|\nabla\mathcal{L}\|_2 < 0}
-  + O(h^2).
-\]
-Para $h > 0$ suficientemente pequeño, el lado derecho es menor que
-$\mathcal{L}(\bm{\theta}^*)$, contradiciendo que $\bm{\theta}^*$ es mínimo local.
-\end{proof}
+  + \frac{1}{2}\bm{\delta}^\top\bm{H}(\bm{\theta}^*)\bm{\delta}
+  + O(\|\bm{\delta}\|^3).
+  \label{eq:taylor_hessiano}
+\end{equation}
+La naturaleza del punto crítico depende del signo de los autovalores
+de $\bm{H}$, exactamente como en el análisis de estabilidad de
+equilibrios mecánicos:
 
-\subsection{Clasificación mediante el hessiano}
-\label{subsec:clasificacion}
-
-\begin{proposicion}{Condición suficiente de segundo orden}
-\label{prop:cond2}
-Sea $\bm{\theta}^*$ un punto crítico de $\mathcal{L} \in C^2(\mathbb{R}^p)$.
-\begin{enumerate}
-  \item Si $\bm{H}(\bm{\theta}^*)$ es \textbf{definida positiva} ($\mu_k > 0$
-        para todo $k$), entonces $\bm{\theta}^*$ es un \textbf{mínimo local
-        estricto}.
-  \item Si $\bm{H}(\bm{\theta}^*)$ es \textbf{definida negativa} ($\mu_k < 0$
-        para todo $k$), entonces $\bm{\theta}^*$ es un \textbf{máximo local
-        estricto}.
-  \item Si $\bm{H}(\bm{\theta}^*)$ es \textbf{indefinida} (tiene autovalores
-        positivos y negativos), entonces $\bm{\theta}^*$ es un \textbf{punto
-        de silla}.
-\end{enumerate}
-\end{proposicion}
-
-\begin{proof}
-Para el caso 1: por la Proposición~\ref{prop:taylor2}, con $\nabla\mathcal{L}(\bm{\theta}^*)
-= \bm{0}$:
-\[
-  \mathcal{L}(\bm{\theta}^* + \bm{d})
-  = \mathcal{L}(\bm{\theta}^*)
-  + \frac{1}{2}\bm{d}^\top\bm{H}(\bm{\theta}^*)\bm{d}
-  + O(\|\bm{d}\|_2^3).
-\]
-Si $\bm{H}(\bm{\theta}^*)$ es definida positiva con mínimo autovalor $\mu_{\min} > 0$:
-\[
-  \bm{d}^\top\bm{H}(\bm{\theta}^*)\bm{d} \geq \mu_{\min}\|\bm{d}\|_2^2.
-\]
-Para $\|\bm{d}\|_2$ suficientemente pequeño, el término $O(\|\bm{d}\|_2^3)$ es
-dominado por $\frac{\mu_{\min}}{2}\|\bm{d}\|_2^2 > 0$, por tanto
-$\mathcal{L}(\bm{\theta}^*+\bm{d}) > \mathcal{L}(\bm{\theta}^*)$.
-Los casos 2 y 3 se demuestran de forma análoga.
-\end{proof}
-
-\begin{definicion}{Índice de Morse de un punto crítico}
+\begin{definicion}{Clasificación de puntos críticos (índice de Morse)}
 \label{def:morse}
-El \textbf{índice de Morse} de un punto crítico no degenerado $\bm{\theta}^*$
-(donde $\bm{H}(\bm{\theta}^*)$ no tiene autovalores nulos) es el número de
-autovalores negativos de $\bm{H}(\bm{\theta}^*)$:
-\[
-  \mathrm{ind}(\bm{\theta}^*) = \#\{k : \mu_k(\bm{H}(\bm{\theta}^*)) < 0\}.
-\]
-Un mínimo local tiene índice $0$. Un máximo local tiene índice $p$. Un punto de
-silla de índice $q \in \{1,\ldots,p-1\}$ tiene $q$ direcciones de descenso y
-$p-q$ de ascenso.
+Sea $\bm{\theta}^*$ un punto crítico no degenerado
+($\det(\bm{H}) \neq 0$) con autovalores
+$\mu_1 \leq \mu_2 \leq \cdots \leq \mu_p$. El \textbf{índice de
+Morse} $\mathcal{I}(\bm{\theta}^*)$ es el número de autovalores
+negativos de $\bm{H}(\bm{\theta}^*)$.
+\begin{itemize}
+  \item $\mathcal{I} = 0$ (todos $\mu_i > 0$): \textbf{mínimo local}.
+        Punto de equilibrio estable.
+  \item $\mathcal{I} = p$ (todos $\mu_i < 0$): \textbf{máximo local}.
+        Equilibrio inestable en todas las direcciones.
+  \item $0 < \mathcal{I} < p$: \textbf{punto de silla} de índice
+        $\mathcal{I}$. Mínimo en $p - \mathcal{I}$ direcciones,
+        máximo en $\mathcal{I}$.
+\end{itemize}
 \end{definicion}
 
-\subsection{Puntos de silla en alta dimensión}
-\label{subsec:sillas_alta_dim}
+El físico reconoce esta clasificación inmediatamente. Un punto de silla
+de índice 1 es un \textbf{estado de transición} en la terminología de
+la química: un punto que es mínimo de energía en todas las direcciones
+excepto una (la coordenada de reacción), en la cual es máximo. La tasa
+de reacción es proporcional a $\exp(-\Delta E^\ddagger / k_BT)$, donde
+$\Delta E^\ddagger$ es la altura de la barrera (diferencia de
+$\mathcal{L}$ entre el saddlepoint y el mínimo adyacente). Esta misma
+expresión aparecerá en el Capítulo~\ref{ch:cap5} como la probabilidad
+de que el SGD (con su ``temperatura'' $T_{\text{eff}}$) escape de un
+mínimo local.
 
-\dificultad{3}{3}
+\begin{proposicion}{Número de condicionamiento y convergencia}
+\label{prop:conv_cuad}
+Para $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top
+\bm{H}\bm{\theta} - \bm{b}^\top\bm{\theta}$ con $\bm{H} \succ 0$, el
+descenso de gradiente con paso $\eta^* = 2/(\mu_1 + \mu_p)$ converge
+como:
+\begin{equation}
+  \|\bm{\theta}^{(k)} - \bm{\theta}^*\|_2
+  \leq \left(\frac{\kappa - 1}{\kappa + 1}\right)^k
+  \|\bm{\theta}^{(0)} - \bm{\theta}^*\|_2,
+  \label{eq:conv_cuad}
+\end{equation}
+donde $\kappa = \mu_p/\mu_1$ es el número de condicionamiento del
+hessiano. Para alcanzar error $\varepsilon$, se necesitan
+$k \sim \kappa \log(1/\varepsilon)$ iteraciones.
+\end{proposicion}
 
-En $\mathbb{R}^1$, los puntos críticos son mínimos, máximos o puntos de inflexión.
-En $\mathbb{R}^p$ con $p$ grande, la situación es radicalmente diferente.
+\begin{proof}
+El error $\bm{e}^{(k)} = \bm{\theta}^{(k)} - \bm{\theta}^*$ satisface
+$\bm{e}^{(k+1)} = (\bm{I} - \eta\bm{H})\bm{e}^{(k)}$, luego
+$\bm{e}^{(k)} = (\bm{I}-\eta\bm{H})^k\bm{e}^{(0)}$. En la base de
+autovectores de $\bm{H}$, la componente $i$ del error evoluciona como
+$(1-\eta\mu_i)^k e_i^{(0)}$. La tasa de contracción es
+$\rho = \max_i|1-\eta\mu_i|$. Eligiendo $\eta^* = 2/(\mu_1+\mu_p)$ se
+minimiza $\rho$:
+$\rho^* = (\mu_p-\mu_1)/(\mu_p+\mu_1) = (\kappa-1)/(\kappa+1)$.
+$\square$
+\end{proof}
 
-\begin{observacion}{Abundancia de puntos de silla}
-\label{obs:sillas}
-Un punto crítico aleatorio de una función ``genérica'' en $\mathbb{R}^p$ tiene cada
-autovalor del hessiano positivo o negativo con probabilidad $1/2$,
-independientemente. La probabilidad de que sea un mínimo (todos los $p$ autovalores
-positivos) es $2^{-p}$. Para $p = 10^6$ esta probabilidad es $\approx 10^{-300000}$:
-en la práctica, los únicos puntos críticos que existen son puntos de silla.
+El número de condicionamiento $\kappa$ mide cuánto más ``duro'' es el
+paisaje en la dirección de máxima curvatura que en la de mínima. Para
+$\kappa \gg 1$, las superficies de nivel son elipsoides muy alargados:
+el descenso de gradiente zigzaguea a lo largo del valle estrecho en
+lugar de descender directamente al mínimo. Esto es exactamente el
+problema de las vibraciones anisótropas de un sistema con frecuencias
+muy diferentes: el modo de baja frecuencia domina la dinámica pero
+converge lentamente. El Capítulo~\ref{ch:cap5} mostrará que los
+optimizadores adaptativos (Adam, RMSProp) resuelven este problema
+precondicionando el gradiente, de la misma forma que la
+diagonalización de la matriz de masa en mecánica resuelve las
+vibraciones acopladas.
 
-Esto tiene consecuencias importantes para la optimización en redes neuronales.
-Contrariamente a la creencia inicial, el problema principal no es quedar atrapado
-en mínimos locales: los mínimos locales son exponencialmente raros. El verdadero
-obstáculo son los puntos de silla, donde el gradiente es cero pero el punto no
-es un mínimo. Los algoritmos de descenso de gradiente con ruido (como SGD) tienen
-la propiedad de escapar de los puntos de silla porque las fluctuaciones estocásticas
-rompen la simetría local. Esto se analizará en el Capítulo~5.
-\end{observacion}
-
-\begin{fisicaconexion}{Puntos de silla en superficies de energía potencial}
-Los puntos de silla son objetos centrales en física y química desde antes del
-aprendizaje automático. En física de sólidos y química cuántica, el \textbf{estado
-de transición} de una reacción química es un punto de silla sobre la
-\textbf{superficie de energía potencial} (PES): es un punto de mínima energía en
-todas las direcciones salvo una (la coordenada de reacción), en la cual es un
-máximo. El índice de Morse es exactamente $1$. La tasa de reacción depende
-exponencialmente de la altura de esa barrera, según la teoría del estado de
-transición (Eyring, 1935). En espectroscopía de moléculas poliatómicas, los
-puntos de silla de la PES determinan los canales de disociación y la estabilidad
-de los estados vibracionales. El mismo problema matemático —encontrar y clasificar
-puntos críticos de una función escalar en alta dimensión— aparece tanto en la
-optimización de redes neuronales como en el estudio de la reactividad química.
-\end{fisicaconexion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Convexidad: el caso ideal}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Convexidad: cuándo el paisaje no tiene trampas}
 \label{sec:convexidad}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{2}{3}
-
-\begin{definicion}{Función convexa}
-\label{def:convexa}
-Una función $\mathcal{L}:\mathbb{R}^p \to \mathbb{R}$ es \textbf{convexa} si para
-todo $\bm{\theta}_1, \bm{\theta}_2 \in \mathbb{R}^p$ y todo $t \in [0,1]$:
-\[
-  \mathcal{L}\bigl(t\bm{\theta}_1 + (1-t)\bm{\theta}_2\bigr)
-  \;\leq\; t\,\mathcal{L}(\bm{\theta}_1) + (1-t)\,\mathcal{L}(\bm{\theta}_2).
-\]
-Es \textbf{estrictamente convexa} si la desigualdad es estricta para $\bm{\theta}_1
-\neq \bm{\theta}_2$ y $t \in (0,1)$.
-\end{definicion}
-
-La caracterización diferencial de la convexidad conecta directamente con el hessiano.
-
-\begin{proposicion}{Caracterización diferencial de la convexidad}
-\label{prop:conv_diff}
-Sea $\mathcal{L} \in C^2(\mathbb{R}^p)$. Entonces:
-\begin{enumerate}
-  \item $\mathcal{L}$ es convexa si y solo si $\bm{H}(\bm{\theta}) \succeq 0$
-        para todo $\bm{\theta} \in \mathbb{R}^p$ (hessiano semidefinido positivo
-        en todo punto).
-  \item $\mathcal{L}$ es estrictamente convexa si $\bm{H}(\bm{\theta}) \succ 0$
-        para todo $\bm{\theta}$ (hessiano definido positivo en todo punto).
-\end{enumerate}
-\end{proposicion}
-
-La demostración usa el teorema fundamental del cálculo para expresar la diferencia
-$\mathcal{L}(t\bm{\theta}_1+(1-t)\bm{\theta}_2) - t\mathcal{L}(\bm{\theta}_1)
-- (1-t)\mathcal{L}(\bm{\theta}_2)$ como una integral que involucra el hessiano;
-se deja como Ejercicio Resuelto~\ref{ej:conv_hess}.
-
-\begin{proposicion}{La pérdida MSE lineal es convexa}
-\label{prop:mse_convexa}
-Para la familia lineal en parámetros con pérdida MSE,
-$\mathcal{L}(\bm{\theta}) = \frac{1}{N}\|\bm{V}\bm{\theta}-\bm{y}\|_2^2$ es
-convexa. Es estrictamente convexa si y solo si $\rank(\bm{V}) = p$.
-\end{proposicion}
-
-\begin{proof}
-El hessiano es $\bm{H} = \frac{2}{N}\bm{V}^\top\bm{V}$, constante. Para todo
-$\bm{d} \in \mathbb{R}^p$:
-\[
-  \bm{d}^\top\bm{H}\bm{d}
-  = \frac{2}{N}\bm{d}^\top\bm{V}^\top\bm{V}\bm{d}
-  = \frac{2}{N}\|\bm{V}\bm{d}\|_2^2 \geq 0,
-\]
-con igualdad si y solo si $\bm{V}\bm{d} = \bm{0}$, es decir, $\bm{d} \in
-\ker(\bm{V})$. Si $\rank(\bm{V}) = p$, el núcleo es trivial ($\bm{d} = \bm{0}$)
-y $\bm{H}$ es definida positiva: la función es estrictamente convexa.
-\end{proof}
-
-\begin{proposicion}{La regularización restaura la convexidad estricta}
-\label{prop:reg_convexa}
-Para todo $\lambda > 0$, la función $F_\lambda(\bm{\theta}) = \mathcal{L}(\bm{\theta})
-+ \lambda\|\bm{\theta}\|_2^2$ es estrictamente convexa, independientemente del
-rango de $\bm{V}$.
-\end{proposicion}
-
-\begin{proof}
-El hessiano de $F_\lambda$ es $\bm{H} + 2\lambda\bm{I}$. Para todo $\bm{d}
-\neq \bm{0}$:
-\[
-  \bm{d}^\top(\bm{H}+2\lambda\bm{I})\bm{d}
-  = \bm{d}^\top\bm{H}\bm{d} + 2\lambda\|\bm{d}\|_2^2
-  \geq 2\lambda\|\bm{d}\|_2^2 > 0.
-\]
-\end{proof}
-
-\subsection{Consecuencias de la convexidad para la optimización}
-\label{subsec:conv_optim}
-
-La convexidad es una propiedad extraordinariamente útil en optimización porque
-elimina la posibilidad de mínimos locales que no sean globales.
-
-\begin{proposicion}{Todo punto crítico de una función convexa es mínimo global}
-\label{prop:critico_global}
-Sea $\mathcal{L}:\mathbb{R}^p\to\mathbb{R}$ convexa y diferenciable.
-Si $\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*) = \bm{0}$, entonces
-$\bm{\theta}^*$ es un mínimo global.
-\end{proposicion}
-
-\begin{proof}
-Por convexidad y diferenciabilidad, para todo $\bm{\theta} \in \mathbb{R}^p$:
-\[
-  \mathcal{L}(\bm{\theta})
-  \geq \mathcal{L}(\bm{\theta}^*)
-    + \langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*),\,\bm{\theta}-\bm{\theta}^*\rangle
-  = \mathcal{L}(\bm{\theta}^*),
-\]
-donde la primera desigualdad es la condición de primer orden de convexidad
-(la función yace por encima de cualquier hiperplano tangente) y la igualdad
-usa $\nabla\mathcal{L}(\bm{\theta}^*) = \bm{0}$.
-\end{proof}
-
-Para una función estrictamente convexa, el mínimo global es único: si existieran
-dos mínimos $\bm{\theta}_1^* \neq \bm{\theta}_2^*$, la convexidad estricta daría
-$\mathcal{L}(\frac{1}{2}(\bm{\theta}_1^*+\bm{\theta}_2^*)) <
-\frac{1}{2}\mathcal{L}(\bm{\theta}_1^*) + \frac{1}{2}\mathcal{L}(\bm{\theta}_2^*)
-= \mathcal{L}(\bm{\theta}_1^*)$, contradiciendo la minimalidad.
-
-\begin{fisicaconexion}{Convexidad y equilibrio estable en mecánica}
-La convexidad del potencial de energía es la condición matemática de
-\textbf{equilibrio estable}. Un potencial $V(\bm{q})$ convexo implica que todo
-punto de equilibrio (donde $\nabla V = \bm{0}$) es un mínimo global: si se
-perturba el sistema, la fuerza restauradora $-\nabla V$ lo devuelve al mismo
-estado de equilibrio, sin importar cuán grande sea la perturbación. El potencial
-armónico $V = \frac{1}{2}k\|\bm{q}\|^2$ es el ejemplo arquetípico: estrictamente
-convexo, con un único mínimo global en $\bm{q} = \bm{0}$, y toda trayectoria
-dinámica converge a él (con disipación). La pérdida MSE lineal tiene exactamente
-esta geometría: es el análogo computacional de un oscilador armónico en el espacio
-de parámetros. Cuando el potencial deja de ser convexo ---un doble pozo, por
-ejemplo--- aparecen múltiples equilibrios y el estado final depende de las
-condiciones iniciales. Las redes neuronales están en ese régimen.
-\end{fisicaconexion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{No convexidad: el paisaje real de las redes neuronales}
-\label{sec:noconvexidad}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-La convexidad es la excepción, no la regla. En cuanto la familia paramétrica es
-no lineal, la pérdida empírica pierde convexidad. Para las redes neuronales, esto
-no es un accidente numérico: la no convexidad está inscrita en la estructura
-arquitectónica del modelo.
+\begin{definicion}{Función convexa}
+\label{def:convexa}
+$\mathcal{L}: \mathbb{R}^p \to \mathbb{R}$ es \textbf{convexa} si para
+todo $\bm{\theta}_1, \bm{\theta}_2$ y $t \in [0,1]$:
+$\mathcal{L}(t\bm{\theta}_1+(1-t)\bm{\theta}_2) \leq
+t\mathcal{L}(\bm{\theta}_1)+(1-t)\mathcal{L}(\bm{\theta}_2)$.
+\end{definicion}
 
-\subsection{La pérdida de una red neuronal es no convexa}
-\label{subsec:noconv_red}
+\begin{proposicion}{Caracterización diferencial}
+\label{prop:conv_hessiano}
+Para $\mathcal{L} \in C^2(\mathbb{R}^p)$: $\mathcal{L}$ es convexa
+$\Leftrightarrow$ $\bm{H}(\bm{\theta}) \succeq 0$ para todo
+$\bm{\theta}$. En términos del índice de Morse: convexidad significa
+que $\mathcal{I} = 0$ en todos los puntos críticos.
+\end{proposicion}
 
-Se muestra la no convexidad con el modelo más simple posible.
+Para la pérdida MSE con familia lineal, el hessiano es
+$\frac{2}{N}\bm{\Phi}^\top\bm{\Phi} \succeq 0$: la pérdida es siempre
+convexa. Todo punto crítico es un mínimo global. Esta es la razón por
+la que las ecuaciones normales del Capítulo~\ref{ch:cap1} dan una
+solución cerrada: el paisaje tiene un solo valle.
 
-\begin{ejemplo}{No convexidad de una red de una neurona}
-\label{ex:noconvex}
-Considérese la familia de una sola neurona con activación sigmoide $\sigma(z) =
-(1+e^{-z})^{-1}$:
-\[
-  f(x; w, b) = \sigma(wx + b), \qquad \bm{\theta} = (w,b)^\top \in \mathbb{R}^2.
-\]
-Con el dato único $(x_1, y_1) = (0, 0.7)$ y pérdida MSE:
-\[
-  \mathcal{L}(w,b) = \bigl(\sigma(b) - 0.7\bigr)^2.
-\]
-Esta función no depende de $w$: es constante en la dirección $w$, y por tanto
-tiene $\partial^2\mathcal{L}/\partial w^2 = 0$. El hessiano en todo punto tiene
-un autovalor cero (dirección plana) y no es definido positivo. Cualquier desplazamiento
-en la dirección $w$ no modifica $\mathcal{L}$: el mínimo no es un punto aislado
-sino una recta entera $\{(w, b^*) : w \in \mathbb{R}\}$ donde $b^* = \sigma^{-1}(0.7)$.
-\end{ejemplo}
+Para familias no lineales, la convexidad se pierde generalmente.
+El hessiano puede tener autovalores negativos en algunas regiones del
+espacio de parámetros, creando puntos de silla y mínimos locales. El
+descenso de gradiente puede quedar atrapado en un mínimo local que no
+es el global.
 
-El ejemplo anterior muestra que incluso la red más simple tiene simetrías que
-producen degeneración. Para redes con más neuronas, las simetrías son más ricas.
-
-\subsection{Simetrías y mínimos equivalentes}
-\label{subsec:simetrias}
-
-\begin{observacion}{Simetría de permutación}
-\label{obs:perm}
-Sea una red neuronal con una capa oculta de $m$ neuronas:
-\[
-  f(\bm{x};\bm{\theta}) = \sum_{j=1}^m v_j\,\sigma(\bm{w}_j^\top\bm{x} + b_j).
-\]
-Para cualquier permutación $\pi$ de $\{1,\ldots,m\}$, el modelo con parámetros
-permutados $(v_{\pi(j)}, \bm{w}_{\pi(j)}, b_{\pi(j)})$ produce exactamente la
-misma función. Por tanto, si $\bm{\theta}^*$ es un mínimo de $\mathcal{L}$,
-también lo son sus $m!$ permutaciones. Una red con $m = 100$ neuronas tiene al
-menos $100! \approx 10^{158}$ mínimos equivalentes.
-\end{observacion}
-
-\begin{observacion}{Simetría de escala}
-\label{obs:escala}
-Para activaciones homogéneas de grado $d$ (como ReLU, que satisface
-$\sigma(\alpha z) = \alpha\sigma(z)$ para $\alpha > 0$), existe la simetría de
-escala: reemplazar $\bm{w}_j \to \alpha\bm{w}_j$ y $v_j \to v_j/\alpha$ deja
-invariante la función $f$. Esto crea valles planos en el paisaje de $\mathcal{L}$:
-curvas de parámetros equivalentes que no son mínimos aislados.
-\end{observacion}
-
-Estas simetrías implican que el paisaje de pérdida de una red neuronal está lejos
-de ser un conjunto discreto de puntos críticos aislados. La estructura real es mucho
-más rica: manifolds de parámetros equivalentes, valles elongados y regiones planas
-que los algoritmos de gradiente recorren sin descender.
-
-\subsection{El fenómeno de \textit{double descent} y los mínimos locales en alta dimensión}
-\label{subsec:double_descent}
-
-\dificultad{3}{2}
-
-Un resultado sorprendente, establecido empíricamente y justificado parcialmente
-de forma teórica en los últimos años, sugiere que la imagen clásica de ``muchos
-mínimos locales malos'' no describe bien el comportamiento real de las redes
-sobredeterminadas.
-
-\begin{observacion}{Calidad de los mínimos locales en redes sobredeterminadas}
-\label{obs:minimos_locales}
-Para redes neuronales con más parámetros que datos ($p \gg N$), los resultados
-empíricos y teóricos parciales indican que los mínimos locales de $\mathcal{L}$
-tienden a tener valores similares al mínimo global. Esta propiedad, que no tiene
-análogo en funciones arbitrarias, parece estar relacionada con la sobredeterminación
-del sistema: cuando hay muchas más variables que restricciones, la pérdida es
-aproximadamente plana en las direcciones adicionales y los mínimos son
-``equivalentemente buenos.''
-
-Relacionado con esto, el \textbf{fenómeno de \textit{double descent}}
-\cite{belkin2019reconciling} describe el comportamiento del error de generalización
-como función de la capacidad $p$: decrece hasta un mínimo (como predice la curva
-clásica del Capítulo~2), aumenta en la zona de interpolación exacta ($p \approx N$),
-y luego \emph{vuelve a decrecer} al entrar en el régimen sobredeterminado ($p \gg N$).
-Este comportamiento contradice el análisis sesgo-varianza clásico del Capítulo~2
-y sugiere que el régimen sobredeterminado tiene propiedades de regularización
-implícitas que aún no se comprenden completamente.
-
-Este fenómeno se analizará en profundidad en el Capítulo~8, una vez que tengamos
-la arquitectura completa y las herramientas de análisis de capacidad necesarias
-para formularlo con precisión. Lo que importa retener aquí es que la no convexidad
-del paisaje de las redes neuronales no implica necesariamente dificultades
-prácticas en la optimización: en el régimen sobredeterminado, la estructura del
-paisaje es más benigna de lo que el análisis clásico de optimización sugiere.
-\end{observacion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Condicionamiento y velocidad de convergencia}
-\label{sec:condicionamiento}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Alta dimensión: por qué los mínimos locales no son el problema}
+\label{sec:alta_dim}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{3}{3}
 
-El espectro del hessiano no solo determina si un punto crítico es mínimo o silla:
-también cuantifica la dificultad de la optimización en la vecindad de ese punto.
+La intuición geométrica del físico en 2D y 3D sugiere que un paisaje
+no convexo está lleno de mínimos locales donde el optimizador puede
+quedar atrapado. En dimensión alta, esta intuición es incorrecta de
+una forma específica y cuantificable.
 
-\begin{definicion}{Número de condicionamiento del hessiano}
-\label{def:cond_hess}
-Sea $\bm{H}(\bm{\theta})$ un hessiano definido positivo con autovalores $\mu_1
-\geq \mu_2 \geq \cdots \geq \mu_p > 0$. El \textbf{número de condicionamiento}
-del hessiano en $\bm{\theta}$ es:
-\[
-  \kappa(\bm{H}(\bm{\theta})) = \frac{\mu_1}{\mu_p}.
-\]
-\end{definicion}
+El argumento heurístico usa la teoría de matrices aleatorias. Si el
+hessiano $\bm{H}$ en un punto crítico aleatorio se modela como una
+matriz del ensemble gaussiano ortogonal (GOE) de dimensión $p$, cada
+autovalor es positivo o negativo con probabilidad aproximada $1/2$
+(para puntos lejos del mínimo global). La probabilidad de que
+\emph{todos} los $p$ autovalores sean positivos —que es la condición
+para un mínimo local— es:
+\begin{equation}
+  P(\text{mínimo local}) \approx 2^{-p}
+  \label{eq:prob_minimo}
+\end{equation}
+para $p$ grande. Para $p = 1000$, esta probabilidad es $\sim 10^{-301}$.
+La inmensa mayoría de los puntos críticos en alta dimensión son puntos
+de silla, no mínimos locales.
 
-La relación entre el condicionamiento del hessiano y el condicionamiento de la
-matriz de diseño del Capítulo~2 es directa: para la familia lineal,
-$\bm{H} = \frac{2}{N}\bm{V}^\top\bm{V}$ cuyos autovalores son $\frac{2}{N}\sigma_i^2$,
-de modo que $\kappa(\bm{H}) = (\sigma_1/\sigma_p)^2 = \kappa(\bm{V})^2$.
-Un sistema que era difícil de invertir en el Capítulo~2 es doblemente difícil de
-optimizar.
+Además, los puntos de silla de índice alto (con muchos autovalores
+negativos) son inestables: perturbaciones infinitesimales en cualquiera
+de las direcciones de curvatura negativa hacen descender la pérdida. El
+descenso de gradiente con ruido (SGD, Capítulo~\ref{ch:cap5}) escapa
+eficientemente de estos puntos porque las fluctuaciones estocásticas
+rompen la simetría local.
 
-\subsection{Convergencia del descenso de gradiente para funciones cuadráticas}
-\label{subsec:conv_gradiente}
+Los puntos críticos realmente problemáticos son los de índice bajo
+(pocos autovalores negativos), donde casi todas las direcciones apuntan
+hacia arriba y solo unas pocas permiten escapar. Pero incluso estos son
+cada vez más raros a medida que $p$ crece, y en redes neuronales
+grandes, los mínimos locales que existen tienden a tener valores de
+pérdida muy similares al mínimo global: la diferencia
+$\mathcal{L}(\bm{\theta}_{\text{local}}) -
+\mathcal{L}(\bm{\theta}_{\text{global}})$ decrece con $p$.
 
-Para el caso exactamente cuadrático (familia lineal) se puede analizar la
-convergencia de forma precisa. El resultado siguiente anticipa el análisis
-del Capítulo~5 y motiva la búsqueda de algoritmos que mitiguen el problema
-del condicionamiento.
-
-\begin{proposicion}{Convergencia del gradiente para pérdidas cuadráticas}
-\label{prop:conv_cuad}
-Sea $\mathcal{L}(\bm{\theta}) = \frac{1}{N}\|\bm{V}\bm{\theta}-\bm{y}\|_2^2$ con
-$\bm{V}$ de rango completo, y sea $\bm{H} = \frac{2}{N}\bm{V}^\top\bm{V}$. El
-método de descenso de gradiente con tasa de aprendizaje $\eta$:
-\[
-  \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} - \eta\,\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^{(k)})
-\]
-converge al mínimo $\bm{\theta}^*$ si y solo si $0 < \eta < 2/\mu_1$. Con la
-tasa óptima $\eta^* = 2/(\mu_1+\mu_p)$, el error en cada iteración satisface:
-\[
-  \|\bm{\theta}^{(k)} - \bm{\theta}^*\|_2
-  \;\leq\; \left(\frac{\kappa-1}{\kappa+1}\right)^k \|\bm{\theta}^{(0)}-\bm{\theta}^*\|_2,
-\]
-donde $\kappa = \kappa(\bm{H})$.
-\end{proposicion}
-
-La demostración se desarrolla en el Ejercicio Resuelto~\ref{ej:conv_cuad}. El
-resultado tiene una consecuencia cuantitativa inmediata: para reducir el error
-en un factor $e^{-1}$, se necesitan $k \approx (\kappa+1)/2$ iteraciones. Para
-un hessiano bien condicionado ($\kappa = 10$): $k \approx 6$ iteraciones. Para
-un hessiano mal condicionado ($\kappa = 10^4$): $k \approx 5000$ iteraciones.
-Este es el costo concreto del mal condicionamiento en términos computacionales.
-
-\begin{observacion}{El problema de los valles elongados}
-\label{obs:valles}
-Un hessiano con $\kappa \gg 1$ corresponde geométricamente a superficies de
-nivel $\mathcal{L}(\bm{\theta}) = c$ que son elipsoides muy elongados: la función
-cae rápidamente en unas direcciones (autovectores de $\mu_1$) y lentamente en
-otras ($\mu_p$). El descenso de gradiente en este terreno produce trayectorias en
-zigzag que oscilan transversalmente al valle mientras avanzan lentamente hacia el
-fondo. La solución es usar información de curvatura (el hessiano o aproximaciones
-al mismo) para escalar correctamente las direcciones de descenso. Los optimizadores
-adaptativos del Capítulo~5 (Adam, RMSProp) son aproximaciones prácticas a esta idea.
+\begin{observacion}{Mesetas y regiones planas}
+El verdadero obstáculo en redes neuronales profundas no son los mínimos
+locales sino las \textbf{mesetas} (regiones donde
+$\|\nabla\mathcal{L}\| \approx 0$ pero $\mathcal{L}$ es aún grande) y
+los \textbf{puntos de silla con curvatura pequeña} (donde el hessiano
+tiene autovalores cercanos a cero). El descenso de gradiente se ralentiza
+exponencialmente en estas regiones. Los optimizadores con momento
+(Polyak, 1964; Nesterov, 1983) y los adaptativos (Adam) mitigan este
+problema usando información de iteraciones pasadas para mantener la
+velocidad. El Capítulo~\ref{ch:cap5} los desarrolla.
 \end{observacion}
 
-\begin{fisicaconexion}{Mal condicionamiento en mediciones experimentales}
-El número de condicionamiento $\kappa$ es exactamente el mismo objeto que aparece
-en la propagación de errores en física experimental. Cuando se invierte un sistema
-lineal $\bm{A}\bm{x} = \bm{b}$ para determinar los parámetros $\bm{x}$ a partir
-de mediciones $\bm{b}$, un error $\delta\bm{b}$ en las mediciones se amplifica
-en el resultado hasta en un factor $\kappa(\bm{A})$: $\|\delta\bm{x}\|/\|\bm{x}\|
-\leq \kappa(\bm{A})\,\|\delta\bm{b}\|/\|\bm{b}\|$. En espectroscopía de Fourier,
-el condicionamiento de la matriz de transformada discreta determina cuánto amplifica
-el proceso de inversión el ruido del detector. En tomografía, el condicionamiento
-de la matriz de proyección determina cuánto ruido introduce la retro-proyección
-filtrada. El \textbf{zigzag del descenso de gradiente} en un paisaje mal condicionado
-es el análogo iterativo de ese fenómeno: cada paso amplifica las componentes de
-ruido en las direcciones de baja curvatura, produciendo oscilaciones transversales
-al valle antes de converger al fondo.
-\end{fisicaconexion}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Descenso de gradiente como dinámica disipativa}
+\label{sec:gd_dinamica}
+% ─────────────────────────────────────────────────────────────────────────────
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Resumen del Capítulo 3}
+\dificultad{2}{3}
+
+El descenso de gradiente
+\begin{equation}
+  \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)}
+  - \eta\nabla\mathcal{L}(\bm{\theta}^{(k)})
+  \label{eq:gd}
+\end{equation}
+es la discretización de Euler de la ODE de \textbf{flujo de gradiente}:
+\begin{equation}
+  \frac{d\bm{\theta}}{dt} = -\nabla\mathcal{L}(\bm{\theta}),
+  \qquad \bm{\theta}(0) = \bm{\theta}^{(0)}.
+  \label{eq:flujo_grad}
+\end{equation}
+Esta ODE es la ecuación de movimiento de una partícula en el potencial
+$\mathcal{L}$ en el \textbf{régimen sobremortigado}: sin inercia, la
+velocidad es proporcional a la fuerza. Es el límite de alta viscosidad
+de la ecuación de Langevin $m\ddot{\bm{\theta}} + \gamma\dot{\bm{\theta}}
+= -\nabla\mathcal{L}$ cuando $m/\gamma \to 0$.
+
+A lo largo del flujo~\eqref{eq:flujo_grad}, la pérdida decrece
+monótonamente:
+\begin{equation}
+  \frac{d\mathcal{L}}{dt}
+  = \nabla\mathcal{L}^\top \dot{\bm{\theta}}
+  = -\|\nabla\mathcal{L}\|_2^2 \leq 0.
+  \label{eq:lyapunov}
+\end{equation}
+La pérdida es una \textbf{función de Lyapunov} de la dinámica: el
+sistema solo puede descender. Esto garantiza convergencia a un punto
+crítico (bajo condiciones de regularidad) pero no dice nada sobre
+\emph{cuál} punto crítico.
+
+La tasa de aprendizaje $\eta$ en~\eqref{eq:gd} es el paso temporal del
+integrador de Euler. Para estabilidad, se necesita $\eta < 2/\mu_{\max}$,
+donde $\mu_{\max}$ es el mayor autovalor del hessiano. Si $\eta$ es
+demasiado grande, el integrador diverge: el equivalente numérico de una
+simulación que ``explota''. La condición de estabilidad
+$\eta < 2/\mu_{\max}$ es exactamente la condición CFL del integrador de
+Euler para la ecuación de calor.
+
+El Capítulo~\ref{ch:cap5} añadirá ruido a esta dinámica para obtener la
+ecuación de Langevin del SGD. El ruido tiene dos efectos: permite escapar
+de mínimos locales (como la agitación térmica permite a una partícula
+superar una barrera de energía) y selecciona preferentemente los mínimos
+amplios sobre los estrechos (porque la distribución de Gibbs estacionaria
+favorece las regiones de menor curvatura). Ambos efectos son cruciales
+para entender por qué el entrenamiento de redes neuronales funciona en
+la práctica.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El oscilador como laboratorio: paisaje convexo vs. no convexo}
+\label{sec:oscilador3}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+Retomamos los datos del oscilador: $N = 25$ puntos de
+$\sin(2\pi t) + \varepsilon_i$.
+
+\textbf{Modelo lineal:} $f(t;\theta_0,\theta_1) = \theta_0 +
+\theta_1 t$. La pérdida $\mathcal{L}(\theta_0,\theta_1)$ es un
+paraboloide con un único mínimo global. Las curvas de nivel son elipses.
+El hessiano $\bm{H} = \frac{2}{N}\bm{\Phi}^\top\bm{\Phi}$ es constante
+(no depende de $\bm{\theta}$) y definido positivo. El descenso de
+gradiente converge al mínimo desde cualquier inicialización.
+
+\textbf{Modelo no lineal:} $f(t;A,\omega) = A\sin(\omega t)$. Los
+parámetros son la amplitud $A$ y la frecuencia $\omega$. La pérdida
+$\mathcal{L}(A,\omega)$ es no convexa: tiene múltiples mínimos locales
+(uno por cada armónico $\omega \approx 2\pi k$ que ``encaje'' con los
+datos) y puntos de silla. El hessiano varía en el espacio de parámetros
+y puede tener autovalores negativos. El descenso de gradiente converge
+a distintos mínimos locales dependiendo de la inicialización.
+
+Este contraste ilustra el dilema central de los Capítulos~\ref{ch:cap3}--\ref{ch:cap4}: las familias lineales tienen paisajes amigables pero
+capacidad limitada; las familias no lineales (incluyendo redes neuronales)
+tienen paisajes complicados pero capacidad ilimitada. El
+Capítulo~\ref{ch:cap5} mostrará que la ``complicación'' del paisaje en
+alta dimensión es sorprendentemente manejable gracias al ruido del SGD.
+
+El Ejercicio Computacional~\ref{ejcomp:oscilador3} implementa la
+visualización de ambos paisajes y el descenso de gradiente sobre ellos.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 3 y transición}
 \label{sec:resumen3}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-La geometría del espacio de parámetros tiene dos caras, y este capítulo las ha
-estudiado con las mismas herramientas.
+La pérdida empírica es una función escalar sobre $\mathbb{R}^p$ cuya
+geometría determina la viabilidad y la velocidad de los algoritmos de
+optimización. El gradiente indica la dirección de máximo descenso; el
+hessiano clasifica los puntos críticos por su índice de Morse. La
+convexidad ($\bm{H} \succeq 0$ en todo punto) garantiza un paisaje sin
+trampas, pero se pierde para familias no lineales.
 
-En el caso convexo ---que corresponde a familias lineales en parámetros--- el
-paisaje de $\mathcal{L}$ es una parábola sin trampas: todo punto crítico es un
-mínimo global, el hessiano es constante y sus autovalores determinan completamente
-la velocidad de cualquier algoritmo de descenso. El condicionamiento de ese hessiano
-es el cuadrado del condicionamiento de la matriz de diseño, que ya apareció en el
-Capítulo~2 como obstáculo para la inversión directa. Aquí reaparece como obstáculo
-para la optimización iterativa.
+En alta dimensión, la intuición se invierte: los mínimos locales son
+exponencialmente raros ($\sim 2^{-p}$) y la mayoría de los puntos
+críticos son puntos de silla, de los cuales el SGD escapa naturalmente.
+El verdadero obstáculo son las mesetas y los saddles de curvatura baja.
+El número de condicionamiento $\kappa$ del hessiano determina la
+velocidad de convergencia: $\kappa \gg 1$ produce convergencia lenta que
+los optimizadores adaptativos resuelven.
 
-En el caso no convexo ---familias no lineales, redes neuronales--- el paisaje es
-radicalmente más rico. La pérdida puede tener múltiples puntos críticos, y las
-simetrías del modelo garantizan que los mínimos vienen en familias equivalentes.
-Sin embargo, la alta dimensión introduce un fenómeno no intuitivo: los mínimos
-locales de baja calidad son exponencialmente raros, y los verdaderos obstáculos son
-los puntos de silla, de los que es posible escapar con perturbaciones estocásticas.
+El Capítulo~\ref{ch:cap4} introduce la red neuronal como familia
+paramétrica no lineal con capacidad de aproximación universal. Su
+paisaje de pérdida es no convexo, pero las herramientas de este
+capítulo —gradiente, hessiano, análisis de puntos críticos, descenso de
+gradiente— son exactamente las que se necesitan para navegarlo. La
+combinación del paisaje de pérdida (este capítulo) con el ruido del SGD
+(Capítulo~\ref{ch:cap5}) producirá la ecuación de Langevin: la conexión
+central del libro entre aprendizaje automático y mecánica estadística.
 
-El capítulo cierra con dos promesas hacia adelante. El Capítulo~4 construirá la
-arquitectura que crea ese paisaje no convexo: la neurona, la capa y la red profunda.
-El Capítulo~5 diseñará los algoritmos para navegarlo: descenso de gradiente, sus
-variantes estocásticas y los optimizadores adaptativos que mitigan el problema del
-condicionamiento.
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios resueltos}
 \addcontentsline{toc}{section}{Ejercicios resueltos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
-\label{ej:conv_hess}
-\textbf{(Convexidad y hessiano semidefinido positivo).}
+\label{ej:conv_cuad_resuelto}
+\textbf{(Convergencia del GD para pérdida cuadrática).}
 
-Demostrar que si $\mathcal{L} \in C^2(\mathbb{R}^p)$ y $\bm{H}(\bm{\theta})
-\succeq 0$ para todo $\bm{\theta}$, entonces $\mathcal{L}$ es convexa.
+Sea $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}
+\bm{\theta}$ con $\bm{H} = \text{diag}(1, 100)$. Calcular la tasa de
+convergencia del GD con paso óptimo.
 
 \medskip\noindent\textit{Solución.}
-Sean $\bm{\theta}_1, \bm{\theta}_2 \in \mathbb{R}^p$ y $t \in [0,1]$. Definamos
-$\bm{\theta}(s) = \bm{\theta}_1 + s(\bm{\theta}_2 - \bm{\theta}_1)$ para $s \in [0,1]$,
-de modo que $\bm{\theta}(0) = \bm{\theta}_1$ y $\bm{\theta}(1) = \bm{\theta}_2$.
-Sea $\bm{d} = \bm{\theta}_2 - \bm{\theta}_1$.
+$\mu_1 = 1$, $\mu_2 = 100$, $\kappa = 100$.
+$\eta^* = 2/(1+100) = 2/101 \approx 0.0198$.
+$\rho^* = (100-1)/(100+1) = 99/101 \approx 0.980$.
+Para reducir el error en un factor $10^{-3}$:
+$k = \log(10^{-3})/\log(0.980) \approx 342$ iteraciones.
 
-Por el teorema fundamental del cálculo:
-\[
-  \mathcal{L}(\bm{\theta}_2) - \mathcal{L}(\bm{\theta}_1)
-  = \int_0^1 \frac{d}{ds}\mathcal{L}(\bm{\theta}(s))\,ds
-  = \int_0^1 \langle\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}(s)),\bm{d}\rangle\,ds.
-\]
-
-Sea $\bm{\theta}^* = t\bm{\theta}_1+(1-t)\bm{\theta}_2$, $\bm{d}_1 = \bm{\theta}_1 -
-\bm{\theta}^*$, $\bm{d}_2 = \bm{\theta}_2 - \bm{\theta}^*$. Usando la fórmula
-integral de Taylor de segundo orden en cada punto:
-\begin{align*}
-  t\mathcal{L}(\bm{\theta}_1) + (1-t)\mathcal{L}(\bm{\theta}_2)
-  - \mathcal{L}(\bm{\theta}^*)
-  &= t\int_0^1(1-s)\bm{d}_1^\top\bm{H}(\bm{\theta}^*+s\bm{d}_1)\bm{d}_1\,ds \\
-  &\quad+ (1-t)\int_0^1(1-s)\bm{d}_2^\top\bm{H}(\bm{\theta}^*+s\bm{d}_2)\bm{d}_2\,ds.
-\end{align*}
-Como $\bm{H} \succeq 0$, ambos integrandos son no negativos, y la diferencia
-es no negativa. Esto establece la desigualdad de convexidad. $\square$
+El problema es muy mal condicionado: la curvatura en la dirección 2 es
+100 veces mayor que en la dirección 1. El GD ``zigzaguea'' a lo largo
+del valle estrecho alineado con $\theta_1$. Las curvas de nivel son
+elipses con razón de aspecto $10:1$. $\square$
 \end{ejercicio}
 
 \begin{ejercicio}
-\label{ej:conv_cuad}
-\textbf{(Convergencia del descenso de gradiente para pérdida cuadrática).}
+\label{ej:morse_neurona}
+\textbf{(Índice de Morse para una red de una neurona).}
 
-Sea $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}\bm{\theta} -
-\bm{b}^\top\bm{\theta} + c$ con $\bm{H}$ simétrica definida positiva con
-autovalores $\mu_p \leq \cdots \leq \mu_1$. El mínimo es $\bm{\theta}^* = \bm{H}^{-1}\bm{b}$.
-Demostrar la cota de convergencia de la Proposición~\ref{prop:conv_cuad}.
+Sea $f(x;w,b) = \tanh(wx+b)$ con el dato $(x_1,y_1) = (1,0.5)$ y
+pérdida MSE: $\mathcal{L}(w,b) = (\tanh(w+b)-0.5)^2$.
 
 \medskip\noindent\textit{Solución.}
-Definamos el error $\bm{e}^{(k)} = \bm{\theta}^{(k)} - \bm{\theta}^*$. Usando que
-$\nabla\mathcal{L}(\bm{\theta}) = \bm{H}\bm{\theta} - \bm{b} = \bm{H}(\bm{\theta}-\bm{\theta}^*)$:
-\[
-  \bm{e}^{(k+1)} = \bm{\theta}^{(k+1)} - \bm{\theta}^*
-  = \bm{\theta}^{(k)} - \eta\bm{H}\bm{\theta}^{(k)} + \eta\bm{b} - \bm{\theta}^*
-  = (\bm{I} - \eta\bm{H})\bm{e}^{(k)}.
-\]
-Iterando: $\bm{e}^{(k)} = (\bm{I}-\eta\bm{H})^k\bm{e}^{(0)}$. En la base de
-autovectores de $\bm{H}$, la $i$-ésima componente del error evoluciona como
-$(1-\eta\mu_i)^k e_i^{(0)}$. El factor de contracción global es:
-\[
-  \rho(\eta) = \max_i |1-\eta\mu_i|
-  = \max\{|1-\eta\mu_1|,\, |1-\eta\mu_p|\}.
-\]
-Para convergencia se necesita $\rho(\eta) < 1$, equivalente a $0 < \eta < 2/\mu_1$.
-La tasa óptima se obtiene igualando $1-\eta\mu_p = \eta\mu_1-1$, dando
-$\eta^* = 2/(\mu_1+\mu_p)$, con tasa de contracción óptima:
-\[
-  \rho(\eta^*) = \frac{\mu_1-\mu_p}{\mu_1+\mu_p} = \frac{\kappa-1}{\kappa+1}.
-\]
-Por tanto $\|\bm{e}^{(k)}\|_2 \leq \rho(\eta^*)^k\|\bm{e}^{(0)}\|_2 =
-\left(\frac{\kappa-1}{\kappa+1}\right)^k\|\bm{e}^{(0)}\|_2$. $\square$
+Sea $z = w+b$ y $t = \tanh(z)$. Las derivadas parciales son
+$\partial\mathcal{L}/\partial w = \partial\mathcal{L}/\partial b =
+2(t-0.5)\text{sech}^2(z)$. Se anulan cuando $t = 0.5$ (es decir,
+$z^* = \tanh^{-1}(0.5) = \frac{1}{2}\ln 3 \approx 0.549$) o cuando
+$|z| \to \infty$.
+
+Los puntos críticos forman la recta $w + b = z^*$ en $\mathbb{R}^2$:
+hay una \textbf{variedad continua} de mínimos, no un punto aislado.
+Esto refleja la simetría de la parametrización: trasladar $(w,b)$ a lo
+largo de la recta $w+b = \text{cte}$ no cambia la salida de la red.
+
+El hessiano en cualquier punto de la recta tiene autovalores
+$\{2\text{sech}^4(z^*)\cdot 2, 0\}$: un positivo y uno nulo. El
+autovalor nulo corresponde a la dirección paralela a la recta
+(simetría); el positivo, a la dirección perpendicular (curvatura real).
+El índice de Morse es 0 (mínimo, no estricto): es un mínimo a lo largo
+de una dirección plana. $\square$
 \end{ejercicio}
 
-\begin{ejercicio}
-\label{ej:criticos_red}
-\textbf{(Clasificación de puntos críticos en una red de una neurona).}
-
-Sea $f(x;w,b) = \tanh(wx+b)$ con el dato $(x_1,y_1) = (1,0.5)$ y pérdida MSE.
-Calcular todos los puntos críticos de $\mathcal{L}(w,b) = (\tanh(w+b)-0.5)^2$ y
-clasificarlos usando el hessiano.
-
-\medskip\noindent\textit{Solución.}
-Denotemos $z = w+b$ y $t = \tanh(z)$. Entonces $\mathcal{L} = (t-0.5)^2$.
-
-\noindent\textit{Puntos críticos.} Las derivadas parciales son:
-\[
-  \frac{\partial\mathcal{L}}{\partial w}
-  = 2(t-0.5)\,\mathrm{sech}^2(z) \cdot x_1
-  = 2(t-0.5)\,\mathrm{sech}^2(z),
-\]
-\[
-  \frac{\partial\mathcal{L}}{\partial b}
-  = 2(t-0.5)\,\mathrm{sech}^2(z).
-\]
-Ambas se anulan simultáneamente si $t = 0.5$ o $\mathrm{sech}^2(z) = 0$. La
-segunda condición requiere $|z| \to \infty$. La primera da $z^* = \tanh^{-1}(0.5)
-= \frac{1}{2}\ln 3 \approx 0.549$, y los puntos críticos forman la \emph{recta}
-$w + b = z^*$ en $\mathbb{R}^2$: hay infinitos puntos críticos, todos equivalentes.
-
-\noindent\textit{Hessiano.} En cualquier punto de la recta $w+b = z^*$, el gradiente
-es $\bm{0}$ y el hessiano tiene autovalores $\{2\,\mathrm{sech}^4(z^*)\cdot 2, 0\}$:
-un autovalor positivo (dirección perpendicular a la recta) y uno nulo (dirección
-paralela a la recta). El índice de Morse es $0$: son mínimos locales (pero no
-estrictos). La recta entera $w+b = z^*$ es un mínimo global. Esto ilustra la
-simetría de una neurona: hay una manifold entera de soluciones equivalentes. $\square$
-\end{ejercicio}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios propuestos}
 \addcontentsline{toc}{section}{Ejercicios propuestos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
-\textbf{(Gradiente y superficie de nivel).}
+\textbf{(Gradiente y curvas de nivel).}
 Sea $\mathcal{L}(\theta_1,\theta_2) = \theta_1^2 + 4\theta_2^2$.
 \begin{enumerate}[label=(\alph*)]
-  \item Calcule $\nabla\mathcal{L}$ y verifique la Proposición~\ref{prop:max_ascenso}
-        en el punto $\bm{\theta} = (1,1)^\top$.
-  \item Describa geométricamente las superficies de nivel $\mathcal{S}_c$
-        para $c = 1, 4, 9$. ¿Son esferas o elipsoides?
-  \item Calcule el hessiano y sus autovalores. ¿Cuál es el número de condicionamiento?
-  \item Según la Proposición~\ref{prop:conv_cuad}, ¿cuántas iteraciones de descenso
-        de gradiente se necesitan (aproximadamente) para reducir el error inicial
-        en un factor de $10^{-3}$?
+  \item Calcule $\nabla\mathcal{L}$ y verifique que es perpendicular
+        a la elipse $\theta_1^2 + 4\theta_2^2 = 5$ en
+        $\bm{\theta} = (1,1)^\top$.
+  \item Calcule el hessiano, sus autovalores y el número de
+        condicionamiento. ¿Cuántas iteraciones de GD se necesitan para
+        $\varepsilon = 10^{-3}$?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
-\textbf{(Puntos críticos de una pérdida no convexa).}
-Sea $\mathcal{L}(\theta) = \theta^4 - 4\theta^2 + 1$ en $\mathbb{R}$.
+\textbf{(Puntos críticos de un doble pozo).}
+Sea $\mathcal{L}(\theta) = \theta^4 - 4\theta^2 + 1$.
 \begin{enumerate}[label=(\alph*)]
-  \item Calcule todos los puntos críticos y clasifíquelos (mínimos, máximos,
-        inflexión) usando la segunda derivada.
-  \item Trace la gráfica y verifique que la función tiene dos mínimos locales.
-  \item ¿El descenso de gradiente converge al mínimo global desde cualquier
-        inicialización? Identifique las cuencas de atracción de cada mínimo.
-  \item Generalice: si $\mathcal{L}(\theta) = \theta^4 - 2a\theta^2 + b$ con
-        $a > 0$, ¿para qué valores de $a$ tiene la función dos mínimos locales?
+  \item Encuentre todos los puntos críticos y clasifíquelos.
+  \item ¿El GD converge al mínimo global desde $\theta_0 = 0$?
+        ¿Y desde $\theta_0 = 0.01$?
+  \item Identifique las cuencas de atracción de cada mínimo. ¿Cuáles
+        son las condiciones iniciales que llevan al máximo local?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
-\textbf{(Condicionamiento y zigzag).}
-Sea la pérdida cuadrática $\mathcal{L}(\theta_1,\theta_2) = \frac{1}{2}(\theta_1^2
-+ \kappa\theta_2^2)$ con $\kappa \gg 1$.
+\textbf{(Probabilidad de mínimos locales en alta dimensión).}
+Sea $\bm{H} \in \mathbb{R}^{p \times p}$ simétrica con entradas
+$H_{ij} \sim \mathcal{N}(0, 1/p)$ (GOE normalizado).
 \begin{enumerate}[label=(\alph*)]
-  \item Calcule el hessiano y su número de condicionamiento.
-  \item Implemente (o describa analíticamente) las primeras 10 iteraciones del
-        descenso de gradiente con tasa óptima $\eta^* = 2/(\mu_1+\mu_2)$
-        partiendo de $\bm{\theta}^{(0)} = (1,1)^\top$.
-  \item Para $\kappa = 100$, ¿cuántas iteraciones se necesitan para que
-        $\|\bm{\theta}^{(k)}\|_2 < 10^{-3}$?
-  \item Compare con el número de iteraciones necesarias si se usara el hessiano
-        completo (método de Newton): $\bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} -
-        \bm{H}^{-1}\nabla\mathcal{L}$.
+  \item Para $p = 10, 50, 100, 500$, generar $M = 10^4$ matrices y
+        contar la fracción que son definidas positivas. Comparar con
+        $2^{-p}$.
+  \item ¿Para qué $p$ ninguna de las $10^4$ matrices es definida
+        positiva?
 \end{enumerate}
 \end{ejercicio}
 
-\begin{ejercicio}
-\textbf{(No convexidad de la composición).}
-Sea $f(x;\bm{\theta}) = \sigma(\theta_2\,\sigma(\theta_1 x))$ con $\sigma(z) =
-\tanh(z)$ y el dato $(x_1,y_1) = (1,0.5)$.
-\begin{enumerate}[label=(\alph*)]
-  \item Calcule $\mathcal{L}(\theta_1,\theta_2) = (f(1;\bm{\theta})-0.5)^2$.
-  \item Calcule $\nabla\mathcal{L}$ y encuentre al menos dos puntos críticos.
-  \item Calcule el hessiano en cada punto crítico y determine su índice de Morse.
-  \item Compare el número de puntos críticos de este modelo de dos capas con el
-        de una neurona del Ejercicio Resuelto~\ref{ej:criticos_red}. ¿Cómo
-        afecta la profundidad a la complejidad del paisaje?
-\end{enumerate}
-\end{ejercicio}
-
-\begin{ejercicio}
-\textbf{(Regularización y convexidad).}
-Sea $\mathcal{L}(\bm{\theta}) = \sin(\theta_1)\cos(\theta_2) + 0.1(\theta_1^2+\theta_2^2)$.
-\begin{enumerate}[label=(\alph*)]
-  \item Calcule el hessiano y determine para qué valores de $(\theta_1,\theta_2)$
-        el hessiano es indefinido (punto de silla).
-  \item Añada regularización $\lambda\|\bm{\theta}\|_2^2$ con $\lambda > 0$.
-        ¿Para qué valor mínimo de $\lambda$ la función total $\mathcal{L}(\bm{\theta})
-        + \lambda\|\bm{\theta}\|_2^2$ es convexa en todo $\mathbb{R}^2$?
-        (\textit{Sugerencia}: determine el mínimo autovalor de $\nabla^2\mathcal{L}$
-        en todo su dominio.)
-  \item Contraste con la Proposición~\ref{prop:reg_convexa}: ¿bajo qué condición
-        adicional sobre $\mathcal{L}$ garantiza esa proposición la convexidad?
-\end{enumerate}
-\end{ejercicio}
-
-%───────────────────────────────────────────────────────────────────────────────
-\label{sec:estrella3}
-\begin{estrella}{Geometría del paisaje de pérdida en la estimación inversa de reactividad}
-
-\textbf{El sistema físico.}
-La cinética puntual del reactor da la evolución de la densidad neutrónica $n(t)$
-en función de la reactividad $\varrho(t)$ y las concentraciones de precursores
-$C_i(t)$. El problema inverso consiste en: dado $n(t)$ medido en $T$ instantes
-$\{t_k\}_{k=1}^T$, estimar el perfil de reactividad $\varrho(t)$ que lo produce.
-
-\textbf{El paisaje de pérdida.}
-Se parametriza $\varrho(t)$ con $p$ coeficientes $\bm{\theta} \in \mathbb{R}^p$
-(por ejemplo, como expansión en funciones escalón o B-splines) y se define:
-\[
-  \mathcal{L}(\bm{\theta}) = \frac{1}{T}\sum_{k=1}^T
-  \bigl(n_{\text{modelo}}(t_k;\bm{\theta}) - n_{\text{medido}}(t_k)\bigr)^2.
-\]
-Como $n_{\text{modelo}}(t;\bm{\theta})$ es la solución de un sistema de EDOs
-no lineal (la cinética puntual), $\mathcal{L}$ es no convexa en $\bm{\theta}$.
-
-\textbf{Geometría del paisaje.}
-Los puntos críticos de $\mathcal{L}$ corresponden a perfiles de reactividad que
-reproducen las mediciones de neutrones. El hessiano en un punto crítico tiene la
-forma de la Proposición~\ref{prop:hess_mse}: $\bm{H} \approx \frac{2}{T}\bm{J}^\top\bm{J}$
-(aproximación de Gauss-Newton), donde $\bm{J}_{kj} = \partial n(t_k)/\partial\theta_j$
-es la sensibilidad de la respuesta neutrónica al $j$-ésimo parámetro de reactividad.
-El condicionamiento $\kappa(\bm{J}^\top\bm{J})$ cuantifica cuánto se pueden distinguir
-los distintos perfiles de reactividad a partir de las mediciones de potencia: una
-dirección con $\sigma_i \approx 0$ corresponde a una perturbación de $\varrho(t)$
-que produce un cambio negligible en $n(t)$ y por tanto no puede inferirse de los datos.
-
-\textbf{Mínimos espurios.}
-La no convexidad implica la posibilidad de soluciones espurias: perfiles de
-reactividad $\hat{\varrho}(t)$ que reproducen $n(t)$ con pérdida baja pero son
-físicamente incorrectos. En la práctica, estos mínimos locales corresponden a
-oscilaciones de alta frecuencia en $\varrho(t)$ que se cancelan en la integral de la
-cinética y no son detectables desde la señal de potencia. La regularización del
-Capítulo~2 --- aplicada aquí como penalización $\lambda\|\bm{\theta}\|_2^2$ o
-penalización de suavidad $\lambda\|\nabla\varrho\|_2^2$ --- restringe el espacio
-de soluciones a perfiles suaves y elimina estos mínimos espurios.
-
-\textbf{Conexión con el capítulo.}
-Este problema ilustra los tres resultados principales del capítulo actuando
-simultáneamente: (1) el hessiano en el mínimo (aproximación de Gauss-Newton)
-tiene el mismo condicionamiento que la SVD de la matriz de sensibilidades $\bm{J}$;
-(2) los mínimos espurios son puntos de silla en dimensiones adicionales --- se
-convierten en mínimos locales solo cuando se restringe el espacio de búsqueda a
-perfiles físicamente razonables; (3) la regularización convexifica la pérdida,
-eliminando los mínimos espurios a costa de sesgar la solución hacia perfiles suaves.
-El Capítulo~5 presentará los algoritmos iterativos para resolver este problema de
-optimización; el Capítulo~7 su formulación bayesiana con incertidumbre cuantificada.
-\end{estrella}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios computacionales}
 \addcontentsline{toc}{section}{Ejercicios computacionales}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-\begin{ejerciciocomp}{Visualización del paisaje de pérdida en 2D}
-\textbf{Objetivo:} construir y visualizar el paisaje de pérdida de un modelo
-no lineal simple en $\mathbb{R}^2$ e identificar sus puntos críticos numéricamente.
+\begin{ejerciciocomp}{El oscilador: paisaje convexo vs. no convexo}
+\label{ejcomp:oscilador3}
+\textbf{Objetivo:} visualizar el paisaje de pérdida para dos familias
+paramétricas del oscilador y observar el efecto de la topología sobre
+la convergencia del descenso de gradiente.
 
 \medskip\noindent\textbf{Datos:}
-$N = 10$ puntos $(x_i, y_i)$ generados como $x_i = i/10$,
-$y_i = \sin(2\pi x_i) + \varepsilon_i$ con $\varepsilon_i \sim \mathcal{N}(0, 0.05^2)$.
-
-\medskip\noindent\textbf{Modelo:} familia de una capa oculta con dos neuronas y
-activación $\tanh$:
-\[
-  f(x; \bm{\theta}) = \theta_3\,\tanh(\theta_1 x) + \theta_4\,\tanh(\theta_2 x),
-\]
-fijando $\theta_3 = \theta_4 = 1$ para visualizar el paisaje en el espacio
-$(\theta_1, \theta_2) \in [-4, 4]^2$.
+$N = 25$ puntos del oscilador: $y_i = \sin(2\pi t_i) + \varepsilon_i$,
+$\sigma = 0.15$, $t_i \in [0, 2]$ equiespaciados.
 
 \medskip\noindent\textbf{Algoritmo:}
 \begin{enumerate}
-  \item Calcular $\mathcal{L}(\theta_1, \theta_2)$ en una cuadrícula de
-        $100 \times 100$ puntos en $[-4,4]^2$.
-  \item Graficar el paisaje como mapa de calor y curvas de nivel. Identificar
-        visualmente las regiones de mínimos y puntos de silla.
-  \item Calcular numéricamente $\nabla\mathcal{L}$ y $\bm{H}$ en tres puntos:
-        uno en una región de mínimo aparente, uno en una cresta y uno en una
-        zona plana.
-  \item Para cada uno de los tres puntos, reportar los autovalores del hessiano
-        y clasificar el punto (mínimo, máximo, silla, plano).
+  \item \textbf{Familia lineal:} $f(t;\theta_0,\theta_1) = \theta_0 +
+        \theta_1 t$. Evaluar $\mathcal{L}(\theta_0,\theta_1)$ en la
+        cuadrícula $\theta_0 \in [-2,2]$, $\theta_1 \in [-2,2]$ con
+        $200 \times 200$ puntos. Graficar curvas de nivel. Ejecutar GD
+        desde 5 inicializaciones aleatorias con $\eta = 0.01$ y 200
+        iteraciones; trazar las trayectorias sobre las curvas de nivel.
+  \item \textbf{Familia no lineal:} $f(t;A,\omega) = A\sin(\omega t)$.
+        Evaluar $\mathcal{L}(A,\omega)$ en $A \in [-2,2]$,
+        $\omega \in [0, 20]$. Graficar curvas de nivel. Ejecutar GD
+        desde 10 inicializaciones aleatorias con $\eta = 10^{-4}$ y
+        $2000$ iteraciones.
+  \item Reportar: ¿cuántas inicializaciones convergen al mínimo global
+        ($\omega \approx 2\pi$) en el caso no lineal? ¿Cuáles convergen
+        a otros mínimos locales ($\omega \approx 4\pi$, etc.)?
 \end{enumerate}
 
 \medskip\noindent\textbf{Verificación:}
-El paisaje debe mostrar al menos dos mínimos (correspondientes a asignar
-$\theta_1 \approx \pi$ y $\theta_2 \approx 3\pi$, o viceversa, por simetría de
-permutación). La pérdida en el mínimo debe ser $< 0.01$. Los autovalores del
-hessiano en el mínimo deben ser ambos positivos.
-
-\medskip\noindent\textbf{Extensión:}
-Repetir el análisis fijando $(\theta_1, \theta_2)$ y variando $(\theta_3, \theta_4)$.
-¿El paisaje en ese subespacio es convexo? ¿Por qué?
+Familia lineal: todas las trayectorias convergen a
+$\bm{\theta}^* \approx (-0.02, 0.01)^\top$ (una recta casi plana,
+porque $\sin$ tiene media cero en $[0,2]$).
+Familia no lineal: el mínimo global está en $(A,\omega) \approx (1.0,
+6.28)$; mínimos locales visibles cerca de $\omega \approx 12.57$
+($2\omega_0$) y $\omega \approx 3.14$ ($\omega_0/2$).
 \end{ejerciciocomp}
 
-\begin{ejerciciocomp}{Condicionamiento del hessiano y velocidad de convergencia}
-\textbf{Objetivo:} verificar experimentalmente la cota de la
-Proposición~\ref{prop:conv_cuad} y observar el efecto del condicionamiento
-en la trayectoria del descenso.
-
-\medskip\noindent\textbf{Sistema:} pérdida cuadrática
-$\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}\bm{\theta}$
-con $\bm{H} = \mathrm{diag}(\mu_1, \mu_2) = \mathrm{diag}(1, 1/\kappa)$ para
-$\kappa \in \{1, 10, 100, 1000\}$.
+\begin{ejerciciocomp}{Descenso de gradiente y número de condicionamiento}
+\label{ejcomp:condicionamiento}
+\textbf{Objetivo:} verificar la Proposición~\ref{prop:conv_cuad}
+numéricamente y observar el efecto del condicionamiento.
 
 \medskip\noindent\textbf{Algoritmo:}
 \begin{enumerate}
-  \item Para cada $\kappa$, ejecutar descenso de gradiente con tasa óptima
-        $\eta^* = 2/(\mu_1 + \mu_2)$ partiendo de $\bm{\theta}^{(0)} = (1,1)^\top$.
-        Registrar $\|\bm{\theta}^{(k)}\|_2$ para $k = 0, 1, \ldots, 200$.
-  \item Graficar $\log\|\bm{\theta}^{(k)}\|_2$ vs. $k$ para los cuatro valores
-        de $\kappa$. Verificar que la pendiente coincide con $\log\!\left(\frac{\kappa-1}{\kappa+1}\right)$.
-  \item Para $\kappa = 100$, graficar la trayectoria $(\theta_1^{(k)}, \theta_2^{(k)})$
-        en el plano. Observar el zigzag.
-  \item Repetir con $\eta = 2\eta^*$ (tasa demasiado grande) y registrar la
-        primera iteración donde $\|\bm{\theta}^{(k)}\|_2 > \|\bm{\theta}^{(0)}\|_2$.
+  \item Para $\bm{H} = \text{diag}(1, \kappa)$ con
+        $\kappa \in \{1, 10, 100, 1000\}$, ejecutar GD con
+        $\eta^* = 2/(1+\kappa)$ desde $\bm{\theta}^{(0)} = (1,1)^\top$.
+  \item Registrar $\|\bm{e}^{(k)}\|_2$ para $k = 0, 1, \ldots, 2000$.
+  \item Graficar $\|\bm{e}^{(k)}\|_2$ en escala logarítmica y
+        comparar con la cota teórica $\rho^k\|\bm{e}^{(0)}\|_2$.
+  \item ¿Cuántas iteraciones necesita cada $\kappa$ para
+        $\|\bm{e}^{(k)}\| < 10^{-6}$?
 \end{enumerate}
 
 \medskip\noindent\textbf{Verificación:}
-Para $\kappa = 100$ y tasa óptima, el error debe caer por un factor de $10^{-3}$
-en $k \approx 460$ iteraciones (calculable de la fórmula: $k \geq \frac{3\ln 10}{\ln(101/99)} \approx 460$).
-Para $\kappa = 1$ (hessiano esférico), la convergencia debe ser en $k = 1$.
-
-\medskip\noindent\textbf{Extensión:}
-Implementar el método de gradiente conjugado para el mismo sistema. Comparar
-el número de iteraciones necesarias para alcanzar $\|\bm{\theta}^{(k)}\|_2 < 10^{-6}$
-con el descenso de gradiente. El gradiente conjugado debe converger en exactamente
-$p = 2$ pasos.
+$\kappa = 1$: $\sim 7$ iteraciones. $\kappa = 10$: $\sim 30$.
+$\kappa = 100$: $\sim 350$. $\kappa = 1000$: $\sim 3500$.
+La relación es aproximadamente lineal en $\kappa$, confirmando la
+Proposición.
 \end{ejerciciocomp}
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \begin{notasbib}
-El análisis de puntos críticos de funciones diferenciables mediante el índice de
-Morse fue desarrollado sistemáticamente por Marston Morse en los años 1920--1930;
-su libro \textit{The Calculus of Variations in the Large} (1934) es la referencia
-clásica. La teoría de Morse estudia cómo la topología del conjunto de sublevel
-$\mathcal{L}_c$ cambia al variar $c$, y cómo los puntos críticos determinan esa
-topología. La abundancia de puntos de silla en alta dimensión como obstáculo para
-la optimización fue identificada en el contexto de redes neuronales por
-Dauphin et al.~\cite{dauphin2014identifying}, quien propuso el método \textit{saddle-free
-Newton} para escapar de ellos eficientemente.
+La geometría de los paisajes de pérdida de redes neuronales es un área
+de investigación activa. El argumento heurístico sobre la preponderancia
+de puntos de silla en alta dimensión fue formalizado por Bray y Dean
+(2007) en el contexto de campos aleatorios gaussianos y aplicado a redes
+neuronales por Choromanska et al.\ (2015). El resultado de que los
+mínimos locales tienen valores de pérdida cercanos al global fue
+establecido para funciones de pérdida ``tipo campo medio'' y para redes
+sobreparametrizadas.
 
-La propiedad de que los mínimos locales de redes sobredeterminadas tienen valores
-similares fue establecida empíricamente por Goodfellow et al.\ y analizada
-teóricamente por Choromanska et al.\ (2015) usando una conexión con el modelo de
-vidrios de espín de la física estadística, específicamente con el modelo de
-Sherrington-Kirkpatrick. Aunque esa conexión ha sido cuestionada, la observación
-empírica es robusta. La distinción entre ``muchos mínimos locales malos''
-(imagen incorrecta) y ``puntos de silla prevalentes'' (imagen correcta) para
-redes profundas está bien establecida~\cite{goodfellow2015qualitatively}.
+El número de condicionamiento y su efecto sobre la convergencia del
+descenso de gradiente es un tema clásico de optimización numérica;
+véase Nocedal y Wright (2006)~\cite{nocedal2006numerical} y Nesterov
+(2004)~\cite{nesterov2004introductory}. La interpretación del descenso
+de gradiente como dinámica disipativa y su relación con la ecuación de
+Langevin sobremortigada se desarrolla en el Capítulo~\ref{ch:cap5}.
 
-El fenómeno de \textit{double descent} fue descrito formalmente por
-Belkin et al.~\cite{belkin2019reconciling} y su análisis en el modelo lineal fue
-completado por Hastie et al.\ (2022). La explicación en términos de regularización
-implícita del SGD y sesgo hacia mínimos planos se desarrolla en el Capítulo~8.
-
-El análisis de la tasa de convergencia del descenso de gradiente para funciones
-fuertemente convexas y su dependencia del condicionamiento es estándar; la
-presentación aquí sigue a Nesterov~\cite{nesterov2004introductory}. La conexión
-entre el condicionamiento de la hessiana y el condicionamiento de la matriz de
-diseño del Capítulo~2 está analizada en detalle en el Capítulo~8 de
-Nocedal y Wright~\cite{nocedal2006numerical}, que también desarrolla los métodos
-de segundo orden (Gauss-Newton, cuasi-Newton, gradiente conjugado) que el
-Capítulo~5 de este libro introduce en el contexto estocástico.
-
-La analogía entre el hessiano de la función de pérdida y la matriz de modos
-normales en mecánica es explícita en la literatura de aprendizaje automático bajo
-el nombre de \textit{loss surface}: el espectro del hessiano en el mínimo determina
-la ``rigidez'' del modelo en el sentido de cuánto cambia la predicción ante
-perturbaciones de los parámetros. Esta conexión con la mecánica cuántica de
-segunda cuantización y la física estadística de sistemas desordenados es uno de
-los temas activos en la teoría estadística del aprendizaje profundo.
+La clasificación de puntos críticos por el índice de Morse es un
+resultado central de la topología diferencial; véase Milnor (1963).
+La conexión con estados de transición en química se discute en
+Schlegel (2011) y en el contexto de redes neuronales por Ballard et al.\
+(2017). La teoría de catástrofes de Thom (1972) proporciona el marco
+para entender cómo cambia la topología del paisaje cuando se varía
+un hiperparámetro continuo.
 \end{notasbib}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ESTRELLA POLAR
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{estrella}{Geometría del paisaje de pérdida del sustituto neutrónico}
+\label{sec:estrella3}
+
+\textbf{El paisaje convexo de la expansión modal.}
+El sustituto lineal de la Estrella~\ref{sec:estrella2} tiene pérdida
+MSE convexa: la matriz de diseño modal
+$\bm{\Phi}_{\text{modal}} \in \mathbb{R}^{N \times Kn}$ produce un
+paraboloide en el espacio de coeficientes. El número de condicionamiento
+$\kappa(\bm{\Phi}_{\text{modal}}^\top\bm{\Phi}_{\text{modal}})$ depende
+de la separación entre los valores singulares de la matriz modal, que a
+su vez refleja la importancia relativa de cada modo en los datos de
+entrenamiento. Los modos de alto orden (rápida variación espacial)
+tienen valores singulares pequeños y están mal condicionados.
+
+\textbf{El paisaje no convexo del MLP.}
+Cuando se reemplaza la expansión modal lineal por un MLP (que se
+introducirá en el Capítulo~\ref{ch:cap4}), la pérdida deja de ser
+convexa. El paisaje tiene múltiples mínimos locales, puntos de silla y
+simetrías (permutación de neuronas dentro de una capa). Sin embargo, la
+Sección~\ref{sec:alta_dim} explica por qué esto no es un obstáculo
+práctico: para redes con suficientes parámetros ($p > N$), los mínimos
+locales tienen pérdida comparable al global.
+
+\textbf{El condicionamiento como indicador de entrenabilidad.}
+El número de condicionamiento del hessiano de la pérdida del MLP en el
+mínimo converge (estimado numéricamente) crece con la profundidad de la
+red: redes más profundas tienen paisajes más anisotrópicos, lo que
+explica la necesidad de técnicas de normalización
+(Capítulo~\ref{ch:cap8}) y optimizadores adaptativos
+(Capítulo~\ref{ch:cap5}).
+\end{estrella}
