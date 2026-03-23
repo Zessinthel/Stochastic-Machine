@@ -57,7 +57,7 @@ Un ejemplo unificado del **oscilador armónico** recorre los cuatro capítulos c
 
 ### Estrellas Polares
 
-Secciones opcionales al final de cada capítulo que aplican los resultados a dos sistemas físicos: la cinética puntual estocástica del reactor de investigación IAN-R1 (Caps. 1–8) y la simulación de cascadas electromagnéticas en calorímetros de altas energías (Caps. 9–12). Pueden omitirse sin perder continuidad.
+Secciones opcionales al final de cada capítulo que aplican los resultados a dos sistemas físicos: la cinética puntual estocástica de un reactor nuclear de investigación (Caps. 1–8) y la simulación de cascadas electromagnéticas en calorímetros de altas energías (Caps. 9–12). Pueden omitirse sin perder continuidad.
 
 ## Público objetivo
 
