@@ -1769,51 +1769,7 @@
   address   = {Philadelphia},
   year      = {2019}
 }
-% Referencia moderna para interpolación polinomial, nodos de Chebyshev,
-% fenómeno de Runge. Citado en notasbib del Cap. 1.
 
-@article{barron1993universal,
-  author  = {Barron, Andrew R.},
-  title   = {Universal Approximation Bounds for Superpositions of a
-             Sigmoidal Function},
-  journal = {IEEE Transactions on Information Theory},
-  volume  = {39},
-  number  = {3},
-  pages   = {930--945},
-  year    = {1993}
-}
-% Cota O(1/m) independiente de la dimensión para redes de una capa.
-% Citado en Cap. 1 (Sec. nolineales) y Cap. 4 (notasbib).
-
-@article{hardy1971multiquadric,
-  author  = {Hardy, Rolland L.},
-  title   = {Multiquadric Equations of Topography and Other Irregular
-             Surfaces},
-  journal = {Journal of Geophysical Research},
-  volume  = {76},
-  number  = {8},
-  pages   = {1905--1915},
-  year    = {1971}
-}
-% Introducción de las funciones radiales (RBF) para interpolación.
-% Citado en notasbib del Cap. 1.
-
-@book{buhmann2003radial,
-  author    = {Buhmann, Martin D.},
-  title     = {Radial Basis Functions: Theory and Implementations},
-  publisher = {Cambridge University Press},
-  year      = {2003}
-}
-% Referencia canónica para la teoría de RBFs.
-% Citado en notasbib del Cap. 1.
-
-@book{bishop2006pattern,
-  author    = {Bishop, Christopher M.},
-  title     = {Pattern Recognition and Machine Learning},
-  publisher = {Springer},
-  address   = {New York},
-  year      = {2006}
-}
 % Texto clásico de ML con perspectiva bayesiana.
 % Citado en notasbib del Cap. 1.
 
@@ -1958,3 +1914,47 @@
 }
 % RBF-QR para el límite plano. Citado en la observación sobre el
 % parámetro de forma, Sec. 1.5.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+% Entradas nuevas para references.bib — citadas en Chapter 5 (v3)
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ── Conexión SGD–Langevin ────────────────────────────────────────────────────
+
+@article{chaudhari2018stochastic,
+  author  = {Chaudhari, Pratik and Soatto, Stefano},
+  title   = {Stochastic Gradient Descent Performs Variational Inference,
+             Converges to Limit Cycles for Deep Networks},
+  journal = {Proceedings of the 6th International Conference on Learning
+             Representations ({ICLR})},
+  year    = {2018}
+}
+% Conexión entre SGD y dinámica de Langevin, interpretación variacional.
+% Citado en notasbib del Cap. 5.
+
+@article{li2017stochastic,
+  author  = {Li, Qianxiao and Tai, Cheng and E, Weinan},
+  title   = {Stochastic Modified Equations and Adaptive Stochastic Gradient
+             Algorithms},
+  journal = {Proceedings of the 34th International Conference on Machine
+             Learning ({ICML})},
+  pages   = {2101--2110},
+  year    = {2017}
+}
+% Ecuaciones modificadas estocásticas para el análisis del SGD.
+% Formaliza la aproximación SDE del SGD con correcciones de orden superior.
+% Citado en notasbib del Cap. 5.
+
+% ── Recocido simulado ────────────────────────────────────────────────────────
+
+@article{kirkpatrick1983optimization,
+  author  = {Kirkpatrick, Scott and Gelatt, C. Daniel and Vecchi, Mario P.},
+  title   = {Optimization by Simulated Annealing},
+  journal = {Science},
+  volume  = {220},
+  number  = {4598},
+  pages   = {671--680},
+  year    = {1983}
+}
+% Artículo fundacional del recocido simulado.
+% Citado en notasbib del Cap. 5 y en la Sec. 5.6 (schedules como recocido).

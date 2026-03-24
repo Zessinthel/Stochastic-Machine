@@ -1,1328 +1,1157 @@
-%═══════════════════════════════════════════════════════════════════════════════
-\chapter{Optimización iterativa: del descenso de gradiente a los métodos adaptativos}
+% ═══════════════════════════════════════════════════════════════════════════════
+% CAPÍTULO 5 — OPTIMIZACIÓN ESTOCÁSTICA Y LA ECUACIÓN DE LANGEVIN
+% ═══════════════════════════════════════════════════════════════════════════════
+% Cambios principales respecto a la versión anterior:
+%   1. Apertura conectada con la promesa del Cap. 4: "el SGD es Langevin".
+%      Se llega al ruido en la primera página, no después de repetir GD.
+%   2. GD determinista comprimido: referencia al Cap. 3, solo lo nuevo
+%      (convergencia para fuertemente convexas, condición de estabilidad
+%      como CFL). Se eliminó el solapamiento.
+%   3. Bifurcación explícita para el cálculo de Itô: recuadro "Promesa al
+%      lector" con dos rutas de lectura (informal aquí, rigurosa en Cap. 10).
+%   4. Notación: C(θ) → Γ(θ) para la covarianza del ruido estocástico,
+%      evitando colisión con funciones de correlación.
+%   5. Discusión de límites de la aproximación gaussiana del ruido de
+%      mini-batch (B pequeño, colas pesadas, outliers).
+%   6. Contenido fuerte preservado: Langevin, Fokker-Planck, Gibbs, tabla
+%      de correspondencias, momento, Adam, schedules, inicialización.
+%   7. Estrella Polar como sección independiente al final.
+%   8. Transición al Cap. 6 actualizada.
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{Optimización estocástica y la ecuación de Langevin}
 \label{ch:cap5}
-%═══════════════════════════════════════════════════════════════════════════════
 
-El Capítulo~\ref{ch:cap4} construyó el MLP como objeto matemático preciso y estableció
-la notación del forward pass. El Capítulo~\ref{ch:cap3} mostró que el paisaje de
-$\mathcal{L}(\bm{\theta})$ es no convexo y que no existe forma cerrada para
-$\bm{\theta}^* = \argmin\mathcal{L}$. El presente capítulo cierra ese hueco: diseña
-y analiza los algoritmos iterativos que ajustan $\bm{\theta}$.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Del descenso determinista al ruido útil}
+\label{sec:apertura5}
+% ─────────────────────────────────────────────────────────────────────────────
 
-La perspectiva organizadora del capítulo es la siguiente: los algoritmos de
-optimización son integradores numéricos de ecuaciones diferenciales. El descenso
-de gradiente es el método de Euler aplicado a la ODE del flujo de gradiente. El
-SGD introduce un término estocástico que convierte esa ODE en una SDE de Langevin
-cuya dinámica obedece una ecuación de Fokker-Planck. Los optimizadores adaptativos
-son integradores con paso variable que aproximan la acción del hessiano inverso.
-Esta perspectiva no es una metáfora: produce cotas de convergencia precisas,
-explica el rol de la tasa de aprendizaje como temperatura termodinámica, y conecta
-directamente con las herramientas del cálculo estocástico que el físico y el
-matemático aplicado necesitarán en el Capítulo~\ref{ch:cap12} para los modelos
-generativos.
+\dificultad{2}{3}
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{El problema de optimización iterativa}
-\label{sec:optim_iterativa}
-%───────────────────────────────────────────────────────────────────────────────
+El Capítulo~\ref{ch:cap4} cerró con una promesa: el algoritmo que entrena
+las redes neuronales no es simplemente un método de optimización. Es una
+ecuación de la física. Este capítulo cumple esa promesa.
+
+El descenso de gradiente del Capítulo~\ref{ch:cap3} es una dinámica
+determinista: una partícula que desciende por el paisaje de pérdida sin
+fluctuaciones, siguiendo la fuerza $-\nabla\mathcal{L}$ en cada punto. Su
+comportamiento está completamente determinado por la condición inicial y la
+geometría del paisaje. Para la pérdida MSE con familia lineal, el paisaje
+es un paraboloide y la partícula converge al mínimo global con tasa
+geométrica $(\kappa-1)/(\kappa+1)$ (Proposición~\ref{prop:conv_cuad}). Para
+paisajes no convexos, la partícula puede quedar atrapada en un mínimo local
+o ralentizarse indefinidamente en una meseta.
+
+Pero en la práctica nadie usa el gradiente completo. Un dataset de $N = 10^9$
+muestras haría que cada iteración tardara horas. La solución estándar es
+estimar el gradiente con un \textbf{mini-lote} aleatorio de $B \ll N$
+muestras. Esta estimación tiene ruido: el gradiente del mini-lote no
+coincide con el gradiente verdadero. Y ese ruido, lejos de ser un defecto,
+resulta ser exactamente la \textbf{agitación térmica} que una partícula
+browniana experimenta en un solvente viscoso.
+
+La ecuación que describe esa dinámica es la \textbf{ecuación de Langevin
+sobremortigada}: la misma ecuación que gobierna la difusión de una molécula
+en un fluido, la relajación de un sistema de espines hacia el equilibrio, o
+la evolución de la concentración de un reactante en solución. Su distribución
+estacionaria es la \textbf{distribución de Gibbs} de la mecánica estadística.
+La tasa de aprendizaje juega el papel de la temperatura. El learning rate
+schedule es un protocolo de recocido.
+
+Estas no son analogías retóricas. Son identidades matemáticas que este
+capítulo demuestra.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Descenso de gradiente: recapitulación y convergencia}
+\label{sec:gd_recap}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-\subsection{Por qué no hay solución de forma cerrada}
-\label{subsec:no_forma_cerrada}
-
-La condición necesaria de primer orden para un mínimo de $\mathcal{L}$ es
-$\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^*) = \bm{0}$. Para la familia
-lineal, esta ecuación es el sistema lineal $\bm{V}^\top\bm{V}\bm{\theta} =
-\bm{V}^\top\bm{y}$ con solución exacta $\bm{\theta}^* = \bm{V}^\dagger\bm{y}$
-(Capítulo~\ref{ch:cap2}). Para el MLP, la ecuación $\nabla_{\bm{\theta}}\mathcal{L}
-(\bm{\theta}^*) = \bm{0}$ es un sistema de $p$ ecuaciones no lineales en $p$
-incógnitas sin estructura algebraica explotable. No existe, en general, ningún
-método algebraico para resolverlo.
-
-El método de Newton resolvería el sistema iterativamente: partiendo de $\bm{\theta}^{(0)}$,
-cada iteración resuelve $\bm{H}(\bm{\theta}^{(k)})\bm{d}^{(k)} = -\nabla\mathcal{L}
-(\bm{\theta}^{(k)})$ y actualiza $\bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} +
-\bm{d}^{(k)}$. El problema es que $\bm{H}(\bm{\theta}) \in \mathbb{R}^{p\times p}$:
-para un MLP con $p = 10^9$ parámetros, almacenar $\bm{H}$ requeriría
-$\sim 10^{18}$ bytes (un exabyte), y factorizarla costaría $O(p^3) \approx 10^{27}$
-operaciones. Newton es computacionalmente inviable a la escala de las redes
-neuronales modernas.
-
-Se necesita un algoritmo que use solo información de primer orden
-($\nabla\mathcal{L}$, cuyo cómputo se desarrollará en el Capítulo~\ref{ch:cap6}),
-requiera memoria $O(p)$, y escale linealmente con $p$.
-
-\subsection{La idea central: seguir el gradiente negativo}
-\label{subsec:idea_gradiente}
-
-La Proposición~\ref{prop:max_ascenso} estableció que $-\nabla_{\bm{\theta}}\mathcal{L}
-(\bm{\theta})$ es la dirección de máximo descenso local de $\mathcal{L}$ en
-$\bm{\theta}$. El algoritmo más simple que explota esta propiedad es:
+El Capítulo~\ref{ch:cap3} introdujo el descenso de gradiente como la
+discretización de Euler del flujo de gradiente
+$\dot{\bm{\theta}} = -\nabla\mathcal{L}(\bm{\theta})$:
 \begin{equation}
+  \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)}
+  - \eta\nabla\mathcal{L}(\bm{\theta}^{(k)}),
   \label{eq:gd}
-  \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} - \eta\,\nabla_{\bm{\theta}}\mathcal{L}
-  (\bm{\theta}^{(k)}),
 \end{equation}
-donde $\eta > 0$ es la \textbf{tasa de aprendizaje} (\textit{learning rate}).
-Esta regla de actualización se denomina \textbf{descenso de gradiente} (GD,
-\textit{gradient descent}). A lo largo de este capítulo se irá enriqueciendo con
-mecanismos adicionales (estocasticidad, momento, adaptación), pero el núcleo
-permanece: moverse en la dirección opuesta al gradiente.
+con paso temporal $\eta$ (la tasa de aprendizaje). La condición de
+estabilidad $\eta < 2/\mu_{\max}$ y la convergencia geométrica con tasa
+$(\kappa-1)/(\kappa+1)$ fueron establecidas allí.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Descenso de gradiente: el método de Euler sobre el flujo de gradiente}
-\label{sec:gd}
-%───────────────────────────────────────────────────────────────────────────────
+Para funciones más generales, la convergencia se formaliza con dos
+propiedades:
 
-\dificultad{2}{3}
-
-\subsection{La ODE del flujo de gradiente}
-\label{subsec:flujo}
-
-El descenso de gradiente en tiempo continuo es la ecuación diferencial ordinaria:
-\begin{equation}
-  \label{eq:flujo_gradiente}
-  \dot{\bm{\theta}}(t) = -\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}(t)),
-  \qquad \bm{\theta}(0) = \bm{\theta}^{(0)}.
-\end{equation}
-Esta ecuación describe la trayectoria de un punto que sigue en todo momento la
-dirección de máximo descenso de $\mathcal{L}$. Recibe el nombre de \textbf{flujo
-de gradiente} de $\mathcal{L}$.
-
-\begin{observacion}{Analogía con la mecánica}
-La ecuación~\eqref{eq:flujo_gradiente} es la ecuación de movimiento de una
-partícula en el potencial $\mathcal{L}(\bm{\theta})$ con amortiguamiento
-infinito (sin inercia): la fuerza $-\nabla\mathcal{L}$ se equilibra instantáneamente
-con la fricción. En mecánica, esta es la dinámica de una partícula sobre-amortiguada
-o la ecuación de difusión de Smoluchowski sin ruido térmico. A diferencia de la
-ecuación de Newton $\ddot{\bm{\theta}} = -\nabla\mathcal{L}$, que puede oscilar
-alrededor de un mínimo, el flujo de gradiente descende monótonamente: $\frac{d}{dt}
-\mathcal{L}(\bm{\theta}(t)) = \langle\nabla\mathcal{L}, \dot{\bm{\theta}}\rangle
-= -\|\nabla\mathcal{L}\|_2^2 \leq 0$.
-\end{observacion}
-
-Para funciones convexas, la solución de~\eqref{eq:flujo_gradiente} converge al
-mínimo global. Para funciones no convexas, converge a un punto crítico cuya
-naturaleza depende de la inicialización.
-
-\begin{fisicaconexion}{Descenso de gradiente como dinámica viscosa}
-El flujo de gradiente $\dot{\bm{\theta}} = -\nabla\mathcal{L}(\bm{\theta})$ es
-la ecuación de movimiento de una partícula en un campo de fuerzas conservativo
-$\bm{F} = -\nabla\mathcal{L}$ con amortiguamiento viscoso infinito: toda la
-energía cinética se disipa instantáneamente. Esta es exactamente la
-\textbf{ecuación de Smoluchowski} de la física de coloides en el límite de
-alta viscosidad (número de Reynolds $\to 0$). En ese límite, $m\ddot{\bm{r}} \approx 0$
-y la ecuación de Newton se reduce a $\gamma\dot{\bm{r}} = \bm{F}$, con $\gamma$
-el coeficiente de fricción. La descarga de un condensador a través de una
-resistencia ($V = IR$, $V = Q/C$, $\dot{Q} = -Q/RC$) sigue la misma ecuación:
-$Q(t) = Q_0 e^{-t/RC}$, donde $RC$ es la constante de tiempo análoga a $1/\mu_{\min}$
-(el modo más lento del flujo de gradiente). La condición de estabilidad de Euler
-para el condensador es $\eta < 2RC$: exactamente la misma cota que para el
-descenso de gradiente.
-\end{fisicaconexion}
-
-\subsection{El descenso de gradiente como discretización de Euler}
-\label{subsec:euler}
-
-\dificultad{2}{3}
-
-El método de Euler con paso temporal $\eta$ aplicado a~\eqref{eq:flujo_gradiente}
-produce:
-\[
-  \bm{\theta}(t+\eta) \approx \bm{\theta}(t) + \eta\,\dot{\bm{\theta}}(t)
-  = \bm{\theta}(t) - \eta\,\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}(t)),
-\]
-que es exactamente la actualización~\eqref{eq:gd} con $k$ como índice de tiempo
-discreto. La tasa de aprendizaje $\eta$ es el paso temporal del integrador.
-
-Esta identificación tiene consecuencias inmediatas. La condición de estabilidad
-del método de Euler para una ODE lineal $\dot{u} = \lambda u$ es $|\eta\lambda| < 2$
-(región de estabilidad del plano complejo). Aplicada al flujo de gradiente
-linealizado alrededor de un punto crítico $\bm{\theta}^*$:
-$\delta\dot{\bm{\theta}} = -\bm{H}(\bm{\theta}^*)\delta\bm{\theta}$, los
-autovalores de la dinámica son $\lambda_k = -\mu_k$ (los autovalores del hessiano,
-con signo negativo). La condición de estabilidad de Euler requiere
-$\eta|\mu_k| < 2$ para todo $k$, lo que da $\eta < 2/\mu_{\max}$: exactamente
-la condición de la Proposición~\ref{prop:conv_cuad}. Las propiedades de
-convergencia del descenso de gradiente son propiedades de estabilidad del
-integrador de Euler para la ODE linealizada.
-
-\subsection{Convergencia para funciones fuertemente convexas}
-\label{subsec:conv_fuerte}
-
-\dificultad{2}{2}
-
-\begin{definicion}{Función fuertemente convexa}
+\begin{definicion}{Convexidad fuerte y gradiente Lipschitz}
 \label{def:fuerteconv}
-Una función diferenciable $\mathcal{L}:\mathbb{R}^p\to\mathbb{R}$ es
-\textbf{$\mu$-fuertemente convexa} con constante $\mu > 0$ si para todo
-$\bm{\theta}, \bm{\phi} \in \mathbb{R}^p$:
-\[
-  \mathcal{L}(\bm{\phi}) \geq \mathcal{L}(\bm{\theta})
-  + \langle\nabla\mathcal{L}(\bm{\theta}),\bm{\phi}-\bm{\theta}\rangle
-  + \frac{\mu}{2}\|\bm{\phi}-\bm{\theta}\|_2^2.
-\]
+$\mathcal{L}$ es \textbf{$\mu$-fuertemente convexa} si
+$\mathcal{L}(\bm{\phi}) \geq \mathcal{L}(\bm{\theta}) +
+\langle\nabla\mathcal{L}(\bm{\theta}),\bm{\phi}-\bm{\theta}\rangle +
+\frac{\mu}{2}\|\bm{\phi}-\bm{\theta}\|^2$ para todo
+$\bm{\theta},\bm{\phi}$. El gradiente es \textbf{$L$-Lipschitz} si
+$\|\nabla\mathcal{L}(\bm{\theta})-\nabla\mathcal{L}(\bm{\phi})\| \leq
+L\|\bm{\theta}-\bm{\phi}\|$. El cociente $\kappa = L/\mu$ es el
+\textbf{número de condición} del problema.
 \end{definicion}
 
-La convexidad fuerte es la convexidad ordinaria con un término cuadrático extra:
-implica que la función crece al menos cuadráticamente en todas las direcciones, lo
-que garantiza un mínimo global único y bien separado.
-
-\begin{definicion}{Gradiente Lipschitz}
-\label{def:lipschitz}
-El gradiente de $\mathcal{L}$ es \textbf{$L$-Lipschitz} si para todo
-$\bm{\theta}, \bm{\phi} \in \mathbb{R}^p$:
-\[
-  \|\nabla\mathcal{L}(\bm{\theta}) - \nabla\mathcal{L}(\bm{\phi})\|_2
-  \leq L\,\|\bm{\theta}-\bm{\phi}\|_2.
-\]
-Para $\mathcal{L} \in C^2$, esta condición equivale a $\|\bm{H}(\bm{\theta})\|_2
-\leq L$ para todo $\bm{\theta}$: el hessiano tiene autovalores acotados por $L$.
-\end{definicion}
-
-\begin{proposicion}{Convergencia del descenso de gradiente}
+\begin{proposicion}{Convergencia del GD}
 \label{prop:conv_gd}
-Sea $\mathcal{L}$ $\mu$-fuertemente convexa con gradiente $L$-Lipschitz y mínimo
-$\bm{\theta}^*$. El descenso de gradiente~\eqref{eq:gd} con tasa $\eta = 1/L$
-satisface:
-\[
+Para $\mathcal{L}$ $\mu$-fuertemente convexa con gradiente $L$-Lipschitz,
+el GD con $\eta = 1/L$ satisface:
+\begin{equation}
   \mathcal{L}(\bm{\theta}^{(k)}) - \mathcal{L}(\bm{\theta}^*)
-  \leq \left(1 - \frac{\mu}{L}\right)^k
-  \bigl[\mathcal{L}(\bm{\theta}^{(0)}) - \mathcal{L}(\bm{\theta}^*)\bigr].
-\]
+  \leq \left(1-\frac{\mu}{L}\right)^k
+  \bigl[\mathcal{L}(\bm{\theta}^{(0)})-\mathcal{L}(\bm{\theta}^*)\bigr].
+  \label{eq:conv_gd}
+\end{equation}
+Para precisión $\varepsilon$, se necesitan $O(\kappa\log(1/\varepsilon))$
+iteraciones.
 \end{proposicion}
 
 \begin{proof}
-De la condición $L$-Lipschitz del gradiente se obtiene la cota de descenso:
-\[
-  \mathcal{L}(\bm{\theta}^{(k+1)}) \leq \mathcal{L}(\bm{\theta}^{(k)})
-  - \frac{1}{2L}\|\nabla\mathcal{L}(\bm{\theta}^{(k)})\|_2^2.
-\]
-De la $\mu$-convexidad fuerte, $\|\nabla\mathcal{L}(\bm{\theta})\|_2^2 \geq
-2\mu[\mathcal{L}(\bm{\theta})-\mathcal{L}(\bm{\theta}^*)]$. Combinando:
-\[
-  \mathcal{L}(\bm{\theta}^{(k+1)}) - \mathcal{L}(\bm{\theta}^*)
-  \leq \left(1-\frac{\mu}{L}\right)
-  \bigl[\mathcal{L}(\bm{\theta}^{(k)})-\mathcal{L}(\bm{\theta}^*)\bigr].
-\]
-Iterando $k$ veces se obtiene el resultado. $\square$
+De la $L$-Lipschitz:
+$\mathcal{L}(\bm{\theta}^{(k+1)}) \leq \mathcal{L}(\bm{\theta}^{(k)})
+- \frac{1}{2L}\|\nabla\mathcal{L}(\bm{\theta}^{(k)})\|^2$.
+De la $\mu$-convexidad fuerte:
+$\|\nabla\mathcal{L}(\bm{\theta})\|^2 \geq
+2\mu[\mathcal{L}(\bm{\theta})-\mathcal{L}(\bm{\theta}^*)]$.
+Combinando e iterando. $\square$
 \end{proof}
 
-El cociente $L/\mu$ es el \textbf{número de condición} del problema de optimización:
-coincide, para funciones cuadráticas, con el número de condicionamiento del hessiano
-$\kappa(\bm{H}) = \mu_{\max}/\mu_{\min}$ del Capítulo~\ref{ch:cap3}. Cuanto mayor
-$L/\mu$, más lenta la convergencia: se necesitan $O((L/\mu)\log(1/\varepsilon))$
-iteraciones para alcanzar precisión $\varepsilon$.
+El GD determinista tiene una limitación práctica insalvable: cada iteración
+requiere evaluar $\nabla\mathcal{L} = \frac{1}{N}\sum_{i=1}^N\nabla\ell_i$,
+con costo $O(N)$. Para $N = 10^9$, esto es prohibitivo. La siguiente
+sección introduce la estimación estocástica del gradiente, que reduce el
+costo a $O(B)$ a cambio de introducir ruido.
 
-\subsection{Descenso de gradiente en lote completo y en mini-lotes}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El gradiente estocástico y su ruido}
+\label{sec:sgd_ruido}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+\subsection{Mini-lotes y el estimador insesgado}
 \label{subsec:minibatch}
 
-\dificultad{1}{2}
-
-La pérdida empírica es $\mathcal{L}(\bm{\theta}) = \frac{1}{N}\sum_{i=1}^N
-\ell_i(\bm{\theta})$ con $\ell_i(\bm{\theta}) = \ell(f(\bm{x}_i;\bm{\theta}),y_i)$.
-El gradiente completo es $\nabla\mathcal{L} = \frac{1}{N}\sum_{i=1}^N\nabla\ell_i$:
-requiere evaluar la red en las $N$ muestras, con costo $O(N)$ por iteración.
-Para $N = 10^9$, una sola iteración puede tardar horas.
-
-La solución es estimar el gradiente con un \textbf{mini-lote} aleatorio
+El gradiente se estima con un \textbf{mini-lote} aleatorio
 $\mathcal{B} \subset \{1,\ldots,N\}$ de tamaño $B \ll N$:
-\[
+\begin{equation}
   \hat{\nabla}\mathcal{L}(\bm{\theta};\mathcal{B})
-  = \frac{1}{B}\sum_{i\in\mathcal{B}} \nabla_{\bm{\theta}}\ell_i(\bm{\theta}).
-\]
-El costo por iteración es $O(B)$, independiente de $N$. El precio es que el
-gradiente estimado tiene ruido. Analizar ese ruido es el objeto de la siguiente
-sección.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Descenso de gradiente estocástico y cálculo de Itô}
-\label{sec:sgd_ito}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{3}{4}
-
-Esta sección desarrolla la conexión entre el SGD y las ecuaciones diferenciales
-estocásticas. El resultado central ---que el SGD es la discretización de una SDE
-de Langevin--- no solo explica el comportamiento del algoritmo sino que introduce
-el lenguaje del cálculo estocástico que será imprescindible en el Capítulo~\ref{ch:cap12}
-para los modelos de difusión.
-
-\subsection{El gradiente estocástico como estimador con ruido}
-\label{subsec:ruido_grad}
+  = \frac{1}{B}\sum_{i\in\mathcal{B}}
+  \nabla_{\bm{\theta}}\ell_i(\bm{\theta}).
+  \label{eq:grad_minibatch}
+\end{equation}
 
 \begin{proposicion}{Insesgamiento del gradiente estocástico}
 \label{prop:insesgado}
-Sea $\mathcal{B}$ un mini-lote seleccionado uniformemente al azar de $\{1,\ldots,N\}$
-con tamaño $|\mathcal{B}| = B$. Entonces:
-\[
-  \mathbb{E}_{\mathcal{B}}\bigl[\hat{\nabla}\mathcal{L}(\bm{\theta};\mathcal{B})\bigr]
-  = \nabla\mathcal{L}(\bm{\theta}).
-\]
+$\mathbb{E}_{\mathcal{B}}[\hat{\nabla}\mathcal{L}(\bm{\theta};\mathcal{B})]
+= \nabla\mathcal{L}(\bm{\theta})$.
 \end{proposicion}
 
 \begin{proof}
-La esperanza sobre los mini-lotes aleatorios de tamaño $B$ seleccionados sin
-reemplazamiento satisface:
-$\mathbb{E}_{\mathcal{B}}\bigl[\frac{1}{B}\sum_{i\in\mathcal{B}}\nabla\ell_i\bigr]
-= \frac{1}{N}\sum_{i=1}^N\nabla\ell_i = \nabla\mathcal{L}$,
-donde se ha usado que cada índice $i$ aparece en $\binom{N-1}{B-1}/\binom{N}{B} =
-B/N$ de los posibles mini-lotes. $\square$
+Cada índice $i$ aparece en una fracción $B/N$ de los posibles mini-lotes
+seleccionados sin reemplazo:
+$\mathbb{E}[\frac{1}{B}\sum_{i\in\mathcal{B}}\nabla\ell_i] =
+\frac{1}{N}\sum_{i=1}^N\nabla\ell_i = \nabla\mathcal{L}$. $\square$
 \end{proof}
 
-El error de estimación es:
-\[
-  \bm{\xi}(\bm{\theta};\mathcal{B})
-  = \hat{\nabla}\mathcal{L}(\bm{\theta};\mathcal{B}) - \nabla\mathcal{L}(\bm{\theta}),
-\]
-con $\mathbb{E}[\bm{\xi}] = \bm{0}$ y covarianza:
-\[
-  \bm{C}(\bm{\theta}) = \mathbb{E}\bigl[\bm{\xi}\bm{\xi}^\top\bigr]
+El error de estimación $\bm{\xi}(\bm{\theta};\mathcal{B}) =
+\hat{\nabla}\mathcal{L} - \nabla\mathcal{L}$ tiene media cero y
+covarianza:
+\begin{equation}
+  \bm{\Gamma}(\bm{\theta})
+  = \mathbb{E}[\bm{\xi}\bm{\xi}^\top]
   = \frac{1}{B}\,\mathrm{Cov}_i[\nabla\ell_i(\bm{\theta})],
-\]
-donde $\mathrm{Cov}_i[\nabla\ell_i] = \frac{1}{N}\sum_{i=1}^N
-(\nabla\ell_i-\nabla\mathcal{L})(\nabla\ell_i-\nabla\mathcal{L})^\top$ es la
-covarianza empírica de los gradientes individuales. La varianza del estimador
-escala como $1/B$: doblar el tamaño del mini-lote reduce el ruido a la mitad.
+  \label{eq:cov_ruido}
+\end{equation}
+donde $\mathrm{Cov}_i[\nabla\ell_i]$ es la covarianza empírica de los
+gradientes individuales. La varianza escala como $1/B$: duplicar el
+mini-lote reduce el ruido a la mitad.
+
+\begin{observacion}{Notación $\bm{\Gamma}$ para la covarianza del ruido}
+Usamos $\bm{\Gamma}(\bm{\theta})$ (no $\bm{C}(\bm{\theta})$) para la
+covarianza del ruido estocástico del gradiente, reservando $C$ para
+funciones de correlación en el sentido de la mecánica estadística. La
+notación $\bm{\Gamma}$ sugiere ``tensor de difusión'' o ``coeficiente de
+transporte'', que es el rol que esta matriz juega en la SDE de Langevin
+de la Sección~\ref{sec:langevin_sgd}.
+\end{observacion}
 
 La regla de actualización del SGD es:
 \begin{equation}
-  \label{eq:sgd}
   \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)}
-  - \eta\,\nabla\mathcal{L}(\bm{\theta}^{(k)})
-  - \eta\,\bm{\xi}^{(k)},
+  - \eta\nabla\mathcal{L}(\bm{\theta}^{(k)})
+  - \eta\bm{\xi}^{(k)}.
+  \label{eq:sgd}
 \end{equation}
-donde $\bm{\xi}^{(k)}$ es el ruido del mini-lote en la iteración $k$.
+El primer término es el descenso determinista. El segundo es el ruido. El
+análisis de la dinámica de largo plazo de~\eqref{eq:sgd} requiere el
+lenguaje de las ecuaciones diferenciales estocásticas.
 
-\subsection{Elementos de cálculo de Itô}
-\label{subsec:ito}
+\subsection{Épocas, iteraciones y el tamaño del mini-lote}
+\label{subsec:epocas}
 
-Para entender la dinámica de largo plazo del SGD se necesita el lenguaje de las
-ecuaciones diferenciales estocásticas. Esta subsección introduce los conceptos
-mínimos del cálculo de Itô de forma autocontenida.
+Una \textbf{iteración} (step) es una actualización con un mini-lote. Una
+\textbf{época} es una pasada completa sobre el dataset: $\lceil N/B\rceil$
+iteraciones. La elección de $B$ involucra tres compromisos: estadístico
+(varianza $\propto 1/B$), computacional (GPUs saturan para $B$
+suficientemente grande), y de regularización implícita (el ruido del SGD
+favorece mínimos amplios, como se verá en la
+Sección~\ref{subsec:gibbs_sgd}). En la práctica, $B \in [32, 512]$ cubre
+la mayoría de las aplicaciones.
 
-\subsubsection*{El movimiento browniano}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Elementos de cálculo estocástico}
+\label{sec:ito_elementos}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{4}
+
+\begin{observacion}{Dos rutas de lectura}
+\label{obs:bifurcacion}
+Esta sección introduce los elementos mínimos del cálculo de Itô necesarios
+para derivar la SDE de Langevin del SGD y su distribución estacionaria. La
+presentación es operacional: se enuncian los resultados y se muestran sus
+consecuencias, pero las demostraciones completas se difieren al
+Capítulo~\ref{ch:cap10}.
+
+El lector tiene dos opciones:
+
+\textbf{Ruta directa:} leer esta sección, aceptar los resultados
+enunciados, y continuar con la Sección~\ref{sec:langevin_sgd}. Esto es
+suficiente para entender los Capítulos~\ref{ch:cap6}--\ref{ch:cap9} y para
+usar los optimizadores en la práctica.
+
+\textbf{Ruta rigurosa:} leer el Capítulo~\ref{ch:cap10} primero (variación
+cuadrática, integral de Itô como límite $L^2$, demostración de la fórmula
+de Itô) y luego volver aquí. El Capítulo~\ref{ch:cap10} no depende de
+ningún contenido de los Capítulos~\ref{ch:cap5}--\ref{ch:cap9}, así que
+esta ruta es posible sin saltos lógicos.
+
+En ambos casos, los resultados que se usan en este capítulo se demuestran
+formalmente en el Capítulo~\ref{ch:cap10}. No hay deuda matemática: solo un
+orden de lectura flexible.
+\end{observacion}
+
+\subsection{El movimiento browniano}
+\label{subsec:browniano}
 
 \begin{definicion}{Movimiento browniano estándar}
 \label{def:browniano}
-Un \textbf{movimiento browniano} (o proceso de Wiener) en $\mathbb{R}^p$ es
-un proceso estocástico $\bm{W}_t = (W_t^1,\ldots,W_t^p)$ tal que:
-\begin{enumerate}
-  \item $\bm{W}_0 = \bm{0}$ casi seguramente.
-  \item Para $0 \leq s < t$, el incremento $\bm{W}_t - \bm{W}_s$ tiene
-        distribución $\mathcal{N}(\bm{0},(t-s)\bm{I})$.
-  \item Los incrementos en intervalos disjuntos son independientes.
-  \item Las trayectorias $t \mapsto \bm{W}_t$ son continuas casi seguramente.
-\end{enumerate}
+Un \textbf{movimiento browniano} en $\mathbb{R}^p$ es un proceso
+$\bm{W}_t$ con: (1) $\bm{W}_0 = \bm{0}$; (2) incrementos gaussianos
+$\bm{W}_t - \bm{W}_s \sim \mathcal{N}(\bm{0},(t-s)\bm{I})$ para
+$s < t$; (3) incrementos independientes en intervalos disjuntos; (4)
+trayectorias continuas c.s.
 \end{definicion}
 
-El movimiento browniano es el límite de la suma de pasos aleatorios gaussianos
-independientes cuando el paso tiende a cero. Sus trayectorias son continuas pero
-no diferenciables en ningún punto: $\mathbb{E}[|W_{t+h}-W_t|^2] = h$, de modo
-que el cociente $(W_{t+h}-W_t)/h$ tiene varianza $1/h \to \infty$ cuando $h\to 0$.
-Por esta razón el movimiento browniano no admite derivada en el sentido ordinario,
-y se necesita el cálculo de Itô para trabajar con él.
+El movimiento browniano es el límite en distribución de la caminata
+aleatoria reescalada: si $S_n = \sum_{k=1}^n \xi_k$ con $\xi_k$ i.i.d.\
+de media cero y varianza uno, el proceso
+$W^{(n)}(t) = S_{\lfloor nt\rfloor}/\sqrt{n}$ converge a $\bm{W}_t$
+(teorema de Donsker). En física, el browniano es el modelo del movimiento
+de una partícula coloidal sometida a colisiones con las moléculas del
+solvente (Einstein, 1905; Langevin, 1908).
 
-\subsubsection*{La integral de Itô}
+\subsection{La tabla de Itô y la variación cuadrática}
+\label{subsec:tabla_ito}
 
-La integral $\int_0^T f(t)\,dW_t$ no puede definirse como una integral de
-Riemann-Stieltjes ordinaria porque las trayectorias de $W_t$ tienen variación
-cuadrática infinita. La integral de Itô se define como límite en media cuadrática
-de sumas de Riemann con el integrando evaluado en el extremo izquierdo de cada
-subintervalo:
-\[
-  \int_0^T f(t)\,dW_t
-  = \lim_{n\to\infty} \sum_{k=0}^{n-1} f(t_k)\,(W_{t_{k+1}}-W_{t_k}),
-\]
-donde $0 = t_0 < t_1 < \cdots < t_n = T$ es una partición. Esta elección del
-punto de evaluación (extremo izquierdo) define el cálculo de Itô y es la que
-aparece naturalmente en aplicaciones físicas y en el análisis del SGD.
-
-La propiedad fundamental que distingue al cálculo de Itô del ordinario es la
-\textbf{variación cuadrática}: el producto $(dW_t)^2$ no es negligible de segundo
-orden sino que se comporta como $dt$:
+La propiedad central del browniano que lo distingue del cálculo ordinario
+es su \textbf{variación cuadrática}. Para una función suave $f(t)$, la
+suma $\sum_k (f(t_{k+1})-f(t_k))^2 \to 0$ cuando la partición se
+refina. Para el browniano:
 \begin{equation}
-  \label{eq:ito_rule}
-  (dW_t^i)^2 = dt, \qquad dW_t^i\,dW_t^j = 0 \text{ para } i\neq j, \qquad
-  dW_t^i\,dt = 0.
+  \sum_k (W_{t_{k+1}}-W_{t_k})^2 \to T \quad \text{en } L^2 \text{ y c.s.}
+  \label{eq:var_cuad}
 \end{equation}
-Esta tabla de multiplicación (la \textbf{tabla de Itô}) es el corazón del cálculo
-estocástico.
+La variación cuadrática es $[W,W]_T = T$: no nula, finita, proporcional
+al tiempo. Esta propiedad es la razón de todas las diferencias entre el
+cálculo ordinario y el cálculo estocástico. La demostración rigurosa (por
+el segundo lema de Borel-Cantelli) está en el
+Capítulo~\ref{ch:cap10}.
 
-\subsubsection*{La fórmula de Itô}
+De~\eqref{eq:var_cuad} se deriva la \textbf{tabla de multiplicación de
+Itô}:
+\begin{equation}
+  (dW_t)^2 = dt, \qquad dW_t\,dt = 0, \qquad (dt)^2 = 0.
+  \label{eq:tabla_ito}
+\end{equation}
+La regla $(dW)^2 = dt$ significa que el cuadrado de un incremento
+``infinitesimal'' del browniano es de primer orden en $dt$, no de segundo.
+Esto tiene una consecuencia inmediata: la regla de la cadena del cálculo
+ordinario no es correcta para funciones del browniano.
 
-La fórmula de Itô es el análogo estocástico de la regla de la cadena.
+\subsection{La fórmula de Itô}
+\label{subsec:formula_ito}
 
-\begin{teorema}{Fórmula de Itô (caso unidimensional)}
-\label{thm:ito}
-Sea $X_t$ un proceso que satisface la SDE $dX_t = \mu_t\,dt + \sigma_t\,dW_t$,
-y sea $g(t,x) \in C^{1,2}$. Entonces:
-\[
-  dg(t,X_t) = \frac{\partial g}{\partial t}\,dt
-  + \frac{\partial g}{\partial x}\,dX_t
-  + \frac{1}{2}\frac{\partial^2 g}{\partial x^2}\,(dX_t)^2.
-\]
-Usando $(dX_t)^2 = \sigma_t^2\,dt$ (de la tabla de Itô):
-\[
+Sea $X_t$ una solución de la SDE
+$dX_t = \mu_t\,dt + \sigma_t\,dW_t$ y $g(t,x)$ una función $C^{1,2}$.
+La fórmula de Itô es la regla de la cadena corregida:
+
+\begin{teorema}{Fórmula de Itô (enunciado operacional)}
+\label{thm:ito_operacional}
+\begin{equation}
   dg(t,X_t) = \left(\frac{\partial g}{\partial t}
   + \mu_t\frac{\partial g}{\partial x}
   + \frac{\sigma_t^2}{2}\frac{\partial^2 g}{\partial x^2}\right)dt
   + \sigma_t\frac{\partial g}{\partial x}\,dW_t.
-\]
+  \label{eq:ito}
+\end{equation}
 \end{teorema}
 
-La diferencia con la regla de la cadena ordinaria es el término
-$\frac{\sigma_t^2}{2}\frac{\partial^2 g}{\partial x^2}$: proviene de la variación
-cuadrática del movimiento browniano y es de primer orden en $dt$ (no de segundo
-orden como sería en cálculo ordinario). Este término es el responsable de toda la
-riqueza del cálculo estocástico.
+El término $\frac{\sigma_t^2}{2}\partial_{xx}g$ no existe en el cálculo
+ordinario. Proviene de retener el segundo orden en la expansión de Taylor
+de $g(t,X_t)$ y usar $(dX_t)^2 = \sigma_t^2(dW_t)^2 = \sigma_t^2\,dt$.
+Este término es la fuente de toda la riqueza del cálculo estocástico y
+aparecerá como la corrección de difusión en la ecuación de Fokker-Planck
+(Sección~\ref{subsec:fp_sgd}).
 
-\subsection{La SDE de Langevin del SGD}
-\label{subsec:langevin}
+La demostración completa está en el Capítulo~\ref{ch:cap10},
+Teorema~\ref{thm:ito_completo}.
 
-La actualización del SGD~\eqref{eq:sgd} puede reescribirse como:
+% ─────────────────────────────────────────────────────────────────────────────
+\section{La SDE de Langevin del SGD}
+\label{sec:langevin_sgd}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{4}
+
+\subsection{Del SGD discreto a la SDE continua}
+\label{subsec:sgd_sde}
+
+La actualización del SGD~\eqref{eq:sgd} se reescribe como:
 \[
   \bm{\theta}^{(k+1)} - \bm{\theta}^{(k)}
-  = -\eta\,\nabla\mathcal{L}(\bm{\theta}^{(k)}) - \eta\,\bm{\xi}^{(k)}.
+  = -\eta\nabla\mathcal{L}(\bm{\theta}^{(k)})
+  - \eta\bm{\xi}^{(k)}.
 \]
-Si $\bm{\xi}^{(k)}$ es aproximadamente gaussiano con covarianza $\bm{C}(\bm{\theta}^{(k)})$
-(lo que se justifica por el teorema central del límite cuando $B$ es moderado),
-entonces $\eta\bm{\xi}^{(k)} \approx \sqrt{\eta}\,\bm{C}^{1/2}(\bm{\theta}^{(k)})
-\,\Delta\bm{W}^{(k)}$, donde $\Delta\bm{W}^{(k)} \sim \mathcal{N}(\bm{0},\bm{I})$
-son incrementos gaussianos independientes.
+Si $B$ es moderado, el teorema central del límite justifica que
+$\bm{\xi}^{(k)}$ es aproximadamente gaussiano con covarianza
+$\bm{\Gamma}(\bm{\theta}^{(k)})$. Entonces
+$\eta\bm{\xi}^{(k)} \approx
+\sqrt{\eta}\,\bm{\Gamma}^{1/2}(\bm{\theta}^{(k)})\Delta\bm{W}^{(k)}$
+con $\Delta\bm{W}^{(k)} \sim \mathcal{N}(\bm{0},\bm{I})$.
 
-En el límite de paso pequeño $\eta \to 0$, manteniendo $\eta k = t$ fijo, el
-SGD converge a la SDE de Itô:
+En el límite de paso pequeño $\eta \to 0$ con $\eta k = t$ fijo, el SGD
+converge a la SDE de Itô:
+
 \begin{equation}
   \label{eq:langevin_sgd}
   \boxed{d\bm{\theta}_t
   = -\nabla\mathcal{L}(\bm{\theta}_t)\,dt
-  + \sqrt{\eta}\,\bm{C}^{1/2}(\bm{\theta}_t)\,d\bm{W}_t.}
+  + \sqrt{\eta}\,\bm{\Gamma}^{1/2}(\bm{\theta}_t)\,d\bm{W}_t.}
 \end{equation}
+
 Esta es la \textbf{ecuación de Langevin sobremortigada} con potencial
-$\mathcal{L}(\bm{\theta})$, temperatura efectiva $\eta$ y ruido multiplicativo
-con covarianza $\bm{C}(\bm{\theta})$. Para $\bm{C} = \bm{I}$ (ruido isótropo)
-es exactamente la dinámica de Langevin estándar de la mecánica estadística.
+$\mathcal{L}(\bm{\theta})$, temperatura efectiva $\eta$ y ruido
+multiplicativo con covarianza $\bm{\Gamma}(\bm{\theta})$.
 
-\begin{fisicaconexion}{La ecuación de Langevin en física estadística}
-La ecuación~\eqref{eq:langevin_sgd} es la \textbf{ecuación de Langevin
-sobremortigada}, que describe el movimiento de una partícula browniana en un
-potencial $\mathcal{L}$ en el régimen de alta viscosidad. En física estadística
-es el modelo estándar para la dinámica de una molécula en un solvente viscoso:
-la fuerza $-\nabla\mathcal{L}$ es la fuerza conservativa del potencial, el término
-estocástico $\sqrt{2k_BT}\,d\bm{W}_t$ es la fuerza de fluctuación del solvente
-(ruido térmico), y el cociente $k_BT$ es la temperatura en unidades de energía.
-En el SGD, la temperatura la controla el usuario mediante la tasa de aprendizaje
-$\eta$ y el tamaño de mini-lote $B$ (que determina $\bm{C}$). El teorema de
-fluctuación-disipación de Einstein establece que el coeficiente de difusión es
-$D = k_BT/\gamma$: en el SGD, el análogo es que la ``difusión'' en el espacio de
-parámetros escala como $\eta c$. Los cristales de proteínas se estudian con la
-ecuación de Langevin a temperatura variable para encontrar el estado de mínima
-energía libre: exactamente el mismo protocolo de recocido que usan los
-calendarios de tasa de aprendizaje de la Sección~\ref{sec:lr_schedule}.
-\end{fisicaconexion}
+Para el caso isótropo $\bm{\Gamma} = \gamma\bm{I}$ (todos los gradientes
+individuales contribuyen con la misma varianza), la
+SDE~\eqref{eq:langevin_sgd} se reduce a:
+\begin{equation}
+  d\bm{\theta}_t = -\nabla\mathcal{L}(\bm{\theta}_t)\,dt
+  + \sqrt{\eta\gamma}\,d\bm{W}_t,
+  \label{eq:langevin_isotropo}
+\end{equation}
+que es la ecuación de Langevin estándar de la mecánica estadística con
+temperatura $k_BT = \eta\gamma/2$.
 
-\begin{observacion}{Significado físico de cada término}
-El término determinista $-\nabla\mathcal{L}\,dt$ produce descenso hacia el mínimo,
-exactamente como el flujo de gradiente. El término estocástico
-$\sqrt{\eta}\,\bm{C}^{1/2}\,d\bm{W}_t$ actúa como ruido térmico: hace fluctuar
-los parámetros alrededor de la trayectoria determinista. La amplitud del ruido
-escala como $\sqrt{\eta}$: una tasa de aprendizaje grande produce fluctuaciones
-grandes. Esta es la razón por la que se usa una tasa de aprendizaje decreciente
-durante el entrenamiento: al inicio conviene explorar (temperatura alta), al final
-converger (temperatura baja).
+En física estadística, esta ecuación describe el movimiento de una
+partícula browniana en un potencial $\mathcal{L}$ en el régimen de alta
+viscosidad: la fuerza $-\nabla\mathcal{L}$ es la fuerza conservativa, el
+término $\sqrt{2k_BT}\,d\bm{W}_t$ es la agitación térmica del solvente,
+y la relación de fluctuación-disipación de Einstein establece que la
+amplitud del ruido está fijada por la temperatura. En el SGD, la
+``temperatura'' la controla el usuario mediante $\eta$ (tasa de
+aprendizaje) y $B$ (tamaño de mini-lote, que determina $\gamma$). Los
+cristales de proteínas se estudian con Langevin a temperatura variable
+para encontrar el estado de mínima energía libre: exactamente el protocolo
+de recocido que usan los learning rate schedules de la
+Sección~\ref{sec:lr_schedule}.
+
+\begin{observacion}{Límites de la aproximación gaussiana}
+\label{obs:limites_gauss}
+La derivación de~\eqref{eq:langevin_sgd} usa que el ruido $\bm{\xi}^{(k)}$
+es aproximadamente gaussiano por el TCL. Esta aproximación puede fallar en
+tres situaciones:
+
+\textbf{Mini-lotes muy pequeños ($B = 1$ o $B = 2$):} el TCL necesita
+$B$ moderado para que la suma de $B$ gradientes individuales sea
+aproximadamente normal. Para $B = 1$ (SGD puro), la distribución del
+gradiente estocástico hereda las colas de la distribución de
+$\nabla\ell_i$, que puede ser fuertemente no gaussiana.
+
+\textbf{Gradientes con colas pesadas:} en modelos con softmax
+(transformers, modelos de lenguaje), el gradiente puede tener valores
+anómalamente grandes para tokens raros o muestras atípicas, produciendo
+una distribución con colas más pesadas que la gaussiana. La SDE de Langevin
+sigue siendo una buena descripción de la dinámica promedio, pero las
+fluctuaciones extremas no están bien capturadas.
+
+\textbf{Datos con outliers:} si el dataset contiene muestras anómalas
+con gradientes de norma mucho mayor que el promedio, la varianza empírica
+$\bm{\Gamma}$ puede estar dominada por un puñado de muestras. En ese caso
+el gradient clipping (limitar $\|\nabla\ell_i\| \leq C$) restaura la
+gaussianidad truncando las colas.
+
+En todos estos casos, la SDE~\eqref{eq:langevin_sgd} es un modelo
+efectivo: captura la dinámica correcta en las escalas de tiempo largas
+(distribución estacionaria), aunque las fluctuaciones a corto plazo pueden
+diferir de la predicción gaussiana.
 \end{observacion}
 
 \subsection{La ecuación de Fokker-Planck del SGD}
 \label{subsec:fp_sgd}
 
-La SDE~\eqref{eq:langevin_sgd} describe una trayectoria aleatoria en el espacio
-de parámetros. La distribución de probabilidad $p(\bm{\theta},t)$ de encontrar
-los parámetros en $\bm{\theta}$ en el tiempo $t$ satisface una ecuación
-determinista: la ecuación de Fokker-Planck.
+La SDE~\eqref{eq:langevin_sgd} describe trayectorias individuales. La
+distribución de probabilidad $p(\bm{\theta},t)$ de encontrar los
+parámetros en $\bm{\theta}$ al tiempo $t$ satisface una ecuación
+determinista: la \textbf{ecuación de Fokker-Planck}.
 
 \begin{teorema}{Ecuación de Fokker-Planck del SGD}
 \label{thm:fp_sgd}
-Sea $p(\bm{\theta},t)$ la densidad de probabilidad de los parámetros bajo la
-dinámica~\eqref{eq:langevin_sgd}. Entonces $p$ satisface:
+Para la SDE~\eqref{eq:langevin_sgd} con ruido isótropo ($\bm{\Gamma} =
+\gamma\bm{I}$), la densidad $p(\bm{\theta},t)$ satisface:
 \begin{equation}
-  \label{eq:fp_sgd}
   \frac{\partial p}{\partial t}
-  = \nabla_{\bm{\theta}} \cdot \bigl(p\,\nabla_{\bm{\theta}}\mathcal{L}\bigr)
-  + \frac{\eta}{2}\,\nabla_{\bm{\theta}}^2 : \bigl(\bm{C}(\bm{\theta})\,p\bigr),
+  = \nabla_{\bm{\theta}}\cdot\bigl(p\,\nabla_{\bm{\theta}}
+  \mathcal{L}\bigr)
+  + \frac{\eta\gamma}{2}\,\Delta_{\bm{\theta}}\,p,
+  \label{eq:fp_sgd}
 \end{equation}
-donde $\nabla_{\bm{\theta}}^2 : \bm{A} = \sum_{i,j}\partial_{\theta_i\theta_j}A_{ij}$
-es el operador de diferenciación de segundo orden contratado con $\bm{A}$.
+donde $\Delta_{\bm{\theta}} = \sum_j \partial^2/\partial\theta_j^2$ es
+el laplaciano.
 \end{teorema}
 
 \begin{proof}
-Aplicamos la fórmula de Itô multidimensional a la función de prueba $g(\bm{\theta})$
-y calculamos $\mathbb{E}[g(\bm{\theta}_t)]$. Para la SDE general
-$d\bm{\theta}_t = \bm{f}(\bm{\theta}_t)\,dt + \bm{G}(\bm{\theta}_t)\,d\bm{W}_t$,
-la fórmula de Itô da:
-\[
-  dg(\bm{\theta}_t)
-  = \langle\nabla g, \bm{f}\rangle\,dt
-  + \frac{1}{2}\mathrm{tr}\bigl(\bm{G}^\top(\nabla^2 g)\bm{G}\bigr)\,dt
-  + \langle\nabla g, \bm{G}\,d\bm{W}_t\rangle.
-\]
-Para la SDE del SGD, $\bm{f} = -\nabla\mathcal{L}$ y $\bm{G} = \sqrt{\eta}\bm{C}^{1/2}$,
-de modo que $\bm{G}\bm{G}^\top = \eta\bm{C}$. Tomando esperanza (el término con
-$d\bm{W}_t$ tiene esperanza cero):
-\[
-  \frac{d}{dt}\mathbb{E}[g(\bm{\theta}_t)]
-  = \mathbb{E}\!\left[
-    -\langle\nabla g, \nabla\mathcal{L}\rangle
-    + \frac{\eta}{2}\mathrm{tr}\bigl(\bm{C}(\bm{\theta}_t)\nabla^2 g\bigr)
-  \right].
-\]
-Identificando $\frac{d}{dt}\mathbb{E}[g] = \int g\,\partial_t p\,d\bm{\theta}$
-e integrando por partes (asumiendo que $p$ decae suficientemente rápido):
-\begin{align*}
-  \int g\,\partial_t p\,d\bm{\theta}
-  &= \int \nabla g \cdot (p\nabla\mathcal{L})\,d\bm{\theta}
-    \cdot(-1)^1
-    + \frac{\eta}{2}\int g\,\nabla^2:(\bm{C}p)\,d\bm{\theta} \\
-  &= \int g\left[
-    \nabla\cdot(p\nabla\mathcal{L})
-    + \frac{\eta}{2}\nabla^2:(\bm{C}p)
-  \right]d\bm{\theta}.
-\end{align*}
-Como esto vale para toda función de prueba $g$, el integrando de ambos lados
-debe coincidir, dando~\eqref{eq:fp_sgd}. $\square$
+Para una función de prueba $g(\bm{\theta})$, la fórmula de Itô
+multidimensional da
+$dg = \langle\nabla g, -\nabla\mathcal{L}\rangle\,dt +
+\frac{\eta\gamma}{2}\Delta g\,dt + \sqrt{\eta\gamma}\langle\nabla g,
+d\bm{W}_t\rangle$.
+Tomando esperanza (el término de martingala se anula) y usando la
+definición $\mathbb{E}[g(\bm{\theta}_t)] = \int g\,p\,d\bm{\theta}$,
+se integra por partes para obtener~\eqref{eq:fp_sgd}. La derivación
+completa para $\bm{\Gamma}(\bm{\theta})$ general está en el
+Capítulo~\ref{ch:cap11}. $\square$
 \end{proof}
 
-\subsection{La distribución estacionaria: temperatura y recocido}
-\label{subsec:estacionaria}
+La ecuación~\eqref{eq:fp_sgd} es una \textbf{ecuación de
+advección-difusión}: el primer término
+$\nabla\cdot(p\nabla\mathcal{L})$ transporta la densidad hacia los
+mínimos de $\mathcal{L}$ (advección por la fuerza del gradiente), y el
+segundo término $\frac{\eta\gamma}{2}\Delta p$ difunde la densidad
+(agitación térmica). La competencia entre ambos determina la distribución
+estacionaria.
 
-La ecuación de Fokker-Planck~\eqref{eq:fp_sgd} describe la evolución temporal
-de la distribución de los parámetros. Su solución estacionaria
-$\partial_t p^* = 0$ describe el régimen de largo plazo del SGD.
+\subsection{La distribución de Gibbs como estado estacionario}
+\label{subsec:gibbs_sgd}
 
-Para el caso simplificado de ruido isótropo $\bm{C}(\bm{\theta}) = c\bm{I}$
-(covarianza constante), la ecuación estacionaria es:
-\[
-  0 = \nabla_{\bm{\theta}}\cdot\bigl(p^*\nabla\mathcal{L}\bigr)
-  + \frac{\eta c}{2}\nabla_{\bm{\theta}}^2 p^*.
-\]
-Se propone la solución de tipo Gibbs: $p^*(\bm{\theta}) = Z^{-1}e^{-\mathcal{L}(\bm{\theta})/T_{\mathrm{eff}}}$.
-Calculando:
-\begin{align*}
-  \nabla p^* &= -\frac{1}{T_{\mathrm{eff}}}p^*\nabla\mathcal{L}, \\
-  \nabla\cdot(p^*\nabla\mathcal{L})
-  &= \langle\nabla p^*, \nabla\mathcal{L}\rangle + p^*\nabla^2\mathcal{L}
-   = -\frac{1}{T_{\mathrm{eff}}}p^*\|\nabla\mathcal{L}\|^2 + p^*\nabla^2\mathcal{L}, \\
-  \nabla^2 p^*
-  &= p^*\left(\frac{1}{T_{\mathrm{eff}}^2}\|\nabla\mathcal{L}\|^2
-    - \frac{1}{T_{\mathrm{eff}}}\nabla^2\mathcal{L}\right).
-\end{align*}
-Sustituyendo en la ecuación estacionaria:
-\[
-  0 = p^*\left[
-  -\frac{1}{T_{\mathrm{eff}}}\|\nabla\mathcal{L}\|^2 + \nabla^2\mathcal{L}
-  + \frac{\eta c}{2}\left(\frac{\|\nabla\mathcal{L}\|^2}{T_{\mathrm{eff}}^2}
-  - \frac{\nabla^2\mathcal{L}}{T_{\mathrm{eff}}}\right)
-  \right].
-\]
-Para que esto sea cero para toda $\mathcal{L}$, se necesita $T_{\mathrm{eff}} =
-\eta c/2$, con lo que los términos en $\|\nabla\mathcal{L}\|^2$ se cancelan.
-La distribución estacionaria es entonces:
-
+\begin{proposicion}{Distribución estacionaria del SGD}
+\label{prop:gibbs_sgd}
+Para el caso isótropo, la distribución estacionaria
+($\partial_t p^* = 0$) de~\eqref{eq:fp_sgd} es la distribución de
+Gibbs:
 \begin{equation}
-  \label{eq:gibbs}
-  \boxed{p^*(\bm{\theta}) \propto \exp\!\left(-\frac{2\mathcal{L}(\bm{\theta})}{\eta c}\right).}
+  p^*(\bm{\theta}) \propto
+  \exp\!\left(-\frac{2\mathcal{L}(\bm{\theta})}{\eta\gamma}\right)
+  = \exp\!\left(-\frac{\mathcal{L}(\bm{\theta})}{k_BT_{\text{eff}}}\right),
+  \qquad T_{\text{eff}} = \frac{\eta\gamma}{2}.
+  \label{eq:gibbs_sgd}
 \end{equation}
+\end{proposicion}
 
-\begin{observacion}{La distribución estacionaria como distribución de Gibbs}
-\label{obs:gibbs}
-La distribución~\eqref{eq:gibbs} es exactamente la distribución de Gibbs
-(distribución de Boltzmann) de la mecánica estadística con potencial
-$\mathcal{L}(\bm{\theta})$ y temperatura efectiva $T_{\mathrm{eff}} = \eta c/2$.
-La masa de probabilidad se concentra en los mínimos de $\mathcal{L}$ (zonas de
-baja energía), pero hay fluctuaciones alrededor de ellos con amplitud proporcional
-a $T_{\mathrm{eff}}$.
+\begin{proof}
+Sustituyendo $p^* \propto e^{-2\mathcal{L}/(\eta\gamma)}$
+en~\eqref{eq:fp_sgd}: $\nabla\cdot(p^*\nabla\mathcal{L}) =
+p^*\Delta\mathcal{L} + \nabla p^*\cdot\nabla\mathcal{L} =
+p^*\Delta\mathcal{L} - \frac{2p^*}{\eta\gamma}\|\nabla\mathcal{L}\|^2$.
+El laplaciano: $\frac{\eta\gamma}{2}\Delta p^* =
+\frac{\eta\gamma}{2}p^*[\frac{4}{\eta^2\gamma^2}\|\nabla\mathcal{L}\|^2
+- \frac{2}{\eta\gamma}\Delta\mathcal{L}] =
+\frac{2p^*}{\eta\gamma}\|\nabla\mathcal{L}\|^2 -
+p^*\Delta\mathcal{L}$. La suma es cero. $\square$
+\end{proof}
 
-Tres consecuencias prácticas inmediatas:
+Este resultado es la conexión central del libro. La tabla de
+correspondencias lo resume:
 
-\begin{enumerate}
-  \item \textbf{La tasa de aprendizaje como temperatura.} Una tasa de aprendizaje
-        grande $\eta$ corresponde a temperatura alta: la distribución estacionaria
-        es plana y los parámetros pueden escapar de mínimos locales poco profundos.
-        Una tasa pequeña concentra la distribución en los mínimos más profundos.
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Física estadística} & \textbf{Aprendizaje automático} \\
+\midrule
+Potencial $U(\bm{x})$ & Función de pérdida $\mathcal{L}(\bm{\theta})$ \\
+Temperatura $k_BT$ & Temperatura efectiva $\eta\gamma/2$ \\
+Fuerza $-\nabla U$ & Gradiente negativo $-\nabla\mathcal{L}$ \\
+Distribución de Gibbs $e^{-U/(k_BT)}/Z$ & Distribución estacionaria del SGD \\
+Energía libre $F = \langle U\rangle - TS$ & ELBO (Capítulo~\ref{ch:cap7}) \\
+Recocido simulado: $T \to 0$ & Learning rate decay: $\eta \to 0$ \\
+Mínimo de energía global & Parámetros óptimos $\bm{\theta}^*$ \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-  \item \textbf{El recocido como descenso de temperatura.} Reducir $\eta$ durante
-        el entrenamiento es exactamente el algoritmo de recocido simulado
-        (\textit{simulated annealing}) de la optimización combinatoria: se empieza
-        con alta temperatura para explorar el espacio y se baja progresivamente para
-        converger al mínimo. Los esquemas de tasa de aprendizaje de la
-        Sección~\ref{sec:lr_schedule} son protocolos de recocido.
+La distribución de Gibbs~\eqref{eq:gibbs_sgd} concentra su masa en los
+mínimos de $\mathcal{L}$, pero no uniformemente: un mínimo amplio (hessiano
+con autovalores pequeños) atrae más masa que uno estrecho (autovalores
+grandes), porque la integral gaussiana local
+$\int e^{-\mathcal{L}/T}\,d\bm{\theta} \propto
+(\det\bm{H})^{-1/2}$ favorece la curvatura baja. El SGD tiene un
+\textbf{sesgo implícito hacia mínimos planos}, y esos mínimos generalizan
+mejor (Capítulo~\ref{ch:cap8}).
 
-  \item \textbf{La covarianza del mini-lote como fuente de ruido controlable.}
-        Aumentar $B$ reduce $c = \|\bm{C}\|/p$ (la varianza media por parámetro)
-        y baja la temperatura efectiva. Para mantener la misma temperatura con
-        el doble de tamaño de batch, se debe doblar $\eta$: esta es la
-        \textbf{regla de escala lineal} del learning rate.
-\end{enumerate}
-\end{observacion}
+\begin{fisicaconexion}{Regla de escala lineal: $\eta \propto B$}
+\label{fc:escala_lineal}
+La temperatura efectiva es $T_{\text{eff}} = \eta\gamma/2$, y la varianza
+del ruido escala como $\gamma \propto 1/B$, luego
+$T_{\text{eff}} \propto \eta/B$. Para mantener la misma temperatura al
+escalar el tamaño del mini-lote (por ejemplo, al entrenar en múltiples
+GPUs con batches más grandes), se debe escalar la tasa de aprendizaje
+linealmente: $\eta' = (B'/B)\eta$. Esta es la \textbf{regla de escala
+lineal} de Goyal et al.\ (2017), que permitió entrenar ResNets en ImageNet
+en una hora usando 256 GPUs con $B = 8192$. La regla tiene una derivación
+termodinámica inmediata: mantener $T$ constante cuando $\gamma$ cambia
+requiere ajustar $\eta$ proporcionalmente.
+\end{fisicaconexion}
 
-\subsection{Épocas, iteraciones y el tamaño del mini-lote}
-\label{subsec:epocas}
-
-\begin{definicion}{Época e iteración}
-\label{def:epoca}
-Una \textbf{iteración} (o \textit{step}) es una actualización de parámetros
-usando un mini-lote $\mathcal{B}$. Una \textbf{época} es una pasada completa sobre
-el conjunto de entrenamiento, que consta de $\lceil N/B \rceil$ iteraciones.
-\end{definicion}
-
-La elección de $B$ involucra tres compromisos simultáneos. Desde el punto de vista
-estadístico, un $B$ más grande reduce la varianza del gradiente como $1/B$. Desde
-el punto de vista computacional, batches más grandes explotan mejor el paralelismo
-de la GPU pero tienen rendimientos decrecientes: un batch de $2B$ no es el doble
-de rápido que uno de $B$ en hardware moderno (la GPU ya está saturada para $B$
-suficientemente grande). Desde el punto de vista de optimización, el ruido del SGD
-tiene efectos de regularización implícita (la distribución estacionaria~\eqref{eq:gibbs}
-penaliza mínimos estrechos en favor de mínimos amplios). En la práctica, $B \in
-[32, 512]$ cubre la mayoría de las aplicaciones con hardware GPU estándar.
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{SGD con momento}
 \label{sec:momentum}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{3}
 
-\subsection{El problema del zigzag y la motivación del momento}
+\subsection{El problema del zigzag}
 \label{subsec:zigzag}
 
-La Sección~\ref{subsec:conv_fuerte} estableció que la convergencia del descenso
-de gradiente es geométrica con tasa $(1-\mu/L)^k$. Para un hessiano mal
-condicionado ($\kappa = L/\mu \gg 1$), esta tasa es $(1-1/\kappa)^k \approx
-e^{-k/\kappa}$: exponencialmente lenta. La causa geométrica se describió en la
-Sección~\ref{sec:condicionamiento}: el gradiente oscila transversalmente en el
-valle elongado mientras avanza lentamente hacia el fondo. El momento añade inercia
-para amortiguar estas oscilaciones.
+Para un hessiano mal condicionado ($\kappa \gg 1$), el GD zigzaguea
+transversalmente en el valle elongado mientras avanza lentamente hacia el
+fondo. En la analogía mecánica, es una partícula en un potencial anisotrópico
+que oscila rápidamente en la dirección de alta curvatura (``dura'') y se
+mueve lentamente en la de baja curvatura (``blanda''). El momento añade
+inercia para amortiguar las oscilaciones rápidas y acelerar el movimiento
+en la dirección blanda.
 
 \subsection{SGD con momento de Polyak}
 \label{subsec:polyak}
 
 \begin{definicion}{SGD con momento}
 \label{def:sgd_momentum}
-El \textbf{SGD con momento} (Polyak, 1964) mantiene un vector de momento
-$\bm{m}^{(k)}$ y actualiza:
 \begin{align}
-  \bm{m}^{(k+1)} &= \beta\bm{m}^{(k)} + (1-\beta)\hat{\nabla}\mathcal{L}(\bm{\theta}^{(k)}),
-  \label{eq:momento} \\
-  \bm{\theta}^{(k+1)} &= \bm{\theta}^{(k)} - \eta\,\bm{m}^{(k+1)},
+  \bm{m}^{(k+1)} &= \beta\bm{m}^{(k)}
+  + (1-\beta)\hat{\nabla}\mathcal{L}(\bm{\theta}^{(k)}),
+  \label{eq:momento}\\
+  \bm{\theta}^{(k+1)} &= \bm{\theta}^{(k)} - \eta\bm{m}^{(k+1)},
   \label{eq:sgd_mom}
 \end{align}
-con $\beta \in (0,1)$ el \textbf{coeficiente de momento} (típicamente $\beta = 0.9$).
+con $\beta \in (0,1)$ el coeficiente de momento (típicamente $\beta = 0.9$).
 \end{definicion}
 
-El vector $\bm{m}^{(k)}$ es la \textbf{media exponencialmente ponderada} de los
-gradientes pasados:
-\[
-  \bm{m}^{(k)} = (1-\beta)\sum_{j=0}^k \beta^{k-j}\hat{\nabla}\mathcal{L}(\bm{\theta}^{(j)}).
-\]
-Gradientes de hace $k$ pasos atrás tienen peso $(1-\beta)\beta^k$: decaen
-exponencialmente. El tiempo efectivo de memoria es $1/(1-\beta)$ pasos: para
-$\beta = 0.9$, los gradientes de las últimas $\sim 10$ iteraciones tienen peso
-significativo.
+El vector $\bm{m}^{(k)}$ es la media exponencialmente ponderada de los
+gradientes pasados: $\bm{m}^{(k)} = (1-\beta)\sum_{j=0}^k
+\beta^{k-j}\hat{\nabla}\mathcal{L}(\bm{\theta}^{(j)})$. El tiempo
+efectivo de memoria es $1/(1-\beta)$ pasos: para $\beta = 0.9$, los
+últimos $\sim 10$ gradientes tienen peso significativo.
 
-La ODE continua correspondiente a~\eqref{eq:momento}--\eqref{eq:sgd_mom} en el
-límite $\eta,1-\beta\to 0$ es:
-\[
-  \ddot{\bm{\theta}} + (1-\beta)\dot{\bm{\theta}} + \nabla\mathcal{L}(\bm{\theta}) = \bm{0},
-\]
-que es exactamente la ecuación del \textbf{oscilador amortiguado} con constante
-de amortiguamiento $1-\beta$ y potencial $\mathcal{L}$. Para $\beta$ cercano a $1$
-(amortiguamiento débil), el sistema oscila pero converge más rápido que el
-sobre-amortiguado (GD sin momento): la tasa óptima de convergencia mejora de
-$O(1-1/\kappa)$ a $O(1-1/\sqrt{\kappa})$ (el número de iteraciones necesarias
-escala como $\sqrt{\kappa}$ en vez de $\kappa$).
+En la analogía mecánica, el momento convierte la partícula sobremortigada
+(velocidad proporcional a la fuerza) en una partícula con inercia
+(aceleración proporcional a la fuerza, con amortiguamiento $\beta$). El
+momento acelerado de Nesterov mejora la convergencia de $O(\kappa)$ a
+$O(\sqrt{\kappa})$ iteraciones: óptimo para métodos de primer orden.
 
-\begin{fisicaconexion}{Oscilador amortiguado y convergencia óptima}
-La ODE $\ddot{\bm{\theta}} + (1-\beta)\dot{\bm{\theta}} + \nabla\mathcal{L}(\bm{\theta}) = \bm{0}$
-es exactamente la ecuación del \textbf{oscilador amortiguado} de la mecánica
-clásica. Para una función cuadrática $\mathcal{L} = \frac{\mu}{2}\theta^2$, se
-tiene $\ddot{\theta} + 2\gamma\dot{\theta} + \omega_0^2\theta = 0$ con
-$\omega_0^2 = \mu$ y $\gamma = (1-\beta)/2$. El discriminante $\Delta = \gamma^2 - \omega_0^2$
-determina el régimen: sobre-amortiguado ($\Delta > 0$, análogo a GD sin momento),
-críticamente amortiguado ($\Delta = 0$, convergencia más rápida posible), y
-sub-amortiguado ($\Delta < 0$, oscilaciones que se extinguen). El régimen
-críticamente amortiguado alcanza el equilibrio más rápido: exactamente el valor
-óptimo de $\beta$ en el SGD con momento. En circuitos RLC, el mismo fenómeno
-aparece en la respuesta al escalón: la descarga más rápida sin oscilaciones
-ocurre para $R = 2\sqrt{L/C}$ (amortiguamiento crítico). El factor $\sqrt{\kappa}$
-en la convergencia de Nesterov es el análogo de $1/\omega_0 = 1/\sqrt{\mu}$:
-la frecuencia propia del sistema determina el tiempo de convergencia.
-\end{fisicaconexion}
-
-\subsection{Momento de Nesterov}
-\label{subsec:nesterov}
-
-\begin{definicion}{SGD con momento de Nesterov}
-\label{def:nesterov}
-El \textbf{momento de Nesterov} (NAG, Nesterov, 1983) evalúa el gradiente en
-el punto anticipado:
-\begin{align}
-  \bm{m}^{(k+1)} &= \beta\bm{m}^{(k)} + \hat{\nabla}\mathcal{L}\bigl(\bm{\theta}^{(k)} - \eta\beta\bm{m}^{(k)}\bigr),
-  \label{eq:nesterov_m}\\
-  \bm{\theta}^{(k+1)} &= \bm{\theta}^{(k)} - \eta\,\bm{m}^{(k+1)}.
-  \label{eq:nesterov_theta}
-\end{align}
-\end{definicion}
-
-La diferencia con el momento de Polyak es sutil pero importante: en lugar de
-calcular el gradiente en la posición actual $\bm{\theta}^{(k)}$, se calcula en
-la posición anticipada $\bm{\theta}^{(k)} - \eta\beta\bm{m}^{(k)}$ (el punto
-al que se llegaría si se aplicara el momento sin corrección). Esta anticipación
-permite "frenar" antes de superar el mínimo.
-
-\begin{proposicion}{Convergencia óptima de Nesterov}
-\label{prop:nesterov_opt}
-Para $\mathcal{L}$ convexa con gradiente $L$-Lipschitz, el SGD con momento de
-Nesterov con tasa $\eta = 1/L$ satisface:
-\[
-  \mathcal{L}(\bm{\theta}^{(k)}) - \mathcal{L}(\bm{\theta}^*)
-  \leq \frac{2L\|\bm{\theta}^{(0)}-\bm{\theta}^*\|_2^2}{k^2}.
-\]
-\end{proposicion}
-
-La tasa $O(1/k^2)$ es la \textbf{tasa óptima de primer orden} para funciones
-convexas: ningún algoritmo que use solo información de gradientes puede converger
-más rápido en el peor caso (Nesterov, 1983). Para comparación, el GD sin momento
-converge como $O(1/k)$.
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Optimizadores adaptativos}
 \label{sec:adaptativos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-\subsection{Motivación: distintas direcciones necesitan distintas tasas}
-\label{subsec:motivacion_adapt}
-
-El hessiano mal condicionado tiene autovalores $\mu_1 \gg \mu_p > 0$. La tasa
-de aprendizaje óptima en la dirección del autovector $\bm{v}_k$ es $\propto 1/\mu_k$:
-las direcciones de alta curvatura necesitan pasos pequeños y las de baja curvatura
-necesitan pasos grandes. Un único $\eta$ global es un compromiso subóptimo. La
-solución ideal sería usar el paso $\bm{H}^{-1}$ (método de Newton), pero su costo
-es $O(p^3)$. Los optimizadores adaptativos aproximan esta idea usando solo la
-diagonal del hessiano, a costo $O(p)$.
+El momento resuelve el zigzag global, pero cada dirección del espacio de
+parámetros puede tener curvatura diferente. Los optimizadores
+\textbf{adaptativos} ajustan la tasa de aprendizaje por parámetro,
+aproximando la acción del hessiano inverso sin calcularlo.
 
 \subsection{AdaGrad}
 \label{subsec:adagrad}
 
-\begin{definicion}{AdaGrad}
-\label{def:adagrad}
-AdaGrad (Duchi et al., 2011) acumula el cuadrado de los gradientes pasados
-por parámetro:
-\begin{align}
-  G_j^{(k)} &= G_j^{(k-1)} + \bigl(\hat{\nabla}\mathcal{L}_j^{(k)}\bigr)^2,
-  \label{eq:adagrad_G}\\
-  \theta_j^{(k+1)} &= \theta_j^{(k)}
-  - \frac{\eta}{\sqrt{G_j^{(k)}+\varepsilon}}\,\hat{\nabla}\mathcal{L}_j^{(k)},
-  \label{eq:adagrad_update}
-\end{align}
-con $G_j^{(0)} = 0$ y $\varepsilon > 0$ una constante de estabilidad numérica.
-\end{definicion}
+AdaGrad (Duchi et al., 2011) acumula el cuadrado de cada componente del
+gradiente:
+$v_j^{(k)} = \sum_{s=0}^k (\hat{\nabla}\mathcal{L})_j^{(s)\,2}$,
+y actualiza $\theta_j^{(k+1)} = \theta_j^{(k)} - \eta\,
+(\hat{\nabla}\mathcal{L})_j^{(k)} / (\sqrt{v_j^{(k)}}+\varepsilon)$.
+Los parámetros con gradientes históricamente grandes reciben tasas
+pequeñas; los de gradientes pequeños, tasas grandes. El problema es que
+$v_j$ crece monótonamente: la tasa decae a cero y el optimizador se
+detiene.
 
-El denominador $\sqrt{G_j^{(k)}}$ es la raíz cuadrática del promedio de los
-cuadrados de los gradientes pasados del parámetro $j$: es una estimación de la
-escala típica del gradiente en esa dirección. Dividiendo por esta escala, la tasa
-efectiva para $\theta_j$ es $\eta/\sqrt{G_j^{(k)}}$: automáticamente pequeña para
-parámetros con gradientes grandes y grande para parámetros con gradientes pequeños.
-
-El problema de AdaGrad es que $G_j^{(k)}$ crece monótonamente: las tasas efectivas
-decaen como $O(1/\sqrt{k})$ y tienden a cero en el largo plazo. Esto puede ser
-deseable para problemas convexos (garantiza convergencia) pero es perjudicial para
-problemas no convexos donde se necesita exploración continua.
-
-\subsection{RMSProp}
-\label{subsec:rmsprop}
-
-\begin{definicion}{RMSProp}
-\label{def:rmsprop}
-RMSProp (Hinton, 2012) reemplaza la acumulación monótona de AdaGrad por una
-media exponencialmente ponderada:
-\begin{align}
-  v_j^{(k)} &= \gamma\,v_j^{(k-1)} + (1-\gamma)\bigl(\hat{\nabla}\mathcal{L}_j^{(k)}\bigr)^2,
-  \label{eq:rmsprop_v}\\
-  \theta_j^{(k+1)} &= \theta_j^{(k)}
-  - \frac{\eta}{\sqrt{v_j^{(k)}+\varepsilon}}\,\hat{\nabla}\mathcal{L}_j^{(k)},
-  \label{eq:rmsprop_update}
-\end{align}
-con $\gamma \in (0,1)$ típicamente $0.9$ o $0.99$.
-\end{definicion}
-
-La media ponderada olvida gradientes antiguos con escala de tiempo $1/(1-\gamma)$:
-la tasa efectiva se adapta a los cambios en la escala del gradiente a lo largo del
-entrenamiento. RMSProp funciona bien en la práctica para redes recurrentes y fue
-el optimizador preferido antes de Adam.
-
-\subsection{Adam: momento de primer y segundo orden}
+\subsection{RMSProp y Adam}
 \label{subsec:adam}
+
+\textbf{RMSProp} (Hinton, 2012) reemplaza la suma acumulativa por una
+media exponencial: $v_j^{(k)} = \beta_2 v_j^{(k-1)} + (1-\beta_2)
+(\hat{\nabla}\mathcal{L})_j^{(k)\,2}$, con $\beta_2 = 0.999$
+típicamente. Esto limita la memoria a $\sim 1/(1-\beta_2)$ pasos y
+evita el decaimiento ilimitado.
 
 \begin{definicion}{Adam}
 \label{def:adam}
-Adam (\textit{Adaptive Moment Estimation}, Kingma y Ba, 2015) combina el momento
-de Polyak con la adaptación de RMSProp:
+\textbf{Adam} (Kingma y Ba, 2015) combina momento de primer orden y
+RMSProp:
 \begin{align}
-  m_j^{(k)} &= \beta_1\,m_j^{(k-1)} + (1-\beta_1)\,\hat{\nabla}\mathcal{L}_j^{(k)},
+  \bm{m}^{(k+1)} &= \beta_1\bm{m}^{(k)}
+  + (1-\beta_1)\hat{\nabla}\mathcal{L}^{(k)},
   \label{eq:adam_m}\\
-  v_j^{(k)} &= \beta_2\,v_j^{(k-1)} + (1-\beta_2)\,\bigl(\hat{\nabla}\mathcal{L}_j^{(k)}\bigr)^2,
+  \bm{v}^{(k+1)} &= \beta_2\bm{v}^{(k)}
+  + (1-\beta_2)(\hat{\nabla}\mathcal{L}^{(k)})^{\odot 2},
   \label{eq:adam_v}\\
-  \hat{m}_j^{(k)} &= \frac{m_j^{(k)}}{1-\beta_1^k}, \qquad
-  \hat{v}_j^{(k)} = \frac{v_j^{(k)}}{1-\beta_2^k},
+  \hat{\bm{m}} &= \bm{m}^{(k+1)}/(1-\beta_1^{k+1}),
+  \quad \hat{\bm{v}} = \bm{v}^{(k+1)}/(1-\beta_2^{k+1}),
   \label{eq:adam_corr}\\
-  \theta_j^{(k+1)} &= \theta_j^{(k)}
-  - \frac{\eta\,\hat{m}_j^{(k)}}{\sqrt{\hat{v}_j^{(k)}}+\varepsilon}.
+  \bm{\theta}^{(k+1)} &= \bm{\theta}^{(k)}
+  - \eta\,\hat{\bm{m}}/(\sqrt{\hat{\bm{v}}}+\varepsilon),
   \label{eq:adam_update}
 \end{align}
-Los valores estándar son $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\varepsilon = 10^{-8}$
-y $\eta = 3\times10^{-4}$.
+con $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\varepsilon = 10^{-8}$. La
+corrección~\eqref{eq:adam_corr} compensa el sesgo de inicialización
+en cero.
 \end{definicion}
 
-Las correcciones~\eqref{eq:adam_corr} compensan el sesgo de inicialización: con
-$m_j^{(0)} = v_j^{(0)} = 0$, los primeros valores de $m_j^{(k)}$ y $v_j^{(k)}$
-subestimarían la magnitud real de los gradientes. Dividiendo por $1-\beta_1^k$ y
-$1-\beta_2^k$ (que convergen a $1$ rápidamente) se obtienen estimadores centrados.
+Adam aproxima la acción del hessiano inverso diagonal: la
+actualización~\eqref{eq:adam_update} escala cada componente por
+$1/\sqrt{v_j} \approx 1/|\partial^2\mathcal{L}/\partial\theta_j^2|^{1/2}$,
+que es la raíz cuadrada del inverso de la curvatura local. Es un método
+cuasi-Newton diagonal con costo $O(p)$ en lugar de $O(p^2)$. Adam es el
+optimizador estándar para la mayoría de las aplicaciones de aprendizaje
+profundo.
 
-\subsection{Adam como precondicionamiento diagonal}
-\label{subsec:adam_precon}
-
-La actualización de Adam puede reescribirse como:
-\[
-  \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} - \eta\,\bm{D}^{(k)}\hat{\bm{m}}^{(k)},
-\]
-donde $\bm{D}^{(k)} = \mathrm{diag}\bigl(1/(\sqrt{\hat{v}_j^{(k)}}+\varepsilon)\bigr)$
-es una matriz diagonal. La actualización es el gradiente suavizado $\hat{\bm{m}}$
-multiplicado por el precondicionador diagonal $\bm{D}$.
-
-El precondicionador $D_{jj} = 1/\sqrt{\hat{v}_j}$ escala cada componente por la
-inversa de la desviación estándar estimada del gradiente en esa dirección. Para un
-hessiano diagonal con entradas $H_{jj} = \mu_j$, la varianza del gradiente en la
-dirección $j$ es $\sim \mu_j\sigma_\varepsilon^2$ (proporcional a la curvatura),
-y $\sqrt{\hat{v}_j} \approx \mu_j^{1/2}\sigma_\varepsilon$, de modo que
-$D_{jj} \approx 1/(\mu_j^{1/2}\sigma_\varepsilon)$. La actualización efectiva
-escala como $\eta/\mu_j^{1/2}$: Adam es una aproximación al método de Newton
-diagonal $\bm{H}^{-1}\nabla\mathcal{L}$ con precondicionar $\bm{H}^{-1/2}$
-en lugar de $\bm{H}^{-1}$.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Programación de la tasa de aprendizaje}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Calendarios de tasa de aprendizaje}
 \label{sec:lr_schedule}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-\dificultad{2}{3}
+\dificultad{1}{3}
 
-\subsection{La tasa como temperatura: justificación termodinámica}
-\label{subsec:lr_temperatura}
+La distribución de Gibbs~\eqref{eq:gibbs_sgd} depende de la temperatura
+$T_{\text{eff}} \propto \eta$. Al inicio del entrenamiento conviene
+explorar (temperatura alta, $\eta$ grande): la partícula browniana tiene
+energía cinética suficiente para superar barreras y encontrar la cuenca
+del mínimo global. Al final conviene converger (temperatura baja, $\eta$
+pequeño): la partícula se estabiliza cerca del fondo del mínimo. Esto es
+exactamente el \textbf{recocido simulado} (\textit{simulated annealing})
+de Kirkpatrick, Gelatt y Vecchi (1983).
 
-La distribución estacionaria~\eqref{eq:gibbs} establece que el SGD en régimen
-estacionario muestrea de $p^* \propto e^{-2\mathcal{L}/(\eta c)}$. Para
-$\eta \to 0$, $p^*$ concentra toda su masa en el mínimo global (distribución de
-Dirac): el SGD converge con certeza. Para $\eta$ grande, $p^*$ es aproximadamente
-uniforme: el SGD explora el espacio. Un protocolo de entrenamiento eficiente
-empieza con $\eta$ grande (exploración) y termina con $\eta$ pequeño (convergencia):
-es el principio del recocido simulado.
+Los calendarios más usados son:
 
-\subsection{Calendarios de tasa de aprendizaje}
-\label{subsec:calendarios}
+\textbf{Decaimiento escalonado:}
+$\eta^{(k)} = \eta_0 \gamma^{\lfloor k/s\rfloor}$ con $\gamma < 1$
+y período $s$. Enfriamiento discreto por saltos.
 
-Los calendarios más usados en la práctica son:
+\textbf{Decaimiento coseno:}
+$\eta^{(k)} = \frac{\eta_0}{2}(1+\cos(\pi k/K))$. Enfriamiento suave
+desde $\eta_0$ hasta $0$ en $K$ iteraciones.
 
-\medskip
-\noindent\textbf{Decaimiento escalonado (\textit{step decay}).}
-$\eta^{(k)} = \eta_0\,\gamma^{\lfloor k/s \rfloor}$ con $\gamma \in (0,1)$ y
-periodo $s$. Sencillo de implementar y efectivo en problemas con estructura clara.
+\textbf{Calentamiento lineal + coseno:}
+$\eta^{(k)} = \eta_0 k/k_w$ para $k \leq k_w$ (calentamiento), seguido
+de coseno. El calentamiento evita actualizaciones grandes al inicio cuando
+las estadísticas de Adam ($\hat{\bm{m}}$, $\hat{\bm{v}}$) aún no se han
+estabilizado.
 
-\medskip
-\noindent\textbf{Decaimiento coseno (\textit{cosine annealing}).}
-\[
-  \eta^{(k)} = \eta_{\min} + \frac{1}{2}(\eta_{\max}-\eta_{\min})
-  \left(1 + \cos\frac{\pi k}{K}\right),
-\]
-donde $K$ es el número total de iteraciones. La tasa cae suavemente de $\eta_{\max}$
-a $\eta_{\min}$ siguiendo la curva de un coseno. Es el estándar en la mayoría de
-los modelos de visión y física de altas energías (incluyendo CaloDiT).
+El calentamiento tiene una interpretación termodinámica: es un protocolo
+de termalización gradual. Iniciar con $\eta$ grande cuando el optimizador
+no ha acumulado suficiente historia es como calentar un cristal demasiado
+rápido: genera defectos. El calentamiento lineal eleva la temperatura
+gradualmente para que el sistema se equilibre.
 
-\medskip
-\noindent\textbf{Calentamiento lineal + decaimiento coseno (\textit{linear warmup}).}
-Se incrementa $\eta$ linealmente desde $0$ hasta $\eta_{\max}$ durante las
-primeras $k_w$ iteraciones, luego se aplica decaimiento coseno. El calentamiento
-evita actualizaciones desestabilizadoras en las primeras iteraciones cuando los
-parámetros están lejos de cualquier mínimo (los gradientes son grandes y Adam aún
-no ha acumulado estadísticas de segundo momento).
-
-\subsection{La regla de escala del learning rate con el batch size}
-\label{subsec:lr_scale}
-
-De la distribución estacionaria~\eqref{eq:gibbs}, la temperatura efectiva es
-$T_{\mathrm{eff}} = \eta c/2$ donde $c \propto 1/B$ (la varianza del gradiente
-estocástico). Para mantener la misma temperatura al multiplicar $B$ por $k$:
-\[
-  T_{\mathrm{eff}} = \frac{\eta c}{2} = \text{cte.}
-  \implies \eta' = k\,\eta.
-\]
-Esta es la \textbf{regla de escala lineal} (Goyal et al., 2017): multiplicar el
-batch size por $k$ y la tasa de aprendizaje por $k$ preserva la dinámica efectiva
-del SGD. En la práctica, la regla lineal funciona bien para $k \leq 8$; para
-escalas mayores, la regla de la raíz cuadrada $\eta' = \sqrt{k}\,\eta$ es más
-estable.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Inicialización de parámetros}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Inicialización de los parámetros}
 \label{sec:init}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-\subsection{Por qué la inicialización importa}
-\label{subsec:init_importa}
+La inicialización $\bm{\theta}^{(0)}$ es la condición inicial del
+integrador. Una mala inicialización es como comenzar una simulación
+de Verlet con velocidades infinitas: el integrador diverge
+inmediatamente.
 
-La inicialización $\bm{\theta}^{(0)}$ determina la cuenca de atracción a la que
-el algoritmo converge. Pero hay un efecto más inmediato: una mala inicialización
-puede causar activaciones saturadas (todas las neuronas sigmoide en la región
-plana) o explosión de gradiente (varianza de activaciones que crece exponencialmente
-con la profundidad), haciendo el entrenamiento imposible desde las primeras
-iteraciones. La inicialización correcta mantiene la escala de las activaciones y
-los gradientes aproximadamente constante a través de las capas.
+\subsection{El problema: explosión y desvanecimiento de la señal}
+\label{subsec:init_problema}
 
-El análisis es el siguiente: si los pesos de la capa $l$ son independientes con
-media cero y varianza $\sigma_l^2$, y la entrada $\bm{a}^{(l-1)}$ tiene varianza
-$V_{l-1}$, entonces la varianza de la pre-activación es:
-\[
-  \mathrm{Var}[z_j^{(l)}] = \mathrm{Var}\!\left[\sum_{k=1}^{n_{l-1}} W_{jk}^{(l)}a_k^{(l-1)}\right]
-  = n_{l-1}\,\sigma_l^2\,V_{l-1},
-\]
-asumiendo que los pesos y las activaciones son independientes y las activaciones
-tienen media cero. Para que $V_l = V_{l-1}$ (la varianza se preserva), se necesita
-$n_{l-1}\,\sigma_l^2 = 1$, es decir $\sigma_l^2 = 1/n_{l-1}$.
+Considere un MLP de $L$ capas con anchura $m$, activación lineal (por
+simplicidad) e inicialización $W_{jk}^{(l)} \sim \mathcal{N}(0,\sigma_w^2)$.
+Si la entrada tiene varianza $\text{Var}[x_j] = 1$, la preactivación de
+la capa $l$ tiene varianza $\text{Var}[z_j^{(l)}] = m\sigma_w^2 \cdot
+\text{Var}[a_j^{(l-1)}]$. Por inducción:
+$\text{Var}[z_j^{(L)}] = (m\sigma_w^2)^L$.
 
-\subsection{Inicialización de Xavier / Glorot}
-\label{subsec:xavier}
+Para $m\sigma_w^2 > 1$: la varianza explota exponencialmente con $L$.
+Para $m\sigma_w^2 < 1$: se desvanece. La condición de estabilidad es
+$m\sigma_w^2 = 1$, es decir, $\sigma_w^2 = 1/m$.
 
-Para activaciones con derivada $\approx 1$ en el origen (tanh linealizado,
-sigmoide normalizada), el mismo análisis en el backward pass requiere
-$\sigma_l^2 = 1/n_l$. El compromiso entre forward y backward da:
+\subsection{Inicialización de Xavier y de He}
+\label{subsec:xavier_he}
 
-\begin{definicion}{Inicialización de Xavier}
+\begin{definicion}{Inicialización de Xavier (Glorot y Bengio, 2010)}
 \label{def:xavier}
-La \textbf{inicialización de Xavier} (Glorot y Bengio, 2010) inicializa los pesos
-de la capa $l$ como:
-\[
-  W_{jk}^{(l)} \sim \mathcal{U}\!\left(-\sqrt{\frac{6}{n_{l-1}+n_l}},\,\sqrt{\frac{6}{n_{l-1}+n_l}}\right)
-  \quad\text{o equivalentemente}\quad
-  W_{jk}^{(l)} \sim \mathcal{N}\!\left(0,\,\frac{2}{n_{l-1}+n_l}\right).
-\]
+$W_{jk}^{(l)} \sim \mathcal{N}(0, 2/(n_{l-1}+n_l))$ o
+$\text{Unif}(-\sqrt{6/(n_{l-1}+n_l)}, +\sqrt{6/(n_{l-1}+n_l)})$.
+Mantiene la varianza de activaciones y gradientes constante a través de
+las capas para activaciones con $\sigma'(0) = 1$ (tanh, sigmoide
+centrada).
 \end{definicion}
 
-Esta inicialización hace que la varianza de las activaciones sea aproximadamente
-constante en el forward pass y que la varianza de los gradientes sea constante en
-el backward pass.
-
-\subsection{Inicialización de He / Kaiming}
-\label{subsec:he}
-
-Para ReLU, la mitad de las pre-activaciones son negativas y se mapean a cero.
-La varianza de la post-activación es la mitad de la de la pre-activación:
-$V_l = \frac{1}{2}n_{l-1}\sigma_l^2 V_{l-1}$. Para preservar la varianza se
-necesita $\sigma_l^2 = 2/n_{l-1}$:
-
-\begin{definicion}{Inicialización de He}
+\begin{definicion}{Inicialización de He (He et al., 2015)}
 \label{def:he}
-La \textbf{inicialización de He} (He et al., 2015) inicializa los pesos de la
-capa $l$ con:
-\[
-  W_{jk}^{(l)} \sim \mathcal{N}\!\left(0,\,\frac{2}{n_{l-1}}\right).
-\]
+$W_{jk}^{(l)} \sim \mathcal{N}(0, 2/n_{l-1})$.
+Corrige para ReLU: como la mitad de las neuronas están inactivas
+($\text{ReLU}'(z) = 0$ para $z < 0$), la varianza efectiva se reduce
+a la mitad, y se compensa con el factor $2$ en el numerador.
 \end{definicion}
 
-\begin{observacion}{Inicialización como condición inicial del integrador}
-Desde la perspectiva del flujo de gradiente, la inicialización es la condición
-inicial $\bm{\theta}^{(0)}$ del integrador. La inicialización de He garantiza
-que el estado inicial del sistema (activaciones y gradientes) está en un régimen
-de varianza $O(1)$: la "energía" del sistema es finita y el integrador puede dar
-los primeros pasos de forma estable. Una mala inicialización es análoga a comenzar
-una integración de Verlet con velocidades o aceleraciones infinitas: el integrador
-diverge inmediatamente.
-\end{observacion}
+La inicialización de He permitió entrenar redes de cientos de capas por
+primera vez (ResNets, 2015). Sin ella, las activaciones del forward pass
+y los gradientes del backward pass se desvanecen o explotan
+exponencialmente con $L$, haciendo imposible el entrenamiento.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Resumen del Capítulo 5}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El oscilador como laboratorio: el SGD en acción}
+\label{sec:oscilador5}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{3}
+
+Retomamos el oscilador de los capítulos anteriores, pero ahora la pregunta
+cambia. En los Capítulos~\ref{ch:cap1}--\ref{ch:cap4}, el problema era
+encontrar $\bm{\theta}^*$: los parámetros que minimizan la pérdida. La
+solución era un punto fijo. Ahora el objeto de estudio no es el punto fijo
+sino la \emph{dinámica} que lleva a él: cómo el SGD navega el paisaje de
+pérdida del MLP del oscilador, qué efecto tiene el ruido sobre la
+trayectoria, y por qué el resultado final depende de la temperatura
+$T_{\text{eff}} = \eta\gamma/2$.
+
+\subsection{Entrenamiento del MLP del oscilador con SGD}
+\label{subsec:osc_sgd}
+
+Los datos son los mismos: $N = 25$ puntos de $\sin(2\pi t) + \varepsilon_i$
+con $\sigma = 0.15$ en $[0, 2]$. El modelo es el MLP $(1, 32, 1)$ con ReLU
+del Capítulo~\ref{ch:cap4}. Lo que cambia es el optimizador.
+
+Con GD en lote completo ($B = N = 25$), la pérdida decrece monótonamente
+hasta estabilizarse en $\mathcal{L}_{\text{train}} \approx 0.02$: la
+dinámica determinista converge al mínimo sin fluctuaciones.
+
+Con SGD y mini-lotes de $B = 4$, la pérdida ya no decrece monótonamente.
+Oscila alrededor de un valor de equilibrio, con fluctuaciones cuya amplitud
+depende de $\eta$. Esto es exactamente la \emph{agitación térmica} de la
+distribución de Gibbs~\eqref{eq:gibbs_sgd}: en el equilibrio, la pérdida
+esperada no es cero sino $\langle\mathcal{L}\rangle \approx
+T_{\text{eff}} \cdot p/2$, donde $p = 97$ es el número de parámetros del
+MLP. El Ejercicio Resuelto~\ref{ej:ito_loss} derivó esta relación; aquí
+se verifica numéricamente.
+
+\subsection{El efecto de la temperatura sobre la generalización}
+\label{subsec:osc_temperatura}
+
+La distribución de Gibbs~\eqref{eq:gibbs_sgd} favorece los mínimos amplios
+(hessiano con autovalores pequeños) sobre los estrechos. Para el MLP del
+oscilador, esto tiene una consecuencia medible: al variar la temperatura
+efectiva (cambiando $\eta$ con $B$ fijo), el error de test
+$\mathcal{L}_{\text{test}}$ no es monótono en $\eta$.
+
+Para $\eta$ muy pequeño ($T_{\text{eff}} \to 0$): el SGD se comporta como
+GD y converge al mínimo local más cercano a la inicialización, que puede ser
+estrecho. El error de test puede ser grande si ese mínimo no generaliza bien.
+
+Para $\eta$ intermedio ($T_{\text{eff}} \sim 10^{-2}$): el ruido permite
+escapar de mínimos estrechos y encontrar mínimos amplios. El error de test
+alcanza su mínimo.
+
+Para $\eta$ grande ($T_{\text{eff}} \gg 1$): las fluctuaciones dominan, la
+partícula nunca se estabiliza, y la predicción es ruidosa. El error de test
+crece.
+
+Este comportamiento es el análogo exacto de la dependencia de las
+propiedades de un cristal con la velocidad de enfriamiento en metalurgia:
+enfriar demasiado rápido produce defectos (mínimo local estrecho); enfriar
+demasiado lento desperdicia tiempo; el recocido óptimo balancea exploración
+y convergencia. El Ejercicio Computacional~\ref{ejcomp:oscilador5}
+implementa este experimento.
+
+\subsection{Una recursión conceptual}
+\label{subsec:osc_recursion}
+
+Hay una observación que merece detenerse a apreciar. Los datos del
+oscilador son muestras de un proceso determinista ($\sin(2\pi t)$) con
+ruido gaussiano añadido. El SGD que los ajusta es un proceso estocástico
+(la SDE de Langevin~\eqref{eq:langevin_sgd}). Así que la situación es:
+un \emph{oscilador estocástico} (el SGD navegando el paisaje de pérdida)
+que aprende a reproducir un \emph{oscilador determinista} (los datos).
+
+En el Capítulo~\ref{ch:cap10}, los roles se invertirán. El oscilador
+armónico amortiguado con ruido térmico ---el proceso de Ornstein-Uhlenbeck,
+$dX_t = -\alpha X_t\,dt + \sigma\,dW_t$--- será el objeto de estudio del
+cálculo de Itô. Y en el Capítulo~\ref{ch:cap12}, ese mismo proceso será el
+\textit{forward process} que destruye la señal para que un modelo de
+difusión la reconstruya. El oscilador empezó como dato a ajustar; se
+convertirá en la dinámica del modelo generativo.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 5 y transición}
 \label{sec:resumen5}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-El capítulo construyó una jerarquía de algoritmos de optimización, cada uno como
-respuesta a una limitación del anterior.
+El capítulo construyó una jerarquía de algoritmos como respuesta a
+limitaciones sucesivas. El GD es la discretización del flujo de gradiente:
+determinista, convergente, pero con costo $O(N)$. El SGD estima el
+gradiente con mini-lotes, reduciendo el costo a $O(B)$ a cambio de
+ruido. Ese ruido convierte el flujo en una SDE de Langevin cuya
+distribución estacionaria es la de Gibbs:
+$p^* \propto \exp(-\mathcal{L}/T_{\text{eff}})$ con
+$T_{\text{eff}} = \eta\gamma/2$. La tasa de aprendizaje es la
+temperatura; su decaimiento es un protocolo de recocido. El momento
+añade inercia (mejora de $O(\kappa)$ a $O(\sqrt{\kappa})$). Adam
+adapta la tasa por parámetro, aproximando el hessiano inverso diagonal.
+La inicialización de He establece las condiciones iniciales estables
+para redes profundas con ReLU.
 
-El descenso de gradiente es la discretización de Euler de la ODE del flujo de
-gradiente. Su convergencia es geométrica con tasa controlada por el número de
-condicionamiento del hessiano. El SGD aproxima el gradiente con mini-lotes,
-reduciendo el costo por iteración a $O(B)$ a costa de introducir ruido. Ese ruido
-no es un defecto: convierte el flujo de gradiente en una SDE de Langevin cuya
-distribución estacionaria es la distribución de Gibbs $p^* \propto e^{-2\mathcal{L}/\eta c}$.
-La tasa de aprendizaje actúa como temperatura termodinámica, y su decaimiento
-durante el entrenamiento es el protocolo de recocido que lleva al sistema del
-régimen de exploración al de convergencia.
+Pero una pregunta queda abierta: el gradiente
+$\nabla_{\bm{\theta}}\mathcal{L}$ se ha usado en todos los algoritmos
+sin explicar cómo calcularlo eficientemente. Para un MLP con $p \sim 10^6$
+parámetros, calcular el gradiente por diferencias finitas requeriría
+$O(p)$ evaluaciones del forward pass: computacionalmente imposible. El
+Capítulo~\ref{ch:cap6} presenta el algoritmo que lo hace en $O(1)$
+forward passes: la \textbf{retropropagación}, que es la aplicación del
+principio del máximo de Pontryagin al grafo computacional de la red.
 
-El momento añade inercia al integrador, mejorando la convergencia de $O(\kappa)$
-a $O(\sqrt{\kappa})$ iteraciones. Adam combina momento de primer y segundo orden
-para adaptar la tasa por parámetro, aproximando la acción del hessiano inverso
-diagonal. La inicialización de He establece las condiciones iniciales que permiten
-entrenar redes profundas con ReLU sin saturación ni explosión.
-
-El capítulo deja una pregunta abierta: el gradiente $\nabla_{\bm{\theta}}\mathcal{L}$
-se ha usado en todos los algoritmos, pero no se ha explicado cómo calcularlo
-eficientemente para un MLP de $L$ capas y $p \sim 10^9$ parámetros. Hacerlo por
-diferencias finitas requeriría $O(p)$ evaluaciones del forward pass por iteración:
-computacionalmente imposible. El Capítulo~\ref{ch:cap6} presenta el algoritmo que
-lo hace en $O(1)$ evaluaciones forward: la retropropagación, que es la aplicación
-del método adjunto al grafo computacional del Capítulo~\ref{ch:cap4}.
-
-%───────────────────────────────────────────────────────────────────────────────
-\label{sec:estrella5}
-\begin{estrella}{Optimización del punto de operación de un reactor con Adam}
-
-\textbf{El problema.}
-El modelo sustituto del Capítulo~\ref{ch:cap4} proporciona una función diferenciable
-$f_{\mathrm{MLP}}(\bm{u}) \approx \bm{\Phi}(\bm{u})$ que mapea parámetros operacionales
-$\bm{u} \in \mathbb{R}^d$ (posiciones de barras de control, caudal del refrigerante)
-al flujo neutrónico $\bm{\Phi} \in \mathbb{R}^K$ en el núcleo. El control del reactor
-requiere encontrar $\bm{u}^*$ tal que el flujo realice una distribución objetivo
-$\bm{\Phi}_{\mathrm{obj}}$ (por ejemplo, distribución axial uniforme para minimizar
-factores de potencia pico):
-\[
-  \bm{u}^* = \argmin_{\bm{u} \in \mathcal{U}}\;
-  \mathcal{L}_{\mathrm{ctrl}}(\bm{u})
-  = \tfrac{1}{2}\|f_{\mathrm{MLP}}(\bm{u}) - \bm{\Phi}_{\mathrm{obj}}\|_2^2,
-\]
-donde $\mathcal{U} \subset \mathbb{R}^d$ es el dominio de operación segura.
-
-\textbf{Elección del optimizador.}
-El paisaje de $\mathcal{L}_{\mathrm{ctrl}}$ hereda la no convexidad del sustituto.
-Los distintos parámetros operacionales tienen escalas de sensibilidad muy diferentes:
-la posición de una barra de control cambia el flujo local en un factor 10 para una
-variación de pocos centímetros, mientras que la temperatura del refrigerante lo
-cambia en menos de $1\%$ por kelvin. Adam es el optimizador natural para este
-problema: la adaptación por parámetro normaliza automáticamente las distintas
-escalas de sensibilidad, sin necesidad de escalar manualmente las variables.
-
-\textbf{La tasa de aprendizaje como temperatura de control.}
-La distribución estacionaria del SGD (ecuación~\eqref{eq:gibbs}) identifica $\eta$
-con una temperatura que controla el nivel de exploración. En el contexto de control
-del reactor, esto tiene una interpretación operativa: una tasa alta permite
-explorar puntos de operación no estándar (posiblemente mejores) pero con mayor
-incertidumbre; una tasa baja converge a un punto de operación preciso pero puede
-quedar atrapada en un óptimo local subóptimo. El calentamiento lineal +
-decaimiento coseno (Sección~\ref{sec:lr_schedule}) es el protocolo natural:
-exploración inicial para mapear el espacio de operación, seguida de convergencia
-fina hacia $\bm{u}^*$.
-
-\textbf{Inicialización desde el punto de operación nominal.}
-La inicialización de He es apropiada para entrenar el sustituto (pesos del MLP),
-pero para la optimización de control la inicialización natural es $\bm{u}^{(0)} =
-\bm{u}_{\mathrm{nom}}$ (punto de operación nominal): se sabe que está en la región
-$\mathcal{U}$ y cerca de algún óptimo local razonable. El análisis de la
-Sección~\ref{sec:init} aplica mutatis mutandis: la inicialización determina
-la cuenca de atracción a la que el optimizador converge.
-
-\textbf{Conexión con el capítulo.}
-El gradiente $\nabla_{\bm{u}}\mathcal{L}_{\mathrm{ctrl}}$ se calcula por
-backpropagation a través del sustituto (Capítulo~\ref{ch:cap6}): la composición
-$f_{\mathrm{MLP}} \circ (\cdot)$ admite diferenciación automática exactamente
-como el forward pass del MLP. Cada iteración de Adam cuesta un forward pass más
-un backward pass sobre el sustituto: $O(p)$ operaciones, frente a las horas del
-simulador de referencia. El proceso completo de optimización de control ---$10^3$
-iteraciones de Adam sobre el sustituto--- es más barato que una sola evaluación
-del simulador.
-\end{estrella}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section*{Ejercicios computacionales}
-\addcontentsline{toc}{section}{Ejercicios computacionales}
-%───────────────────────────────────────────────────────────────────────────────
-
-\begin{ejerciciocomp}{Comparación de optimizadores sobre un paisaje de pérdida 2D}
-\textbf{Objetivo:} visualizar las trayectorias de GD, SGD, SGD con momento y Adam
-sobre un paisaje de pérdida bidimensional mal condicionado y verificar las
-predicciones teóricas de convergencia.
-
-\medskip\noindent\textbf{Función objetivo:}
-\[
-  \mathcal{L}(\theta_1, \theta_2) = \frac{1}{2}(\theta_1^2 + 100\theta_2^2),
-  \quad \bm{\theta}^{(0)} = (1, 1)^\top, \quad \bm{\theta}^* = (0, 0)^\top.
-\]
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Ejecutar $500$ iteraciones de GD, SGD (ruido $\sigma = 0.1$), SGD con momento
-        ($\beta = 0.9$) y Adam con $\eta = 0.01$ para todos.
-  \item Graficar las trayectorias $(\theta_1^{(k)}, \theta_2^{(k)})$ superpuestas
-        sobre las curvas de nivel de $\mathcal{L}$.
-  \item Trazar $\log\mathcal{L}(\bm{\theta}^{(k)})$ en función de $k$ para
-        cada optimizador en una figura separada.
-  \item Medir el número de iteraciones para alcanzar $\mathcal{L} < 10^{-4}$ y
-        comparar con las predicciones teóricas: $O(\kappa)$ para GD, $O(\sqrt{\kappa})$
-        para momento de Nesterov.
-\end{enumerate}
-
-\medskip\noindent\textbf{Verificación:} Adam debe converger en menos iteraciones
-que GD para $\kappa = 100$, y las trayectorias de GD deben mostrar el patrón de
-zigzag predicho por la Sección~\ref{subsec:zigzag}.
-\end{ejerciciocomp}
-
-\begin{ejerciciocomp}{Implementación del calendario de tasa de aprendizaje coseno}
-\textbf{Objetivo:} implementar los tres calendarios de la Sección~\ref{subsec:calendarios}
-y verificar el efecto de la temperatura sobre la distribución estacionaria del SGD.
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Implementar $\eta^{(k)}$ para decaimiento escalonado ($\gamma = 0.5$,
-        $s = 100$), decaimiento coseno y calentamiento lineal ($k_w = 50$)
-        + decaimiento coseno. Graficar los tres calendarios para $K = 500$ iteraciones.
-  \item Minimizar $\mathcal{L}(\theta) = (\theta - 3)^2$ con SGD (ruido
-        $\sigma = 1$) usando cada calendario. Graficar $\theta^{(k)}$ y
-        $\mathcal{L}(\theta^{(k)})$ en función de $k$.
-  \item Estimar empíricamente la distribución estacionaria tomando los últimos
-        $100$ valores de $\theta^{(k)}$ para cada calendario. ¿Se parece a la
-        distribución de Gibbs $p^* \propto e^{-2\mathcal{L}(\theta)/\eta_{\mathrm{final}} c}$?
-  \item Para el calendario coseno, verificar la regla de escala lineal: comparar
-        las trayectorias para $(B=32, \eta=0.01)$ y $(B=128, \eta=0.04)$. ¿Son
-        estadísticamente equivalentes?
-\end{enumerate}
-\end{ejerciciocomp}
-
-%───────────────────────────────────────────────────────────────────────────────
-\begin{notasbib}
-El descenso de gradiente en tiempo continuo (flujo de gradiente) fue estudiado
-sistemáticamente en la teoría de control y optimización convexa desde la década
-de 1960. La perspectiva del método de Euler como discretización de la ODE del
-flujo de gradiente aparece en los libros clásicos de análisis numérico de ODEs,
-pero su aplicación sistemática al análisis del aprendizaje profundo fue
-desarrollada por Hardt, Recht y Singer (2016) y formalizada en la literatura
-de física matemática del aprendizaje.
-
-El análisis de convergencia para funciones fuertemente convexas con gradiente
-Lipschitz es un resultado clásico de la teoría de optimización convexa,
-presentado de forma canónica en Nesterov (2004)~\cite{nesterov2004introductory}
-y Nocedal y Wright (2006)~\cite{nocedal2006numerical}. La mejora de la tasa de
-convergencia de $O(\kappa)$ a $O(\sqrt{\kappa})$ mediante el momento acelerado fue
-establecida por Nesterov (1983) como óptima en la clase de métodos de primer orden.
-
-La conexión entre el SGD y la ecuación de Langevin fue explorada por Chaudhari
-y Soatto (2018), Li et al.\ (2017), y formalizada con herramientas del cálculo
-estocástico por varios grupos. La interpretación de la tasa de aprendizaje como
-temperatura y la distribución estacionaria de Gibbs aparecen en Welling y Teh
-(2011)~\cite{welling2011bayesian} en el contexto del SGD bayesiano (SGLD). La
-regla de escala lineal del learning rate con el batch size fue establecida
-empíricamente por Goyal et al.\ (2017)~\cite{goyal2017accurate} en el contexto
-del entrenamiento distribuido de ResNets, y derivada teóricamente de la distribución
-estacionaria por varios autores.
-
-AdaGrad fue introducido por Duchi, Hazan y Singer (2011)~\cite{duchi2011adaptive},
-que probaron convergencia $O(1/\sqrt{k})$ para funciones convexas no suaves.
-RMSProp fue propuesto por Hinton en notas de curso no publicadas (2012) como
-solución al problema de tasas decrecientes de AdaGrad. Adam fue publicado por
-Kingma y Ba (2015)~\cite{kingma2015adam} y se convirtió rápidamente en el
-optimizador estándar para la mayoría de las aplicaciones de aprendizaje profundo.
-
-La inicialización de Xavier fue derivada por Glorot y Bengio (2010)~\cite{glorot2010understanding},
-que identificaron la varianza de las activaciones como el factor clave para la
-propagación estable del gradiente. La inicialización de He (He et al.,
-2015)~\cite{he2015delving} extendió el análisis a activaciones ReLU y permitió
-entrenar redes de cientos de capas por primera vez.
-
-La conexión entre el SGD y el recocido simulado tiene raíces en Kirkpatrick,
-Gelatt y Vecchi (1983), que introdujeron el recocido simulado para la
-optimización combinatoria, y en la teoría clásica de la física estadística del
-equilibrio y fuera del equilibrio. En el contexto de los modelos de difusión del
-Capítulo~\ref{ch:cap12}, la ecuación de Langevin y su distribución estacionaria
-aparecen de forma central en la derivación del proceso de inversión temporal.
-\end{notasbib}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios resueltos}
 \addcontentsline{toc}{section}{Ejercicios resueltos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
 \label{ej:flujo_grad_cuad}
 \textbf{(Flujo de gradiente para una función cuadrática).}
 
-Sea $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}\bm{\theta}$
-con $\bm{H}$ simétrica definida positiva. Resolver la ODE del flujo de gradiente
-y mostrar que la solución converge al mínimo $\bm{\theta}^* = \bm{0}$.
+Sea $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}
+\bm{\theta}$ con $\bm{H}$ simétrica definida positiva.
+
+\medskip\noindent\textit{(a)} Resolver la ODE del flujo de gradiente
+$\dot{\bm{\theta}} = -\bm{H}\bm{\theta}$ con condición inicial
+$\bm{\theta}(0) = \bm{\theta}_0$.
 
 \medskip\noindent\textit{Solución.}
-La ODE es $\dot{\bm{\theta}} = -\bm{H}\bm{\theta}$. En la base de autovectores
-$\bm{H} = \bm{Q}\bm{\Lambda}\bm{Q}^\top$, con $\bm{\phi} = \bm{Q}^\top\bm{\theta}$:
-$\dot{\phi}_k = -\mu_k\phi_k$. Las soluciones son $\phi_k(t) = \phi_k(0)e^{-\mu_k t}$.
-Como $\mu_k > 0$, cada componente decae exponencialmente: $\bm{\theta}(t) =
-\bm{Q}\mathrm{diag}(e^{-\mu_k t})\bm{Q}^\top\bm{\theta}(0) \to \bm{0}$ cuando
-$t\to\infty$. La tasa de convergencia está dominada por el modo más lento
-$e^{-\mu_{\min}t}$: las componentes en las direcciones de menor curvatura
-tardan más en converger, exactamente como predice la Proposición~\ref{prop:conv_cuad}.
+En la base de autovectores de $\bm{H}$: $\theta_i(t) =
+\theta_{0,i}\,e^{-\mu_i t}$, donde $\mu_i$ son los autovalores.
+Cada componente decae exponencialmente con tasa $\mu_i$. Las
+direcciones de alta curvatura ($\mu_i$ grande) convergen rápidamente;
+las de baja curvatura ($\mu_i$ pequeño), lentamente.
+
+\medskip\noindent\textit{(b)} Calcular $\mathcal{L}(\bm{\theta}(t))$
+y verificar que decrece monótonamente.
+
+\medskip\noindent\textit{Solución.}
+$\mathcal{L}(t) = \frac{1}{2}\sum_i \mu_i\theta_{0,i}^2\,e^{-2\mu_i t}$.
+$d\mathcal{L}/dt = -\sum_i \mu_i^2\theta_{0,i}^2\,e^{-2\mu_i t} \leq 0$.
 $\square$
 \end{ejercicio}
 
 \begin{ejercicio}
-\label{ej:ito_calculo}
-\textbf{(Aplicación de la fórmula de Itô).}
+\label{ej:ito_loss}
+\textbf{(Fórmula de Itô aplicada a la pérdida del SGD).}
 
-Sea $X_t$ un movimiento browniano estándar ($dX_t = dW_t$). Calcular $d(X_t^2)$
-usando la fórmula de Itô y verificar que $\mathbb{E}[X_t^2] = t$.
+Sea $\mathcal{L}(\bm{\theta})$ suave y $\bm{\theta}_t$ la solución
+de~\eqref{eq:langevin_isotropo} con $\bm{\Gamma} = \gamma\bm{I}$.
 
-\medskip\noindent\textit{Solución.}
-Aplicando el Teorema~\ref{thm:ito} con $g(x) = x^2$:
-\[
-  d(X_t^2) = 2X_t\,dX_t + \frac{1}{2}\cdot 2\cdot (dX_t)^2
-  = 2X_t\,dW_t + (dW_t)^2.
-\]
-Usando la tabla de Itô: $(dW_t)^2 = dt$. Entonces:
-\[
-  d(X_t^2) = 2X_t\,dW_t + dt.
-\]
-Integrando de $0$ a $t$ y tomando esperanza (la integral estocástica tiene
-esperanza cero):
-\[
-  \mathbb{E}[X_t^2] = X_0^2 + t = t,
-\]
-ya que $X_0 = 0$. Nótese que la fórmula ordinaria $d(x^2) = 2x\,dx$ no
-incluiría el término $dt$: ese término es la corrección de Itô, debida a la
-variación cuadrática del movimiento browniano. Omitirlo daría $\mathbb{E}[X_t^2]
-= 0$, que es incorrecto. $\square$
-\end{ejercicio}
-
-\begin{ejercicio}
-\label{ej:adam_manual}
-\textbf{(Dos iteraciones de Adam).}
-
-Sea $\mathcal{L}(\theta) = (\theta-3)^2$ y $\theta^{(0)} = 0$. Realizar dos
-iteraciones de Adam con $\eta = 0.1$, $\beta_1 = 0.9$, $\beta_2 = 0.999$,
-$\varepsilon = 10^{-8}$, usando el gradiente exacto.
+\medskip\noindent\textit{(a)} Aplicar la fórmula de Itô para calcular
+$d\mathcal{L}(\bm{\theta}_t)$.
 
 \medskip\noindent\textit{Solución.}
-$\nabla\mathcal{L}(\theta) = 2(\theta-3)$.
+$d\mathcal{L} = \nabla\mathcal{L}^\top d\bm{\theta}_t +
+\frac{1}{2}\text{tr}(\nabla^2\mathcal{L}\cdot
+\eta\gamma\bm{I})\,dt
+= -\|\nabla\mathcal{L}\|^2\,dt +
+\frac{\eta\gamma}{2}\Delta\mathcal{L}\,dt
++ \sqrt{\eta\gamma}\nabla\mathcal{L}^\top d\bm{W}_t$.
 
-\textit{Iteración $k=1$:} $g^{(1)} = 2(0-3) = -6$.
-\begin{align*}
-  m^{(1)} &= 0.9\cdot 0 + 0.1\cdot(-6) = -0.6, \\
-  v^{(1)} &= 0.999\cdot 0 + 0.001\cdot 36 = 0.036, \\
-  \hat{m}^{(1)} &= -0.6/(1-0.9) = -6, \\
-  \hat{v}^{(1)} &= 0.036/(1-0.999) = 36, \\
-  \theta^{(1)} &= 0 - 0.1\cdot(-6)/(\sqrt{36}+10^{-8}) = 0.1.
-\end{align*}
+\medskip\noindent\textit{(b)} Tomar esperanza y mostrar que
+$\frac{d}{dt}\mathbb{E}[\mathcal{L}] =
+-\mathbb{E}[\|\nabla\mathcal{L}\|^2] +
+\frac{\eta\gamma}{2}\mathbb{E}[\Delta\mathcal{L}]$.
 
-\textit{Iteración $k=2$:} $g^{(2)} = 2(0.1-3) = -5.8$.
-\begin{align*}
-  m^{(2)} &= 0.9\cdot(-0.6) + 0.1\cdot(-5.8) = -0.54 - 0.58 = -1.12, \\
-  v^{(2)} &= 0.999\cdot 0.036 + 0.001\cdot 33.64 = 0.035964 + 0.03364 = 0.069604, \\
-  \hat{m}^{(2)} &= -1.12/(1-0.81) = -5.895, \\
-  \hat{v}^{(2)} &= 0.069604/(1-0.998) = 34.802, \\
-  \theta^{(2)} &= 0.1 - 0.1\cdot(-5.895)/(\sqrt{34.802}+10^{-8}) \approx 0.1 + 0.0999 \approx 0.2.
-\end{align*}
-
-Cada iteración avanza $\approx 0.1$ hacia el mínimo $\theta^* = 3$,
-independientemente de la escala del gradiente: la normalización por
-$\sqrt{\hat{v}}$ hace que la actualización efectiva sea siempre $\approx \eta$
-en magnitud. Esto ilustra la propiedad de Adam de mantener la magnitud de las
-actualizaciones estable, independientemente de la escala del problema. $\square$
+\medskip\noindent\textit{Solución.}
+El término de martingala tiene esperanza cero. El resultado sigue
+directamente. En el mínimo $\bm{\theta}^*$:
+$\nabla\mathcal{L} = \bm{0}$ pero
+$\Delta\mathcal{L} = \text{tr}(\bm{H}) > 0$, luego
+$\frac{d}{dt}\mathbb{E}[\mathcal{L}] = \frac{\eta\gamma}{2}
+\text{tr}(\bm{H}) > 0$: el ruido hace que la pérdida esperada no
+converja a cero sino que fluctúe alrededor de un valor positivo
+$\sim T_{\text{eff}}\cdot p/2$ (equipartición de energía).
+$\square$
 \end{ejercicio}
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios propuestos}
 \addcontentsline{toc}{section}{Ejercicios propuestos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
-\textbf{(Estabilidad del método de Euler para el flujo de gradiente).}
-Sea $\mathcal{L}(\theta_1,\theta_2) = \frac{1}{2}(\theta_1^2 + 100\theta_2^2)$
-($\kappa = 100$).
+\textbf{(La distribución estacionaria del SGD).}
+Para la SDE $d\theta = -\theta\,dt + \sqrt{\eta\gamma}\,dW_t$
+(gradiente de $\mathcal{L} = \theta^2/2$):
 \begin{enumerate}[label=(\alph*)]
-  \item Calcule la tasa de aprendizaje máxima $\eta_{\max}$ para la estabilidad
-        de Euler. ¿Qué ocurre para $\eta > \eta_{\max}$?
-  \item Con $\eta = \eta^* = 2/(\mu_1+\mu_2)$ (tasa óptima), calcule cuántas
-        iteraciones se necesitan para que $\|\bm{\theta}^{(k)}-\bm{\theta}^*\|
-        < 10^{-3}$ partiendo de $\bm{\theta}^{(0)} = (1,1)^\top$.
-  \item Repita con momento de Polyak ($\beta = 0.9$). ¿Cuántas iteraciones
-        se necesitan ahora?
-  \item Compare con el resultado teórico $O(\sqrt{\kappa})$ para momento de
-        Nesterov.
-\end{enumerate}
-\end{ejercicio}
-
-\begin{ejercicio}
-\textbf{(La fórmula de Itô para la pérdida a lo largo del SGD).}
-Sea $\mathcal{L}(\bm{\theta})$ una función suave y $\bm{\theta}_t$ la solución
-de la SDE de Langevin~\eqref{eq:langevin_sgd} con $\bm{C} = c\bm{I}$.
-\begin{enumerate}[label=(\alph*)]
-  \item Aplicar la fórmula de Itô multidimensional para calcular $d\mathcal{L}
-        (\bm{\theta}_t)$.
-  \item Mostrar que $\frac{d}{dt}\mathbb{E}[\mathcal{L}(\bm{\theta}_t)] =
-        -\mathbb{E}[\|\nabla\mathcal{L}\|^2] + \frac{\eta c}{2}\mathbb{E}
-        [\nabla^2\mathcal{L}(\bm{\theta}_t)]$.
-  \item Interpretar el término $\frac{\eta c}{2}\mathbb{E}[\nabla^2\mathcal{L}]$:
-        ¿qué ocurre en el mínimo $\bm{\theta}^*$ donde $\nabla\mathcal{L} = \bm{0}$
-        pero $\nabla^2\mathcal{L} \succ 0$? ¿Por qué la pérdida esperada no
-        converge a cero sino a un valor positivo?
-  \item Para la función cuadrática $\mathcal{L} = \frac{1}{2}\bm{\theta}^\top
-        \bm{H}\bm{\theta}$, resolver la ODE para $\mathbb{E}[\mathcal{L}]$ y
-        calcular el valor estacionario.
+  \item Escribir la ecuación de Fokker-Planck correspondiente.
+  \item Encontrar la distribución estacionaria $p^*(\theta)$
+        resolviendo $\partial_t p^* = 0$.
+  \item Verificar que $p^*(\theta) \propto
+        e^{-\theta^2/(\eta\gamma)}$ (distribución de Gibbs con
+        $T_{\text{eff}} = \eta\gamma/2$).
+  \item ¿Cuál es la varianza de $p^*$? ¿Cómo depende del learning rate?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
 \textbf{(Implementación comparativa de optimizadores).}
-Minimizar $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top\bm{H}\bm{\theta}
-- \bm{b}^\top\bm{\theta}$ con $\bm{H} = \mathrm{diag}(1, 10, 100, 1000)$,
-$\bm{b} = (1,1,1,1)^\top$.
+Minimizar $\mathcal{L}(\bm{\theta}) = \frac{1}{2}\bm{\theta}^\top
+\bm{H}\bm{\theta} - \bm{b}^\top\bm{\theta}$ con
+$\bm{H} = \text{diag}(1, 10, 100, 1000)$, $\bm{b} = (1,1,1,1)^\top$.
 \begin{enumerate}[label=(\alph*)]
-  \item Implemente GD, SGD (con ruido gaussiano añadido), SGD con momento de
-        Polyak, y Adam.
-  \item Para cada optimizador, trace la curva de convergencia $\mathcal{L}
-        (\bm{\theta}^{(k)})-\mathcal{L}^*$ en función de $k$ (en escala
-        logarítmica).
-  \item ¿Qué optimizador converge más rápido? ¿Es consistente con el análisis
-        teórico?
-  \item Añada ruido gaussiano al gradiente con covarianza $\sigma^2\bm{I}$
-        para simular SGD. ¿Cómo cambia la convergencia? ¿El SGD converge
-        a $\mathcal{L}^*$ o a un valor mayor?
-\end{enumerate}
-\end{ejercicio}
-
-\begin{ejercicio}
-\textbf{(La distribución estacionaria del SGD).}
-Para la SDE $d\theta = -\theta\,dt + \sqrt{\eta}\,dW_t$ (gradiente de
-$\mathcal{L} = \theta^2/2$) con temperatura efectiva $\eta$:
-\begin{enumerate}[label=(\alph*)]
-  \item Escribir la ecuación de Fokker-Planck correspondiente.
-  \item Encontrar la distribución estacionaria $p^*(\theta)$ resolviendo
-        $\partial_t p^* = 0$.
-  \item Verificar que $p^*(\theta) \propto e^{-\theta^2/\eta}$
-        (distribución de Gibbs con temperatura $\eta/2$).
-  \item ¿Cuál es la varianza de $p^*$? ¿Cómo depende del mínimo al que
-        converge el SGD (estrecho vs. ancho) de la temperatura $\eta$?
+  \item Implementar GD, SGD (ruido gaussiano $\sigma^2\bm{I}$), SGD con
+        momento ($\beta = 0.9$), y Adam.
+  \item Trazar $\log(\mathcal{L}^{(k)}-\mathcal{L}^*)$ vs.\ $k$ para
+        cada optimizador.
+  \item ¿Qué optimizador converge más rápido? ¿Es consistente con la
+        teoría ($O(\kappa)$ para GD, $O(\sqrt{\kappa})$ para momento)?
+  \item ¿El SGD converge a $\mathcal{L}^*$ exacto o a un valor mayor?
+        ¿Coincide con la predicción de equipartición del
+        Ejercicio~\ref{ej:ito_loss}?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
 \textbf{(Inicialización y propagación de varianza).}
-Sea un MLP con $L = 5$ capas de anchura constante $m = 128$, activación ReLU
-e inicialización $W_{jk}^{(l)} \sim \mathcal{N}(0,\sigma^2)$.
+MLP con $L = 5$ capas, anchura $m = 128$, activación ReLU,
+$W_{jk}^{(l)} \sim \mathcal{N}(0,\sigma_w^2)$.
 \begin{enumerate}[label=(\alph*)]
-  \item Para $\sigma^2 = 1/m$, calcule analíticamente la varianza de
-        $\bm{z}^{(l)}$ en función de $l$. ¿Explota o se desvanece?
-  \item Para $\sigma^2 = 2/m$ (inicialización de He), repita el cálculo.
-        ¿Qué ocurre ahora?
-  \item Verifique numéricamente propagando un vector de entrada gaussiano
-        $\bm{x} \sim \mathcal{N}(\bm{0},\bm{I})$ y midiendo
-        $\mathrm{Var}[\bm{z}^{(l)}]$ para $l = 1,\ldots,5$.
-  \item ¿Qué inicialización se necesita para activación sigmoide (cuya
-        derivada esperada es $\approx 1/4$)?
+  \item Para $\sigma_w^2 = 1/m$, calcular la varianza de
+        $\bm{z}^{(l)}$ en función de $l$.
+  \item Para $\sigma_w^2 = 2/m$ (He), verificar que la varianza es
+        constante.
+  \item Simular para $L = 20$ y graficar
+        $\text{Var}[z_j^{(l)}]$ vs.\ $l$ para ambas
+        inicializaciones. ¿Cuál es estable?
 \end{enumerate}
 \end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Regla de escala lineal).}
+Para la SDE del SGD isótropo~\eqref{eq:langevin_isotropo}:
+\begin{enumerate}[label=(\alph*)]
+  \item Mostrar que la temperatura efectiva es
+        $T_{\text{eff}} = \eta/(2B) \cdot
+        \text{tr}(\text{Cov}_i[\nabla\ell_i])$.
+  \item Si se cuadruplica $B$, ¿cuánto debe cambiar $\eta$ para
+        mantener $T_{\text{eff}}$ constante?
+  \item Simular el SGD en $\mathcal{L}(\theta) = \theta^2/2$ con
+        $(B, \eta) = (32, 0.01)$ y $(B, \eta) = (128, 0.04)$.
+        Comparar las distribuciones estacionarias empíricas.
+\end{enumerate}
+\end{ejercicio}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{Comparación de optimizadores sobre un paisaje 2D}
+\label{ejcomp:optimizadores}
+\textbf{Objetivo:} visualizar las trayectorias de GD, SGD, SGD con momento
+y Adam sobre un paisaje mal condicionado y verificar las predicciones de
+convergencia.
+
+\medskip\noindent\textbf{Función:}
+$\mathcal{L}(\theta_1,\theta_2) = \frac{1}{2}(\theta_1^2+100\theta_2^2)$,
+$\bm{\theta}^{(0)} = (1,1)^\top$, $\kappa = 100$.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Ejecutar 500 iteraciones de GD, SGD ($\sigma = 0.1$), SGD+momento
+        ($\beta = 0.9$), Adam, todos con $\eta = 0.01$.
+  \item Graficar trayectorias sobre curvas de nivel de $\mathcal{L}$.
+  \item Trazar $\log\mathcal{L}^{(k)}$ vs.\ $k$.
+  \item Medir iteraciones para $\mathcal{L} < 10^{-4}$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+GD: zigzag visible, $\sim 350$ iteraciones.
+Adam: sin zigzag, $\sim 80$ iteraciones.
+SGD: no converge a $\mathcal{L}^* = 0$ sino que fluctúa alrededor de
+$\sim T_{\text{eff}} \cdot p/2$.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Calendario de tasa de aprendizaje y distribución
+  estacionaria}
+\label{ejcomp:schedule}
+\textbf{Objetivo:} verificar el efecto del calendario sobre la
+distribución estacionaria del SGD.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Implementar decaimiento escalonado ($\gamma = 0.5$, $s = 100$),
+        coseno, y calentamiento lineal ($k_w = 50$) + coseno, para
+        $K = 500$ iteraciones.
+  \item Minimizar $\mathcal{L}(\theta) = (\theta-3)^2$ con SGD
+        (ruido $\sigma = 1$) usando cada calendario.
+  \item Estimar la distribución estacionaria con los últimos 100 valores.
+        ¿Se parece a
+        $p^* \propto e^{-2\mathcal{L}/(\eta_{\text{final}}\gamma)}$?
+  \item Verificar la regla de escala: comparar
+        $(B=32, \eta=0.01)$ con $(B=128, \eta=0.04)$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+La distribución estacionaria para coseno con $\eta_{\text{final}} \to 0$
+debe concentrarse en $\theta = 3$ (temperatura cero). Para decaimiento
+escalonado, la distribución tiene ancho finito proporcional a
+$\sqrt{\eta_{\text{final}}}$.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{El oscilador armónico: SGD, temperatura y generalización}
+\label{ejcomp:oscilador5}
+\textbf{Objetivo:} entrenar el MLP del oscilador con distintos optimizadores
+y tasas de aprendizaje, verificar la fluctuación de equilibrio predicha por
+la distribución de Gibbs, y observar el efecto de la temperatura sobre la
+generalización.
+
+\medskip\noindent\textbf{Datos:}
+Los mismos de los capítulos anteriores: $N = 25$ puntos de $\sin(2\pi t)
++ \varepsilon_i$, $\sigma = 0.15$, $t \in [0, 2]$. $N_{\text{test}} = 200$.
+MLP $(1, 32, 1)$ con ReLU ($p = 97$ parámetros). Inicialización de He.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item \textbf{GD vs.\ SGD:} entrenar con GD ($B = 25$) y SGD ($B = 4$),
+        ambos con $\eta = 10^{-3}$, durante 2000 épocas. Registrar
+        $\mathcal{L}_{\text{train}}^{(k)}$ en cada iteración. Graficar
+        ambas curvas. ¿El SGD fluctúa alrededor de un valor positivo? ¿El
+        GD converge monótonamente?
+  \item \textbf{Equipartición:} para el SGD con $B = 4$ y
+        $\eta \in \{10^{-4}, 5\times 10^{-4}, 10^{-3}, 5\times 10^{-3}\}$,
+        estimar $\langle\mathcal{L}\rangle$ promediando las últimas 500
+        iteraciones. Graficar $\langle\mathcal{L}\rangle$ vs.\ $\eta$ y
+        comparar con la predicción de equipartición
+        $\langle\mathcal{L}\rangle \approx \eta\gamma p/4$, estimando
+        $\gamma$ como la varianza empírica del gradiente estocástico.
+  \item \textbf{Temperatura y generalización:} para cada $\eta$ del paso
+        anterior, evaluar $\mathcal{L}_{\text{test}}$. ¿Existe un $\eta^*$
+        que minimiza $\mathcal{L}_{\text{test}}$? ¿Es el mismo que minimiza
+        $\mathcal{L}_{\text{train}}$?
+  \item \textbf{Comparación de optimizadores:} entrenar con GD, SGD
+        ($B = 4$), SGD+momento ($\beta = 0.9$), y Adam, todos con
+        $\eta = 10^{-3}$. Graficar las 4 curvas de
+        $\mathcal{L}_{\text{test}}$ vs.\ época. ¿Cuál converge más rápido?
+        ¿Cuál generaliza mejor al final?
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+GD: $\mathcal{L}_{\text{train}}$ monótona, converge a $\approx 0.02$.
+SGD ($B=4$, $\eta=10^{-3}$): fluctuaciones de amplitud $\sim 0.01$
+alrededor de $\approx 0.03$.
+Equipartición: $\langle\mathcal{L}\rangle$ debe ser aproximadamente
+lineal en $\eta$ (para $\eta$ pequeño).
+Adam: $\mathcal{L}_{\text{test}} \approx 0.020$ en $\sim 500$ épocas.
+SGD: $\mathcal{L}_{\text{test}} \approx 0.025$ en $\sim 1500$ épocas.
+
+\medskip\noindent\textbf{Extensión:}
+Repetir con $B = 1$ (SGD puro). ¿Se observan las colas pesadas
+mencionadas en la Observación~\ref{obs:limites_gauss}? Graficar el
+histograma de $\|\hat{\nabla}\mathcal{L}\|$ sobre 1000 iteraciones y
+comparar con una gaussiana. ¿Para qué $B$ mínimo el histograma es
+aproximadamente gaussiano?
+\end{ejerciciocomp}
+
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+El descenso de gradiente en tiempo continuo fue estudiado en la teoría de
+control y optimización convexa desde los años 1960. El análisis de
+convergencia para funciones fuertemente convexas es estándar; véase
+Nesterov (2004)~\cite{nesterov2004introductory} y Nocedal y Wright
+(2006)~\cite{nocedal2006numerical}. La mejora de $O(\kappa)$ a
+$O(\sqrt{\kappa})$ por momento acelerado fue establecida por Nesterov
+(1983) como óptima para métodos de primer orden.
+
+La conexión SGD--Langevin fue explorada por Chaudhari y Soatto (2018) y
+Li et al.\ (2017), y formalizada con cálculo estocástico por varios
+grupos. La interpretación de $\eta$ como temperatura y la distribución
+de Gibbs aparecen en Welling y Teh
+(2011)~\cite{welling2011bayesian} (SGLD). La regla de escala lineal fue
+establecida por Goyal et al.\ (2017)~\cite{goyal2017accurate}.
+
+AdaGrad: Duchi, Hazan y Singer (2011)~\cite{duchi2011adaptive}.
+RMSProp: Hinton (2012, notas de curso no publicadas).
+Adam: Kingma y Ba (2015)~\cite{kingma2015adam}.
+
+Inicialización de Xavier: Glorot y Bengio
+(2010)~\cite{glorot2010understanding}.
+Inicialización de He: He et al.\ (2015)~\cite{he2015delving}.
+
+El recocido simulado: Kirkpatrick, Gelatt y Vecchi (1983). La conexión
+con los modelos de difusión del Capítulo~\ref{ch:cap12} es directa: la
+ecuación de Langevin y su distribución estacionaria son la base del
+proceso de reversión temporal.
+\end{notasbib}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ESTRELLA POLAR — Sección independiente
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{estrella}{Optimización del punto de operación del reactor con Adam}
+\label{sec:estrella5}
+
+\textbf{El problema de control.}
+El reactor IAN-R1 tiene $n = 5$ parámetros de control
+$\bm{u} = (h_1, h_2, T_{\text{mod}}, c_B, P)$ (posiciones de barras,
+temperatura del moderador, concentración de boro, potencia). Se busca
+el punto de operación $\bm{u}^*$ que minimiza una función de costo
+$\mathcal{L}_{\text{ctrl}}(\bm{u})$ que penaliza las desviaciones de la
+distribución de flujo respecto a un perfil objetivo y las violaciones de
+límites operacionales.
+
+\textbf{El sustituto como función de costo diferenciable.}
+El sustituto MLP de la Estrella~\ref{sec:estrella4} proporciona una
+aproximación diferenciable del flujo:
+$\hat{\bm{\Phi}}(\bm{u}) = f_{\text{MLP}}(\bm{u};\bm{\theta}_{\text{fijo}})$.
+La función de costo se define como
+$\mathcal{L}_{\text{ctrl}}(\bm{u}) =
+\|\hat{\bm{\Phi}}(\bm{u}) - \bm{\Phi}_{\text{objetivo}}\|^2 +
+\lambda_{\text{pen}}\sum_j\max(0, u_j - u_j^{\max})^2$.
+
+\textbf{Optimización con Adam.}
+El gradiente $\nabla_{\bm{u}}\mathcal{L}_{\text{ctrl}}$ se calcula por
+backpropagation a través del sustituto (Capítulo~\ref{ch:cap6}). Cada
+iteración de Adam cuesta un forward + backward del MLP: $O(p)$
+operaciones, frente a las horas de una simulación de referencia. El
+proceso completo —$10^3$ iteraciones de Adam con calentamiento coseno—
+es más barato que una sola evaluación del simulador.
+
+\textbf{La temperatura del SGD y la robustez.}
+Si se usa SGD en lugar de Adam (con ruido artificial sobre
+$\bm{u}$), la distribución estacionaria
+$p^*(\bm{u}) \propto e^{-\mathcal{L}_{\text{ctrl}}/T_{\text{eff}}}$
+proporciona no solo el óptimo $\bm{u}^*$ sino una distribución de
+puntos de operación que cuantifica la robustez: las configuraciones
+con $\mathcal{L}_{\text{ctrl}}$ ligeramente mayor que el mínimo tienen
+probabilidad finita, y su análisis indica qué tan sensible es el
+punto óptimo a perturbaciones. Esto conecta con la cuantificación de
+incertidumbre del Capítulo~\ref{ch:cap7}.
+\end{estrella}
+
+\printbibliography[heading=subbibliography]
