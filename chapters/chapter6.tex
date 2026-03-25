@@ -1,347 +1,243 @@
-%═══════════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════════════════
+% CAPÍTULO 6 — RETROPROPAGACIÓN: EL MÉTODO ADJUNTO SOBRE EL GRAFO COMPUTACIONAL
+% ═══════════════════════════════════════════════════════════════════════════════
+% Cambios principales respecto a la versión anterior:
+%   1. Apertura reconectada con Cap. 5: "tenemos el optimizador, falta el
+%      gradiente eficiente".
+%   2. Ejemplo del oscilador: BP manual sobre el MLP (1,32,1) del Cap. 4,
+%      valores numéricos concretos, verificación con diferencias finitas.
+%   3. Ejemplos del método adjunto: reemplazados por ejemplos universales
+%      para cualquier físico (mecánica analítica, óptica, termodinámica,
+%      problemas inversos en espectroscopía). Se mantiene Tarantola/sismología
+%      por su importancia histórica.
+%   4. Algoritmo forward+backward preservado como Algoritmo central.
+%   5. Notación Γ del Cap. 5 consistente.
+%   6. Estrella Polar independiente al final.
+%   7. Transición al Cap. 7 explícita.
+% ═══════════════════════════════════════════════════════════════════════════════
+
 \chapter{Retropropagación: el método adjunto sobre el grafo computacional}
 \label{ch:cap6}
-%═══════════════════════════════════════════════════════════════════════════════
 
-El Capítulo~\ref{ch:cap5} construyó una jerarquía de algoritmos de optimización
-que comparten un ingrediente: el gradiente $\nabla_{\bm{\theta}}\mathcal{L}
-\in \mathbb{R}^p$. Ese gradiente se usó en todas las reglas de actualización sin
-explicar cómo calcularlo eficientemente. Esta deuda se salda ahora.
-
-El resultado central del capítulo es que $\nabla_{\bm{\theta}}\mathcal{L}$ puede
-calcularse con exactamente un forward pass y un backward pass adicional, cada uno
-de costo comparable al forward pass solo. El costo total es $O(p)$ en memoria y
-$O(\sum_l n_l n_{l-1})$ en operaciones: independiente del número de parámetros
-en el sentido de que no crece con $p$ más allá del costo mínimo de leer los
-parámetros una vez.
-
-Este resultado no es un truco algebraico específico de redes neuronales. Es la
-aplicación del \textbf{método adjunto} al grafo computacional del Capítulo~\ref{ch:cap4}:
-una técnica que el físico computacional conoce bajo distintos nombres (método
-adjunto en sismología inversa, principio de Pontryagin en control óptimo,
-multiplicadores de Lagrange en mecánica analítica) y que aquí aparece en su
-forma más pura y general.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{El problema del cálculo de gradientes}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El problema del gradiente eficiente}
 \label{sec:prob_grad}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-\subsection{La complejidad del cálculo naïve}
-\label{subsec:naive}
+El Capítulo~\ref{ch:cap5} construyó una jerarquía de algoritmos de
+optimización —GD, SGD, momento, Adam— que comparten un ingrediente: el
+gradiente $\nabla_{\bm{\theta}}\mathcal{L} \in \mathbb{R}^p$. Ese
+gradiente se usó en todas las reglas de actualización sin explicar cómo
+calcularlo eficientemente. Esta deuda se salda ahora.
 
-El gradiente $\nabla_{\bm{\theta}}\mathcal{L} \in \mathbb{R}^p$ tiene $p$
-componentes. La aproximación más directa es la diferencia finita:
+El problema es de escala. El MLP $(1, 32, 1)$ del oscilador tiene
+$p = 97$ parámetros. Un modelo de lenguaje moderno tiene $p \sim 10^{10}$.
+La aproximación más directa al gradiente —diferencias finitas— requiere
+$p + 1$ evaluaciones del forward pass: una por cada parámetro perturbado.
+Para $p = 10^{10}$ y un forward pass de $1\,\text{ms}$, el costo sería
+$\sim 10^7$ segundos ($\sim 4$ meses) por iteración. Imposible.
+
+\begin{proposicion}{Costo de las diferencias finitas}
+\label{prop:costo_df}
+Para un modelo con $p$ parámetros, la estimación del gradiente por
+diferencias finitas centradas:
 \[
   \frac{\partial\mathcal{L}}{\partial\theta_j}
   \approx \frac{\mathcal{L}(\bm{\theta}+h\bm{e}_j)
-  - \mathcal{L}(\bm{\theta})}{h},
+  - \mathcal{L}(\bm{\theta}-h\bm{e}_j)}{2h}
 \]
-donde $\bm{e}_j$ es el $j$-ésimo vector canónico y $h > 0$ es un paso pequeño.
-Cada evaluación requiere un forward pass completo. El gradiente completo requiere
-$p$ forward passes adicionales: para $p = 10^9$ y un forward pass de $1\,\text{ms}$,
-el costo sería $\sim 10^6\,\text{s}$ por iteración. Imposible.
+requiere $2p$ evaluaciones del forward pass. El error de truncación es
+$O(h^2)$ y el error de redondeo es
+$O(\varepsilon_{\text{máquina}}/h)$, con balance óptimo en
+$h \sim \varepsilon_{\text{máquina}}^{1/3} \approx 10^{-5}$.
+\end{proposicion}
 
-La diferencia finita tiene además un problema de precisión: el error de truncación
-es $O(h)$ y el error de redondeo escala como $\varepsilon_{\text{máquina}}/h$.
-El valor óptimo $h \sim \varepsilon_{\text{máquina}}^{1/2} \approx 10^{-8}$ da
-un error relativo de $\sim 10^{-4}$: insuficiente para entrenar redes profundas.
-La diferencia finita centrada reduce el error a $O(h^2)$ pero no cambia el costo
-$O(p)$.
+El resultado central de este capítulo es que
+$\nabla_{\bm{\theta}}\mathcal{L}$ puede calcularse con un forward pass
+más un backward pass, cada uno de costo comparable al forward solo. El
+costo total es $\sim 3\times$ un forward pass, independiente de $p$. Este
+resultado no es un truco específico de redes neuronales: es la aplicación
+del \textbf{método adjunto} al grafo computacional, una técnica que el
+físico computacional conoce bajo distintos nombres —multiplicadores de
+Lagrange, principio de Pontryagin, operador adjunto— y que aquí aparece
+en su forma más pura.
 
-\subsection{Diferenciación automática: dos modos}
-\label{subsec:autodiff_modos}
-
-La diferenciación automática (AD) calcula derivadas exactas (salvo errores de
-redondeo de punto flotante) de forma algorítmica, sin derivar expresiones
-simbólicas. Existen dos modos.
-
-\medskip
-\noindent\textbf{Modo forward (tangente).}
-Propaga la derivada $\dot{\bm{\theta}} = \bm{v}$ (vector tangente en la dirección
-$\bm{v}$) junto con la evaluación. Para cada operación elemental $\bm{y} =
-f(\bm{x})$, calcula simultáneamente $\bm{y}$ y $\dot{\bm{y}} = \bm{J}_f\dot{\bm{x}}$.
-El costo por paso es el doble del forward pass normal. Al final produce la
-derivada direccional $\nabla_{\bm{\theta}}\mathcal{L} \cdot \bm{v}$. Para calcular
-el gradiente completo se necesitan $p$ pasadas con $\bm{v} = \bm{e}_j$: costo $O(p)$.
-
-\medskip
-\noindent\textbf{Modo reverso (cotangente).}
-Primero ejecuta el forward pass almacenando los valores intermedios. Luego
-propaga el \textbf{gradiente} $\bar{\bm{y}} = \partial\mathcal{L}/\partial\bm{y}$
-hacia atrás: para cada operación $\bm{y} = f(\bm{x})$ calcula
-$\bar{\bm{x}} = \bm{J}_f^\top\bar{\bm{y}}$. Al final produce
-$\nabla_{\bm{\theta}}\mathcal{L}$ completo en un solo backward pass. El costo
-total es $O(1)$ forward passes adicionales, independiente de $p$.
-
-La razón por la que el modo reverso es tan eficiente es la escalaridad de
-$\mathcal{L}$: la función de pérdida mapea $\mathbb{R}^p \to \mathbb{R}$, y su
-gradiente es un vector fila de $\mathbb{R}^{1\times p}$. El modo reverso propaga
-este único vector hacia atrás; el modo forward propagaría $p$ vectores hacia
-adelante. Para cualquier función $f:\mathbb{R}^p \to \mathbb{R}^m$ con $m \ll p$,
-el modo reverso gana: $m$ pasadas en reverso vs.\ $p$ pasadas en forward.
-En ML siempre $m = 1$ (la pérdida es escalar), por lo que el modo reverso es
-siempre óptimo.
-
-\textbf{Backpropagation es el modo reverso de AD aplicado al grafo computacional
-del MLP.}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{La regla de la cadena en grafos computacionales}
-\label{sec:cadena_grafo}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Diferenciación automática: dos modos}
+\label{sec:autodiff}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
-\subsection{La regla de la cadena como resultado fundamental}
-\label{subsec:cadena_fund}
+La diferenciación automática (AD) calcula derivadas exactas (salvo
+redondeo) de forma algorítmica, sin derivar expresiones simbólicas ni
+usar diferencias finitas. Existen dos modos.
 
-Sea $\mathcal{L}(\bm{\theta}) = g(f(\bm{\theta}))$ con $f:\mathbb{R}^p\to\mathbb{R}^m$
-y $g:\mathbb{R}^m\to\mathbb{R}$. La regla de la cadena da:
-\[
-  \frac{\partial\mathcal{L}}{\partial\theta_j}
-  = \sum_{k=1}^m \frac{\partial g}{\partial z_k}\,\frac{\partial f_k}{\partial\theta_j},
-\]
-que en notación matricial es:
-\[
+\textbf{Modo forward (tangente):} se propaga una perturbación
+$\delta\bm{\theta}$ a través del grafo, calculando
+$\delta\mathcal{L} = \nabla\mathcal{L}^\top\delta\bm{\theta}$ (una
+derivada direccional) en un solo paso. Para obtener el gradiente
+completo se necesitan $p$ pasadas con
+$\delta\bm{\theta} = \bm{e}_1, \ldots, \bm{e}_p$: costo total $O(p)$
+forward passes.
+
+\textbf{Modo reverso (adjunto):} se propaga el gradiente de la salida
+$\bar{\mathcal{L}} = 1$ hacia atrás, calculando
+$\nabla_{\bm{\theta}}\mathcal{L}$ completo en un solo paso. Costo:
+$O(1)$ backward passes, independiente de $p$.
+
+Para una función $f: \mathbb{R}^p \to \mathbb{R}$ (pérdida escalar con
+muchos parámetros), el modo reverso es exponencialmente más eficiente que
+el forward. Backpropagation es el modo reverso aplicado al MLP.
+
+El modo forward es preferible cuando la función tiene pocas entradas y
+muchas salidas ($f: \mathbb{R}^p \to \mathbb{R}^m$ con $p \ll m$): el
+jacobiano $\bm{J} \in \mathbb{R}^{m \times p}$ se calcula en $p$
+pasadas forward (cada una da una columna de $\bm{J}$) vs.\ $m$ pasadas
+reverso (cada una da una fila). La Estrella Polar de este capítulo
+contiene un ejemplo donde el modo forward es la elección correcta.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{La regla de la cadena en grafos computacionales}
+\label{sec:cadena_grafo}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{2}{2}
+
+\subsection{Composición y regla de la cadena matricial}
+\label{subsec:cadena}
+
+Para $\mathcal{L} = g(f(\bm{\theta}))$ con
+$f: \mathbb{R}^p \to \mathbb{R}^m$ y $g: \mathbb{R}^m \to \mathbb{R}$:
+\begin{equation}
   \nabla_{\bm{\theta}}\mathcal{L}
-  = \bm{J}_f(\bm{\theta})^\top\, \nabla_{\bm{z}} g(f(\bm{\theta})),
-\]
-donde $\bm{J}_f \in \mathbb{R}^{m\times p}$ es el jacobiano de $f$ y
-$\nabla_{\bm{z}} g \in \mathbb{R}^m$ es el gradiente de $g$.
-
-Para una composición $\mathcal{L} = g^{(L)} \circ g^{(L-1)} \circ \cdots \circ
-g^{(1)}(\bm{\theta})$, la regla de la cadena da:
-\[
+  = \bm{J}_f(\bm{\theta})^\top\,\nabla_{\bm{z}}g(f(\bm{\theta})),
+  \label{eq:cadena}
+\end{equation}
+donde $\bm{J}_f \in \mathbb{R}^{m \times p}$ es el jacobiano de $f$.
+Para una composición de $L$ funciones
+$\mathcal{L} = g^{(L)} \circ \cdots \circ g^{(1)}(\bm{\theta})$:
+\begin{equation}
   \nabla_{\bm{\theta}}\mathcal{L}
-  = \bm{J}_{g^{(1)}}^\top \bm{J}_{g^{(2)}}^\top \cdots \bm{J}_{g^{(L)}}^\top
-  \cdot \bm{1},
-\]
-donde $\bm{1}$ es el gradiente de la identidad escalar. El modo reverso evalúa
-este producto \textbf{de izquierda a derecha}: primero $\bm{J}_{g^{(L)}}^\top
-\cdot \bm{1}$, luego $\bm{J}_{g^{(L-1)}}^\top$ aplicado al resultado, y así
-sucesivamente. Cada multiplicación implica un jacobiano transpuesto aplicado a
-un vector, no la formación explícita del jacobiano.
+  = \bm{J}_{g^{(1)}}^\top \bm{J}_{g^{(2)}}^\top \cdots
+  \bm{J}_{g^{(L)}}^\top \cdot 1.
+  \label{eq:cadena_comp}
+\end{equation}
+El modo reverso evalúa este producto de derecha a izquierda: primero
+$\bm{J}_{g^{(L)}}^\top \cdot 1$ (vector en $\mathbb{R}^{n_{L-1}}$),
+luego $\bm{J}_{g^{(L-1)}}^\top$ aplicado al resultado, y así
+sucesivamente. Cada paso es un producto jacobiano-transpuesto-por-vector,
+nunca la formación explícita del jacobiano.
 
-\subsection{Propagación del gradiente a través de operaciones elementales}
-\label{subsec:prop_elem}
+\subsection{Gradiente adjunto y regla local}
+\label{subsec:adjunto_local}
 
-Se introduce la notación estándar para el modo reverso. Para un nodo con entrada
-$\bm{x}$ y salida $\bm{y} = f(\bm{x})$:
-\begin{itemize}
-  \item $\bar{\bm{y}} = \partial\mathcal{L}/\partial\bm{y}$ es el
-        \textbf{gradiente adjunto} de la salida (recibido desde el nodo siguiente
-        en el backward pass).
-  \item $\bar{\bm{x}} = \partial\mathcal{L}/\partial\bm{x}$ es el
-        \textbf{gradiente adjunto} de la entrada (enviado al nodo anterior).
-\end{itemize}
-La regla de backpropagation local es: $\bar{\bm{x}} = \bm{J}_f(\bm{x})^\top\bar{\bm{y}}$.
-
-\subsection{El principio de reversibilidad}
-\label{subsec:reversibilidad}
-
-El nombre "backpropagation" refleja que el algoritmo recorre el grafo en dirección
-opuesta al forward pass. La razón es precisamente la multiplicación de jacobianos
-transpuestos: el jacobiano transpuesto de la operación en cada nodo es la operación
-adjunta, y la operación adjunta transforma gradientes desde la salida hacia la
-entrada.
-
-Para una capa afín $\bm{y} = \bm{W}\bm{x}$, el jacobiano es $\bm{J} = \bm{W}$
-(la transformación lineal que mapea la entrada a la salida en el forward pass).
-El jacobiano transpuesto es $\bm{W}^\top$: el gradiente fluye hacia atrás por la
-traspuesta. Esto es el operador adjunto de $\bm{W}$ en el sentido del producto
-interno estándar. La dualidad forward/backward es la dualidad operador/adjunto.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Backpropagation a través de operaciones elementales}
-\label{sec:backprop_elem}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{2}{3}
-
-\subsection{El gradiente a través de una activación}
-\label{subsec:grad_activacion}
-
-\begin{proposicion}{Backpropagation a través de la activación}
-\label{prop:bp_activacion}
-Sea $\bm{a} = \sigma(\bm{z})$ con $\sigma$ aplicada elemento a elemento.
-Dado el gradiente adjunto $\bar{\bm{a}} = \partial\mathcal{L}/\partial\bm{a}$,
-el gradiente adjunto de la pre-activación es:
-\[
-  \bar{\bm{z}} = \frac{\partial\mathcal{L}}{\partial\bm{z}}
-  = \bar{\bm{a}} \odot \sigma'(\bm{z}),
-\]
-donde $\odot$ denota el producto elemento a elemento (Hadamard).
-\end{proposicion}
-
-\begin{proof}
-Como $\sigma$ se aplica elemento a elemento, $a_j = \sigma(z_j)$. El jacobiano
-de $\bm{a}$ respecto a $\bm{z}$ es diagonal:
-\[
-  \bm{J}_\sigma(\bm{z}) = \mathrm{diag}(\sigma'(z_1),\ldots,\sigma'(z_m)).
-\]
-El gradiente adjunto es $\bar{\bm{z}} = \bm{J}_\sigma^\top\bar{\bm{a}} =
-\mathrm{diag}(\sigma'(\bm{z}))\bar{\bm{a}}$, que en notación elemento a elemento
-es $\bar{\bm{z}} = \bar{\bm{a}} \odot \sigma'(\bm{z})$. $\square$
-\end{proof}
-
-\begin{observacion}{La "neurona muerta" revisitada}
-Para ReLU, $\sigma'(z) = \mathbf{1}[z > 0]$. En las neuronas inactivas ($z_j < 0$),
-$\sigma'(z_j) = 0$ y el gradiente adjunto $\bar{z}_j = 0$: el gradiente no fluye
-hacia atrás por esa neurona. Si una neurona permanece inactiva para todos los
-datos de entrenamiento, nunca recibe gradiente y sus pesos nunca se actualizan.
-Este es el fenómeno de la "neurona muerta" mencionado en la Sección~\ref{subsec:vanishing},
-ahora con la explicación precisa.
-\end{observacion}
-
-\subsection{El gradiente a través de una capa afín}
-\label{subsec:grad_afin}
-
-\begin{proposicion}{Backpropagation a través de la capa afín}
-\label{prop:bp_afin}
-Sea $\bm{z} = \bm{W}\bm{a} + \bm{b}$ con $\bm{W} \in \mathbb{R}^{m\times n}$.
-Dado el gradiente adjunto $\bar{\bm{z}} = \partial\mathcal{L}/\partial\bm{z}
-\in \mathbb{R}^m$, los gradientes adjuntos son:
+Para un nodo del grafo con entrada $\bm{x}$ y salida
+$\bm{y} = f(\bm{x})$, se define:
 \begin{align}
-  \bar{\bm{a}} &= \bm{W}^\top\bar{\bm{z}} \in \mathbb{R}^n,
-  \label{eq:bp_a}\\
-  \frac{\partial\mathcal{L}}{\partial\bm{W}} &= \bar{\bm{z}}\bm{a}^\top
-  \in \mathbb{R}^{m\times n},
-  \label{eq:bp_W}\\
-  \frac{\partial\mathcal{L}}{\partial\bm{b}} &= \bar{\bm{z}} \in \mathbb{R}^m.
-  \label{eq:bp_b}
+  \bar{\bm{y}} &= \partial\mathcal{L}/\partial\bm{y}
+  \quad\text{(gradiente adjunto de la salida, recibido del nodo siguiente)},
+  \label{eq:adjunto_salida}\\
+  \bar{\bm{x}} &= \partial\mathcal{L}/\partial\bm{x}
+  \quad\text{(gradiente adjunto de la entrada, enviado al nodo anterior)}.
+  \label{eq:adjunto_entrada}
 \end{align}
+La regla de backpropagation local es:
+\begin{equation}
+  \bar{\bm{x}} = \bm{J}_f(\bm{x})^\top\bar{\bm{y}}.
+  \label{eq:bp_local}
+\end{equation}
+El jacobiano transpuesto es el \textbf{operador adjunto} de la
+transformación forward: el gradiente fluye hacia atrás por la traspuesta.
+Para una capa afín $\bm{y} = \bm{W}\bm{x}$, el adjunto es
+$\bar{\bm{x}} = \bm{W}^\top\bar{\bm{y}}$.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Las cuatro ecuaciones de backpropagation}
+\label{sec:cuatro_ec}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{3}{3}
+
+\subsection{Gradientes de operaciones elementales}
+\label{subsec:bp_elem}
+
+\begin{proposicion}{Backpropagation de la transformación afín}
+\label{prop:bp_afin}
+Para $\bm{z} = \bm{W}\bm{a} + \bm{b}$ con
+$\bar{\bm{z}} = \partial\mathcal{L}/\partial\bm{z}$:
+\begin{equation}
+  \bar{\bm{a}} = \bm{W}^\top\bar{\bm{z}}, \qquad
+  \partial\mathcal{L}/\partial\bm{W} = \bar{\bm{z}}\bm{a}^\top, \qquad
+  \partial\mathcal{L}/\partial\bm{b} = \bar{\bm{z}}.
+  \label{eq:bp_afin}
+\end{equation}
 \end{proposicion}
 
 \begin{proof}
-\textbf{Gradiente respecto a $\bm{a}$:} Como $z_i = \sum_k W_{ik}a_k + b_i$,
-$\partial z_i/\partial a_k = W_{ik}$. El jacobiano de $\bm{z}$ respecto a
-$\bm{a}$ es $\bm{W}$. Por la regla de la cadena:
-\[
-  \bar{a}_k = \frac{\partial\mathcal{L}}{\partial a_k}
-  = \sum_i \frac{\partial\mathcal{L}}{\partial z_i}\frac{\partial z_i}{\partial a_k}
-  = \sum_i \bar{z}_i W_{ik} = (\bm{W}^\top\bar{\bm{z}})_k.
-\]
-
-\textbf{Gradiente respecto a $\bm{W}$:} $\partial z_i/\partial W_{ij} = a_j$.
-\[
-  \frac{\partial\mathcal{L}}{\partial W_{ij}}
-  = \sum_i \frac{\partial\mathcal{L}}{\partial z_i}\frac{\partial z_i}{\partial W_{ij}}
-  = \bar{z}_i a_j.
-\]
-En forma matricial: $\partial\mathcal{L}/\partial\bm{W} = \bar{\bm{z}}\bm{a}^\top$
-(producto externo).
-
-\textbf{Gradiente respecto a $\bm{b}$:} $\partial z_i/\partial b_i = 1$,
-$\partial z_i/\partial b_j = 0$ para $i \neq j$. Luego
-$\partial\mathcal{L}/\partial\bm{b} = \bar{\bm{z}}$. $\square$
+$\partial\mathcal{L}/\partial a_k = \sum_j
+(\partial\mathcal{L}/\partial z_j)(\partial z_j/\partial a_k) =
+\sum_j \bar{z}_j W_{jk} = (\bm{W}^\top\bar{\bm{z}})_k$. Para los
+pesos: $\partial\mathcal{L}/\partial W_{jk} = \bar{z}_j a_k =
+(\bar{\bm{z}}\bm{a}^\top)_{jk}$. Para el sesgo:
+$\partial z_j/\partial b_j = 1$. $\square$
 \end{proof}
 
-\begin{observacion}{Interpretación geométrica de los gradientes}
-El gradiente $\partial\mathcal{L}/\partial\bm{W} = \bar{\bm{z}}\bm{a}^\top$ es
-el producto externo del error de la capa y la activación de entrada. Su elemento
-$(i,j)$ cuantifica cuánto contribuye el peso $W_{ij}$ a la pérdida: es proporcional
-tanto al error que produce esa neurona de salida ($\bar{z}_i$) como a la activación
-que recibe esa neurona de entrada ($a_j$). Los pesos que conectan neuronas activas
-con errores grandes reciben las actualizaciones más grandes: la actualización es
-una \textbf{regla de Hebb} modulada por el error.
-\end{observacion}
+\begin{proposicion}{Backpropagation de la activación elemento a elemento}
+\label{prop:bp_sigma}
+Para $\bm{a} = \sigma(\bm{z})$ aplicada componente a componente:
+\begin{equation}
+  \bar{\bm{z}} = \bar{\bm{a}} \odot \sigma'(\bm{z}),
+  \label{eq:bp_sigma}
+\end{equation}
+donde $\odot$ es el producto de Hadamard (elemento a elemento).
+\end{proposicion}
 
-\begin{fisicaconexion}{Operadores adjuntos en mecánica cuántica y electromagnetismo}
-El núcleo de backpropagation es la multiplicación por el jacobiano transpuesto
-$\bm{J}^\top$: exactamente la operación adjunta en el sentido de los espacios de
-Hilbert. En mecánica cuántica, el adjunto de un operador $\hat{A}$ es $\hat{A}^\dagger$,
-definido por $\langle\phi|\hat{A}\psi\rangle = \langle\hat{A}^\dagger\phi|\psi\rangle$.
-En mecánica cuántica finito-dimensional (qubits), si $A$ es la matriz del operador
-en la base computacional, su adjunto es $A^\dagger = \bar{A}^\top$ (transpuesta
-conjugada). Para matrices reales, $A^\dagger = A^\top$: exactamente la transpuesta
-que aparece en BP2, $\bar{\bm{a}} = \bm{W}^\top\bar{\bm{z}}$. El forward pass
-aplica $\bm{W}$ (el operador); el backward pass aplica $\bm{W}^\top$ (el adjunto).
-En óptica de Fourier, la transformada de Fourier inversa es el adjunto de la
-transformada directa: el procesado hacia adelante (propagación del campo)
-y el análisis inverso (reconstrucción de la fuente) son relacionados por
-exactamente la misma dualidad operador/adjunto que forward/backward pass.
-\end{fisicaconexion}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{El algoritmo de backpropagation para el MLP}
-\label{sec:bp_mlp}
-%───────────────────────────────────────────────────────────────────────────────
-
-\dificultad{2}{3}
-
-\subsection{Los errores de capa y las cuatro ecuaciones}
-\label{subsec:cuatro_ec}
-
-\begin{definicion}{Error de capa}
-\label{def:error_capa}
-El \textbf{error} de la capa $l$ es el gradiente adjunto de la pre-activación:
-\[
-  \bm{\delta}^{(l)} = \frac{\partial\mathcal{L}}{\partial\bm{z}^{(l)}} \in \mathbb{R}^{n_l}.
-\]
-\end{definicion}
-
-Con esta definición, los resultados de la Sección~\ref{sec:backprop_elem} dan
-las gradientes de los parámetros:
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{W}^{(l)}} = \bm{\delta}^{(l)}\,{\bm{a}^{(l-1)}}^\top,
-  \qquad
-  \frac{\partial\mathcal{L}}{\partial\bm{b}^{(l)}} = \bm{\delta}^{(l)}.
-\]
-El problema se reduce a calcular los errores $\bm{\delta}^{(l)}$ para todo $l$.
+\subsection{Las ecuaciones BP1–BP4}
+\label{subsec:bp1234}
 
 \begin{teorema}{Las cuatro ecuaciones de backpropagation}
 \label{thm:cuatro_ec}
-Para el MLP de la Definición~\ref{def:mlp} con pérdida $\mathcal{L} =
-\ell(\bm{a}^{(L)}, \bm{y})$, los errores de capa satisfacen:
+Para un MLP de $L$ capas con activaciones $\sigma^{(l)}$, definiendo el
+\textbf{error de la capa} $\bm{\delta}^{(l)} =
+\partial\mathcal{L}/\partial\bm{z}^{(l)}$:
 \begin{align}
-  \bm{\delta}^{(L)} &= \nabla_{\bm{a}^{(L)}}\ell \odot \sigma'^{(L)}(\bm{z}^{(L)}),
+  \bm{\delta}^{(L)} &= \nabla_{\bm{a}^{(L)}}\ell
+  \odot \sigma'^{(L)}(\bm{z}^{(L)})
   \tag{BP1}\label{eq:bp1}\\
-  \bm{\delta}^{(l)} &= \bigl(\bm{W}^{(l+1)\top}\bm{\delta}^{(l+1)}\bigr)
-  \odot \sigma'^{(l)}(\bm{z}^{(l)}), \quad l = L-1, \ldots, 1,
+  \bm{\delta}^{(l)} &= \bigl(\bm{W}^{(l+1)\top}
+  \bm{\delta}^{(l+1)}\bigr) \odot \sigma'^{(l)}(\bm{z}^{(l)}),
+  \quad l = L{-}1,\ldots,1
   \tag{BP2}\label{eq:bp2}\\
-  \frac{\partial\mathcal{L}}{\partial\bm{W}^{(l)}} &= \bm{\delta}^{(l)}\,{\bm{a}^{(l-1)}}^\top,
+  \frac{\partial\mathcal{L}}{\partial\bm{W}^{(l)}}
+  &= \bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top
   \tag{BP3}\label{eq:bp3}\\
-  \frac{\partial\mathcal{L}}{\partial\bm{b}^{(l)}} &= \bm{\delta}^{(l)}.
+  \frac{\partial\mathcal{L}}{\partial\bm{b}^{(l)}}
+  &= \bm{\delta}^{(l)}
   \tag{BP4}\label{eq:bp4}
 \end{align}
 \end{teorema}
 
 \begin{proof}
-\textbf{Ecuación BP1 (error en la capa de salida).}
-La capa de salida para regresión tiene $\sigma^{(L)} = \mathrm{id}$, de modo que
-$\bm{a}^{(L)} = \bm{z}^{(L)}$. Por la regla de la cadena:
-\[
-  \bm{\delta}^{(L)} = \frac{\partial\mathcal{L}}{\partial\bm{z}^{(L)}}
-  = \frac{\partial\mathcal{L}}{\partial\bm{a}^{(L)}}
-  \odot \sigma'^{(L)}(\bm{z}^{(L)}) = \nabla_{\bm{a}^{(L)}}\ell,
-\]
-donde el último paso usa $\sigma'^{(L)} = 1$ para la identidad. Para una capa
-de salida con activación no trivial, la fórmula incluye $\odot\,\sigma'^{(L)}
-(\bm{z}^{(L)})$.
+\textbf{BP1:} por la regla de la cadena,
+$\delta_j^{(L)} = \sum_k (\partial\ell/\partial a_k^{(L)})
+(\partial a_k^{(L)}/\partial z_j^{(L)}) =
+(\partial\ell/\partial a_j^{(L)})\sigma'^{(L)}(z_j^{(L)})$.
+Para la capa de salida lineal (regresión):
+$\sigma'^{(L)} = 1$ y $\bm{\delta}^{(L)} = \nabla_{\bm{a}^{(L)}}\ell$.
 
-\textbf{Ecuación BP2 (propagación hacia atrás).}
-Se calcula $\bm{\delta}^{(l)}$ a partir de $\bm{\delta}^{(l+1)}$. Por la regla de
-la cadena a través de la secuencia $\bm{z}^{(l)} \to \bm{a}^{(l)} \to \bm{z}^{(l+1)}$:
-\begin{align*}
-  \bm{\delta}^{(l)} = \frac{\partial\mathcal{L}}{\partial\bm{z}^{(l)}}
-  &= \frac{\partial\mathcal{L}}{\partial\bm{a}^{(l)}} \odot \sigma'^{(l)}(\bm{z}^{(l)}).
-\end{align*}
-Por la Proposición~\ref{prop:bp_afin} aplicada a la capa $l+1$
-($\bm{z}^{(l+1)} = \bm{W}^{(l+1)}\bm{a}^{(l)}+\bm{b}^{(l+1)}$):
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{a}^{(l)}}
-  = \bm{W}^{(l+1)\top}\frac{\partial\mathcal{L}}{\partial\bm{z}^{(l+1)}}
-  = \bm{W}^{(l+1)\top}\bm{\delta}^{(l+1)}.
-\]
-Combinando: $\bm{\delta}^{(l)} = (\bm{W}^{(l+1)\top}\bm{\delta}^{(l+1)})
-\odot \sigma'^{(l)}(\bm{z}^{(l)})$.
+\textbf{BP2:} $\delta_j^{(l)} = \partial\mathcal{L}/\partial z_j^{(l)} =
+\sum_k (\partial\mathcal{L}/\partial z_k^{(l+1)})
+(\partial z_k^{(l+1)}/\partial a_j^{(l)})
+(\partial a_j^{(l)}/\partial z_j^{(l)}) =
+\sum_k \delta_k^{(l+1)} W_{kj}^{(l+1)} \sigma'^{(l)}(z_j^{(l)}) =
+({\bm{W}^{(l+1)}}^\top\bm{\delta}^{(l+1)})_j \cdot \sigma'^{(l)}(z_j^{(l)})$.
 
-\textbf{Ecuaciones BP3 y BP4.}
-Son consecuencia directa de la Proposición~\ref{prop:bp_afin} con
-$\bar{\bm{z}} = \bm{\delta}^{(l)}$, $\bm{a} = \bm{a}^{(l-1)}$. $\square$
+\textbf{BP3–BP4:} consecuencia de la
+Proposición~\ref{prop:bp_afin} con $\bar{\bm{z}} = \bm{\delta}^{(l)}$,
+$\bm{a} = \bm{a}^{(l-1)}$. $\square$
 \end{proof}
 
 \subsection{El algoritmo completo: forward y backward pass}
@@ -350,864 +246,653 @@ $\bar{\bm{z}} = \bm{\delta}^{(l)}$, $\bm{a} = \bm{a}^{(l-1)}$. $\square$
 \begin{algorithm}[H]
 \caption{Forward y backward pass del MLP}
 \label{alg:backprop}
-\KwIn{Entrada $\bm{x}$, etiqueta $y$, parámetros $\{\bm{W}^{(l)},\bm{b}^{(l)}\}$}
-\KwOut{Gradientes $\{\partial\mathcal{L}/\partial\bm{W}^{(l)}, \partial\mathcal{L}/\partial\bm{b}^{(l)}\}$}
+\KwIn{Entrada $\bm{x}$, etiqueta $y$, parámetros
+  $\{\bm{W}^{(l)},\bm{b}^{(l)}\}_{l=1}^L$}
+\KwOut{Pérdida $\mathcal{L}$, gradientes
+  $\{\partial\mathcal{L}/\partial\bm{W}^{(l)},
+  \partial\mathcal{L}/\partial\bm{b}^{(l)}\}_{l=1}^L$}
 
 \tcp{--- Forward pass: almacenar activaciones ---}
 $\bm{a}^{(0)} \leftarrow \bm{x}$\;
 \For{$l \leftarrow 1$ \KwTo $L$}{
-  $\bm{z}^{(l)} \leftarrow \bm{W}^{(l)}\bm{a}^{(l-1)} + \bm{b}^{(l)}$\;
+  $\bm{z}^{(l)} \leftarrow \bm{W}^{(l)}\bm{a}^{(l-1)}
+  + \bm{b}^{(l)}$\;
   $\bm{a}^{(l)} \leftarrow \sigma^{(l)}(\bm{z}^{(l)})$\;
 }
+$\mathcal{L} \leftarrow \ell(\bm{a}^{(L)}, y)$\;
 
 \tcp{--- Backward pass: propagar errores ---}
-$\bm{\delta}^{(L)} \leftarrow \nabla_{\bm{a}^{(L)}}\ell(\bm{a}^{(L)}, y)$ \tcp*{BP1}
+$\bm{\delta}^{(L)} \leftarrow \nabla_{\bm{a}^{(L)}}\ell
+\odot \sigma'^{(L)}(\bm{z}^{(L)})$ \tcp*{BP1}
 \For{$l \leftarrow L$ \KwTo $1$}{
-  $\partial\mathcal{L}/\partial\bm{W}^{(l)} \leftarrow \bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top$ \tcp*{BP3}
-  $\partial\mathcal{L}/\partial\bm{b}^{(l)} \leftarrow \bm{\delta}^{(l)}$ \tcp*{BP4}
+  $\partial\mathcal{L}/\partial\bm{W}^{(l)} \leftarrow
+  \bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top$ \tcp*{BP3}
+  $\partial\mathcal{L}/\partial\bm{b}^{(l)} \leftarrow
+  \bm{\delta}^{(l)}$ \tcp*{BP4}
   \lIf{$l > 1$}{
-    $\bm{\delta}^{(l-1)} \leftarrow (\bm{W}^{(l)\top}\bm{\delta}^{(l)}) \odot \sigma'^{(l-1)}(\bm{z}^{(l-1)})$ \tcp*{BP2}
+    $\bm{\delta}^{(l-1)} \leftarrow
+    (\bm{W}^{(l)\top}\bm{\delta}^{(l)}) \odot
+    \sigma'^{(l-1)}(\bm{z}^{(l-1)})$ \tcp*{BP2}
   }
 }
-\Return $\{\partial\mathcal{L}/\partial\bm{W}^{(l)}, \partial\mathcal{L}/\partial\bm{b}^{(l)}\}_{l=1}^L$\;
+\Return $\mathcal{L}$,
+  $\{\partial\mathcal{L}/\partial\bm{W}^{(l)},
+  \partial\mathcal{L}/\partial\bm{b}^{(l)}\}_{l=1}^L$\;
 \end{algorithm}
 
-\begin{observacion}{Costo computacional del backward pass}
-El costo dominante de cada iteración del backward pass es el cálculo de
-$\bm{W}^{(l)\top}\bm{\delta}^{(l)}$ en BP2 y $\bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top$
-en BP3. Ambos son productos matriciales de las mismas dimensiones que los del
-forward pass ($\bm{W}^{(l)}\bm{a}^{(l-1)}$). El costo total del backward pass
-es $O(\sum_l n_l n_{l-1})$: comparable al forward pass con un factor constante
-de $\sim 2$. En la práctica, un ciclo forward + backward cuesta $\approx 3$
-veces un forward pass solo.
+\begin{observacion}{Costo computacional}
+El costo dominante del backward pass son los productos matriciales en BP2
+($\bm{W}^{(l)\top}\bm{\delta}^{(l)}$) y BP3
+($\bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top$), de las mismas dimensiones que
+los del forward pass. El costo total del backward es $\sim 2\times$ el
+forward. Un ciclo completo (forward + backward) cuesta $\sim 3\times$ un
+forward solo.
 \end{observacion}
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Backpropagation como método adjunto}
 \label{sec:adjunto}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{3}{4}
 
-Esta sección revela la estructura profunda del algoritmo: backpropagation es el
-método adjunto aplicado al problema de optimización con restricciones definidas
-por la dinámica del MLP. Esta perspectiva conecta el ML con el control óptimo,
-la mecánica analítica y los métodos adjuntos en física computacional.
+Esta sección revela la estructura profunda del algoritmo: backpropagation
+es el \textbf{método adjunto} aplicado al sistema dinámico discreto
+definido por el forward pass del MLP.
 
-\subsection{El método adjunto en física computacional}
-\label{subsec:adjunto_fisica}
+\subsection{El MLP como sistema dinámico con restricciones}
+\label{subsec:mlp_dinamico}
 
-En física computacional el mismo problema aparece en múltiples contextos. Dada
-una ecuación de estado $F(\bm{u};\bm{m}) = \bm{0}$ que relaciona el estado del
-sistema $\bm{u} \in \mathbb{R}^n$ con los parámetros del modelo $\bm{m} \in
-\mathbb{R}^p$, y dado un funcional $J(\bm{u})$, se busca el gradiente
-$dJ/d\bm{m}$.
+El forward pass define un sistema dinámico discreto:
+\begin{equation}
+  \bm{a}^{(l)} = \sigma(\bm{W}^{(l)}\bm{a}^{(l-1)}+\bm{b}^{(l)}),
+  \qquad l = 1, \ldots, L,
+  \label{eq:forward_dyn}
+\end{equation}
+con ``condición inicial'' $\bm{a}^{(0)} = \bm{x}$. El problema de
+entrenamiento es minimizar
+$\mathcal{L} = \ell(\bm{a}^{(L)}, y)$ sujeto a las
+restricciones~\eqref{eq:forward_dyn}. Esto es un problema de
+\textbf{control óptimo discreto}: las capas son instantes temporales, los
+parámetros $(\bm{W}^{(l)}, \bm{b}^{(l)})$ son los controles, y las
+activaciones $\bm{a}^{(l)}$ son el estado.
 
-Tres ejemplos canónicos donde este problema aparece:
+\subsection{Multiplicadores de Lagrange y la ecuación adjunta}
+\label{subsec:lagrange}
 
-\begin{enumerate}
-  \item \textbf{Tomografía sísmica}: $F(\bm{u};\bm{m}) = \bm{0}$ es la ecuación
-        de onda con velocidad del sonido $\bm{m}$; $\bm{u}$ son los sismogramas
-        simulados; $J$ es la discrepancia entre sismogramas simulados y observados.
-        Se busca $dJ/d\bm{m}$ para invertir la velocidad del subsuelo.
-  \item \textbf{Diseño aerodinámico}: $F = \bm{0}$ son las ecuaciones de
-        Navier-Stokes; $\bm{m}$ es la geometría del ala; $J$ es la resistencia
-        aerodinámica. Se busca $dJ/d\bm{m}$ para optimizar la forma del ala.
-  \item \textbf{Predicción meteorológica}: $F = \bm{0}$ son las ecuaciones
-        primitivas de la atmósfera; $\bm{m}$ son las condiciones iniciales; $J$
-        es el error de predicción. Se busca $dJ/d\bm{m}$ para la asimilación de
-        datos (\textit{4D-Var}).
-\end{enumerate}
+Se introduce un multiplicador de Lagrange $\bm{p}^{(l)}$ para cada
+restricción~\eqref{eq:forward_dyn} y se forma el lagrangiano:
+\begin{equation}
+  \mathfrak{L} = \ell(\bm{a}^{(L)},y) + \sum_{l=1}^L
+  {\bm{p}^{(l)}}^\top\bigl[\sigma(\bm{W}^{(l)}\bm{a}^{(l-1)}
+  +\bm{b}^{(l)}) - \bm{a}^{(l)}\bigr].
+  \label{eq:lagrangiano}
+\end{equation}
+La condición de estacionariedad
+$\partial\mathfrak{L}/\partial\bm{a}^{(l)} = 0$ para $l < L$ da:
+\begin{equation}
+  \bm{p}^{(l)} = \bm{W}^{(l+1)\top}\bigl(\bm{p}^{(l+1)} \odot
+  \sigma'(\bm{z}^{(l+1)})\bigr),
+  \label{eq:adjunta_discreta}
+\end{equation}
+con condición terminal $\bm{p}^{(L)} = \nabla_{\bm{a}^{(L)}}\ell$. Esto
+es exactamente BP2 con la identificación
+$\bm{\delta}^{(l)} = \bm{p}^{(l)} \odot \sigma'(\bm{z}^{(l)})$. El
+backward pass es la \textbf{integración hacia atrás de la ecuación adjunta
+discreta}, con condición terminal dada por BP1.
 
-En todos los casos, la solución naïve requeriría resolver $p$ sistemas lineales
-$\partial F/\partial\bm{m}$, uno por cada parámetro. El método adjunto reduce
-esto a un único sistema adicional.
-
-\subsection{La formulación Lagrangiana del MLP}
-\label{subsec:lagrangiana}
-
-El MLP puede formularse como un problema de optimización con restricciones.
-Las restricciones son exactamente las ecuaciones del forward pass.
-
-\begin{definicion}{Lagrangiano aumentado del MLP}
-\label{def:lagrangiano}
-El \textbf{Lagrangiano aumentado} del problema de minimización de $\mathcal{L}$
-sujeto a la dinámica del MLP es:
-\begin{align}
-  \mathcal{L}_{\mathrm{aug}}
-  &= \ell(\bm{a}^{(L)}, \bm{y}) \nonumber\\
-  &+ \sum_{l=1}^L \bigl\langle\bm{\lambda}^{(l)},\;
-    \bm{z}^{(l)} - \bm{W}^{(l)}\bm{a}^{(l-1)} - \bm{b}^{(l)}\bigr\rangle
-  \nonumber\\
-  &+ \sum_{l=1}^L \bigl\langle\bm{\mu}^{(l)},\;
-    \bm{a}^{(l)} - \sigma^{(l)}(\bm{z}^{(l)})\bigr\rangle,
-  \label{eq:lagrangiano_aug}
-\end{align}
-donde $\bm{\lambda}^{(l)}, \bm{\mu}^{(l)} \in \mathbb{R}^{n_l}$ son los
-\textbf{multiplicadores de Lagrange} (variables adjuntas) asociados a las
-restricciones de pre-activación y post-activación respectivamente.
-\end{definicion}
-
-Las variables del Lagrangiano son: los parámetros $(\bm{W}^{(l)}, \bm{b}^{(l)})$,
-las activaciones $(\bm{z}^{(l)}, \bm{a}^{(l)})$ y los multiplicadores
-$(\bm{\lambda}^{(l)}, \bm{\mu}^{(l)})$. En el punto estacionario de
-$\mathcal{L}_{\mathrm{aug}}$, las restricciones se satisfacen (el forward pass
-es consistente) y los gradientes respecto a los parámetros coinciden con los
-gradientes de $\mathcal{L}$.
-
-\subsection{Las ecuaciones adjuntas como condiciones de estacionariedad}
-\label{subsec:ec_adjuntas}
-
-Se derivan las condiciones de estacionariedad de $\mathcal{L}_{\mathrm{aug}}$
-respecto a cada variable.
-
-\medskip
-\noindent\textbf{Estacionariedad respecto a $\bm{a}^{(l)}$ para $l < L$:}
-\[
-  \frac{\partial\mathcal{L}_{\mathrm{aug}}}{\partial\bm{a}^{(l)}} = \bm{0}
-  \implies
-  -\bm{W}^{(l+1)\top}\bm{\lambda}^{(l+1)} + \bm{\mu}^{(l)} = \bm{0}
-  \implies
-  \bm{\mu}^{(l)} = \bm{W}^{(l+1)\top}\bm{\lambda}^{(l+1)}.
-\]
-
-\noindent\textbf{Estacionariedad respecto a $\bm{a}^{(L)}$:}
-\[
-  \frac{\partial\mathcal{L}_{\mathrm{aug}}}{\partial\bm{a}^{(L)}} = \bm{0}
-  \implies
-  \nabla_{\bm{a}^{(L)}}\ell + \bm{\mu}^{(L)} = \bm{0}
-  \implies
-  \bm{\mu}^{(L)} = -\nabla_{\bm{a}^{(L)}}\ell.
-\]
-
-\noindent\textbf{Estacionariedad respecto a $\bm{z}^{(l)}$:}
-\[
-  \frac{\partial\mathcal{L}_{\mathrm{aug}}}{\partial\bm{z}^{(l)}} = \bm{0}
-  \implies
-  \bm{\lambda}^{(l)} - \bm{\mu}^{(l)} \odot \sigma'^{(l)}(\bm{z}^{(l)}) = \bm{0}
-  \implies
-  \bm{\lambda}^{(l)} = \bm{\mu}^{(l)} \odot \sigma'^{(l)}(\bm{z}^{(l)}).
-\]
-
-Combinando las tres condiciones con la identificación $\bm{\delta}^{(l)} =
--\bm{\lambda}^{(l)}$:
-\begin{align*}
-  \bm{\delta}^{(L)}
-  &= -\bm{\lambda}^{(L)} = -\bm{\mu}^{(L)}\odot\sigma'^{(L)}(\bm{z}^{(L)})
-   = \nabla_{\bm{a}^{(L)}}\ell \odot \sigma'^{(L)}(\bm{z}^{(L)}), \\
-  \bm{\delta}^{(l)}
-  &= -\bm{\lambda}^{(l)} = -\bm{\mu}^{(l)}\odot\sigma'^{(l)}(\bm{z}^{(l)})
-   = (\bm{W}^{(l+1)\top}\bm{\delta}^{(l+1)}) \odot \sigma'^{(l)}(\bm{z}^{(l)}).
-\end{align*}
-Estas son exactamente las ecuaciones BP1 y BP2 del Teorema~\ref{thm:cuatro_ec}.
-
-\noindent\textbf{Estacionariedad respecto a $\bm{W}^{(l)}$ y $\bm{b}^{(l)}$:}
-\[
-  \frac{\partial\mathcal{L}_{\mathrm{aug}}}{\partial\bm{W}^{(l)}} = \bm{0}
-  \implies
-  -\bm{\lambda}^{(l)}\bm{a}^{(l-1)\top} = \bm{0}
-  \quad\Rightarrow\quad
-  \nabla_{\bm{W}^{(l)}}\mathcal{L} = \bm{\lambda}^{(l)}\bm{a}^{(l-1)\top}
-  = -\bm{\delta}^{(l)}\bm{a}^{(l-1)\top},
-\]
-que da las ecuaciones BP3 y BP4 (con signo consistente). Los \textbf{errores de
-capa son los multiplicadores de Lagrange con signo}: $\bm{\delta}^{(l)} =
--\bm{\lambda}^{(l)}$.
-
-\subsection{La conexión con el principio de Pontryagin}
+\subsection{El principio de Pontryagin como marco unificador}
 \label{subsec:pontryagin}
 
-El principio del mínimo de Pontryagin (Pontryagin et al., 1962) es el resultado
-central de la teoría del control óptimo. Formula las condiciones de optimalidad
-para el problema:
-\[
-  \min_{\bm{u}(t)} J = \int_0^T L(\bm{x}(t),\bm{u}(t))\,dt
-  \quad\text{s.t.}\quad
-  \dot{\bm{x}}(t) = f(\bm{x}(t),\bm{u}(t)),\quad \bm{x}(0) = \bm{x}_0,
-\]
-donde $\bm{x}(t)$ es el estado del sistema y $\bm{u}(t)$ es el control.
-
-El principio introduce el \textbf{covector adjunto} (o co-estado)
-$\bm{p}(t) \in \mathbb{R}^n$ que satisface la \textbf{ecuación adjunta}:
-\[
-  \dot{\bm{p}}(t) = -\left(\frac{\partial f}{\partial\bm{x}}\right)^\top\bm{p}(t)
-  - \frac{\partial L}{\partial\bm{x}},
-  \qquad \bm{p}(T) = \nabla_{\bm{x}(T)}\Phi,
-\]
-donde $\Phi$ es el costo terminal. El gradiente del funcional objetivo respecto
-al control es:
-\[
-  \frac{\delta J}{\delta\bm{u}(t)}
-  = \frac{\partial f}{\partial\bm{u}}^\top\bm{p}(t) + \frac{\partial L}{\partial\bm{u}}.
-\]
-
-La correspondencia con el MLP es exacta: se identifica cada capa $l$ con un paso
-temporal $t = l$, los pesos $(\bm{W}^{(l)},\bm{b}^{(l)})$ con el control
-$\bm{u}(t)$, las activaciones $\bm{a}^{(l)}$ con el estado $\bm{x}(t)$, y la
-pérdida terminal $\ell(\bm{a}^{(L)},\bm{y})$ con el costo terminal $\Phi$.
+En teoría de control óptimo, el principio del mínimo de Pontryagin
+establece que la trayectoria óptima de un sistema dinámico con controles
+satisface un sistema de dos ecuaciones: la ecuación del estado (forward) y
+la ecuación adjunta (backward), acopladas por la condición de optimalidad
+sobre los controles. El MLP es un caso particular con dinámica discreta y
+controles no acotados:
 
 \begin{center}
 \begin{tabular}{ll}
 \toprule
-\textbf{Control óptimo (continuo)} & \textbf{MLP (discreto)} \\
+\textbf{Control óptimo} & \textbf{Backpropagation} \\
 \midrule
-Estado $\bm{x}(t)$ & Post-activación $\bm{a}^{(l)}$ \\
-Control $\bm{u}(t)$ & Parámetros $(\bm{W}^{(l)},\bm{b}^{(l)})$ \\
-Dinámica $\dot{\bm{x}} = f(\bm{x},\bm{u})$ & Forward pass $\bm{a}^{(l)} = \sigma(\bm{W}^{(l)}\bm{a}^{(l-1)}+\bm{b}^{(l)})$ \\
-Co-estado $\bm{p}(t)$ & Error de capa $\bm{\delta}^{(l)} = -\bm{\lambda}^{(l)}$ \\
-Ecuación adjunta $\dot{\bm{p}} = -(\partial f/\partial\bm{x})^\top\bm{p}$ & BP2: $\bm{\delta}^{(l)} = \bm{W}^{(l+1)\top}\bm{\delta}^{(l+1)} \odot \sigma'(\bm{z}^{(l)})$ \\
-Condición terminal $\bm{p}(T) = \nabla\Phi$ & BP1: $\bm{\delta}^{(L)} = \nabla_{\bm{a}^{(L)}}\ell$ \\
-Gradiente $\delta J/\delta\bm{u}$ & BP3: $\partial\mathcal{L}/\partial\bm{W}^{(l)} = \bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top$ \\
+Estado $\bm{x}(t)$ & Activación $\bm{a}^{(l)}$ \\
+Control $\bm{u}(t)$ & Parámetros $(\bm{W}^{(l)}, \bm{b}^{(l)})$ \\
+Dinámica $\dot{\bm{x}} = f(\bm{x},\bm{u})$ & Forward pass~\eqref{eq:forward_dyn} \\
+Costo terminal $\ell(\bm{x}(T))$ & Pérdida $\ell(\bm{a}^{(L)}, y)$ \\
+Co-estado $\bm{p}(t)$ & Error $\bm{\delta}^{(l)}$ \\
+Ec.\ adjunta $\dot{\bm{p}} = -(\partial f/\partial\bm{x})^\top\bm{p}$ & BP2 \\
+Cond.\ terminal $\bm{p}(T) = \nabla\ell$ & BP1 \\
+Gradiente $\partial\ell/\partial\bm{u} = \bm{p}^\top\partial f/\partial\bm{u}$ & BP3 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\begin{observacion}{El MLP como sistema dinámico discreto}
-Esta correspondencia no es solo formal: revela que el MLP es un sistema dinámico
-discreto en tiempo $l = 1, \ldots, L$, con profundidad jugando el rol del tiempo
-y los parámetros de cada capa jugando el rol del control en cada instante. La red
-neuronal residual (ResNet), que se estudiará en el Capítulo~\ref{ch:cap9}, hace esta
-interpretación aún más explícita: la capa residual $\bm{a}^{(l)} = \bm{a}^{(l-1)}
-+ F(\bm{a}^{(l-1)};\bm{\theta}^{(l)})$ es exactamente el método de Euler para
-la ODE $\dot{\bm{x}} = F(\bm{x};\bm{u})$. En el límite de profundidad infinita,
-la ResNet converge a una ODE neuronal (\textit{Neural ODE}), cuyo entrenamiento
-se realiza exactamente con el método adjunto de Pontryagin.
-\end{observacion}
+La profundidad $L$ no es solo un hiperparámetro arquitectónico: es el
+\textbf{horizonte temporal} del sistema dinámico. El
+Capítulo~\ref{ch:cap9} hará esta conexión explícita con las Neural ODEs,
+donde la profundidad se vuelve continua.
 
-\begin{fisicaconexion}{El método adjunto en sismología inversa y tomografía}
-El problema de calcular $dJ/d\bm{m}$ ---la sensibilidad de un funcional respecto
-a los parámetros del modelo--- es el corazón de la física computacional inversa.
-En \textbf{sismología de ondas completas} (Full Waveform Inversion, FWI), la
-ecuación de onda $\partial_{tt}\bm{u} - v^2(\bm{m})\nabla^2\bm{u} = f$ relaciona
-el modelo de velocidades $\bm{m}$ con los sismogramas $\bm{u}$. El gradiente
-$dJ/d\bm{m}$ requeriría $p$ integraciones de la ecuación de onda para $p$
-parámetros del modelo. El método adjunto lo calcula con una sola integración
-adicional: la ecuación adjunta $\partial_{tt}\bm{\lambda} - v^2\nabla^2\bm{\lambda}
-= -\partial J/\partial\bm{u}$ se integra \textbf{hacia atrás en el tiempo}
-(exactamente como el backward pass), y el gradiente es la correlación temporal
-$dJ/d\bm{m} = \int_0^T \bm{\lambda}\,\partial^2_{tt}\bm{u}\,dt$. Esta es la misma
-estructura que BP3: $\partial\mathcal{L}/\partial\bm{W}^{(l)} = \bm{\delta}^{(l)}
-{\bm{a}^{(l-1)}}^\top$, donde $\bm{\delta}$ es el co-estado y $\bm{a}^{(l-1)}$ es
-el estado forward. En \textbf{tomografía de rayos X}, la retropropagación de los
-residuos de proyección es el adjunto del operador de proyección de Radon: el
-algoritmo de reconstrucción de Filtered Back Projection es literalmente el
-``backward pass'' del operador forward de proyección.
-\end{fisicaconexion}
+\subsection{El método adjunto en la física computacional}
+\label{subsec:adjunto_fisica}
 
-\subsection{El método adjunto discreto: derivación directa}
-\label{subsec:adjunto_discreto}
+El método adjunto no es un concepto de ML importado a la física. Es al
+revés: la física lo inventó y el ML lo redescubrió. Cuatro ejemplos que
+todo físico puede reconocer:
 
-Puede derivarse el método adjunto para el MLP directamente, sin recurrir al
-Lagrangiano, siguiendo el esquema estándar de sensibilidad hacia atrás.
+\textbf{Mecánica analítica.}
+La formulación de Hamilton del oscilador armónico define el estado
+$(\bm{q}, \bm{p})$ (posición generalizada y momento conjugado). Las
+ecuaciones de Hamilton $\dot{\bm{q}} = \partial H/\partial\bm{p}$,
+$\dot{\bm{p}} = -\partial H/\partial\bm{q}$ son formalmente idénticas al
+par forward/backward: $\bm{q}$ es el estado que evoluciona hacia adelante
+y $\bm{p}$ es el co-estado que propaga la información de gradiente. En
+backpropagation, la activación $\bm{a}^{(l)}$ es la coordenada
+generalizada y el error $\bm{\delta}^{(l)}$ es el momento conjugado.
 
-Sea $\phi_l = \mathcal{L}|_{\text{desde la capa }l}$: el valor de la pérdida
-visto como función de $\bm{a}^{(l-1)}$ y los parámetros de las capas
-$l, l+1, \ldots, L$. La sensibilidad de $\phi_l$ respecto a $\bm{a}^{(l-1)}$
-define el co-estado:
-\[
-  \bm{p}^{(l-1)} = \frac{\partial\phi_l}{\partial\bm{a}^{(l-1)}}
-  = \bm{W}^{(l)\top}\bm{\delta}^{(l)},
-\]
-donde el último paso usa la Proposición~\ref{prop:bp_afin}. La sensibilidad de
-$\phi_l$ respecto a $(\bm{W}^{(l)},\bm{b}^{(l)})$ es:
-\[
-  \frac{\partial\phi_l}{\partial\bm{W}^{(l)}} = \bm{\delta}^{(l)}{\bm{a}^{(l-1)}}^\top,
-  \qquad
-  \frac{\partial\phi_l}{\partial\bm{b}^{(l)}} = \bm{\delta}^{(l)}.
-\]
-La propagación de $\bm{p}^{(l)}$ hacia atrás (ecuación adjunta discreta):
-\[
-  \bm{p}^{(l-1)}
-  = \bm{W}^{(l)\top}\bigl(\bm{p}^{(l)}\odot\sigma'^{(l)}(\bm{z}^{(l)})\bigr)
-  = \bm{W}^{(l)\top}\bm{\delta}^{(l)},
-\]
-que es BP2 con la identificación $\bm{\delta}^{(l)} = \bm{p}^{(l)}\odot
-\sigma'^{(l)}(\bm{z}^{(l)})$. El backward pass es la integración numérica hacia
-atrás de la ecuación adjunta discreta, con condición final
-$\bm{p}^{(L)} = \nabla_{\bm{a}^{(L)}}\ell$ dada por BP1.
+\textbf{Óptica y el principio de Fermat.}
+Un rayo de luz que viaja de un punto $A$ a un punto $B$ en un medio con
+índice de refracción variable $n(\bm{r})$ sigue el camino que minimiza
+el tiempo óptico $\mathcal{L} = \int_A^B n(\bm{r})\,ds$. La ecuación
+del rayo $\frac{d}{ds}(n\hat{\bm{t}}) = \nabla n$ es la ecuación del
+estado; la ecuación adjunta propaga la sensibilidad del tiempo óptico
+respecto a perturbaciones del índice. En diseño óptico, calcular cómo
+cambia la aberración de una lente ante perturbaciones de curvatura es un
+problema adjunto: el backward pass a través del sistema óptico.
 
-%───────────────────────────────────────────────────────────────────────────────
+\textbf{Problemas inversos en espectroscopía.}
+En la deconvolución de un espectro medido
+$y(\omega) = \int h(\omega-\omega')s(\omega')\,d\omega' + n(\omega)$, el
+operador forward es la convolución con la función de respuesta $h$. El
+operador adjunto es la convolución con $h(-\omega)$ (correlación). La
+inversión por el método adjunto (iteración de Landweber) es:
+$s^{(k+1)} = s^{(k)} + \eta\, h * (y - h * s^{(k)})$, donde $h *$
+denota la convolución adjunta. Esto es formalmente GD con el gradiente
+calculado por el operador adjunto: exactamente backpropagation sobre un
+``MLP de una capa'' cuyo peso es $h$.
+
+\textbf{Sismología inversa (Tarantola, 1984).}
+La inversión de forma de onda completa (\textit{full waveform inversion})
+calcula el gradiente de la función de misfit respecto a las velocidades
+sísmicas del subsuelo propagando el campo de onda \emph{hacia atrás} en
+el tiempo (backward wavefield). Tarantola
+(1984)~\cite{tarantola1984inversion} identificó esta propagación inversa
+como el método adjunto aplicado a la ecuación de onda, antes de que la
+comunidad de ML reconociera la misma estructura en backpropagation. La
+conexión fue redescubierta formalmente por Griewank
+(1989)~\cite{griewank2008evaluating} en el contexto de la diferenciación
+automática.
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Extensión al caso de mini-lote}
 \label{sec:bp_batch}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{3}
 
-Para un mini-lote $\mathcal{B}$ de tamaño $B$, el forward pass produce matrices:
-\[
-  \bm{Z}^{(l)} = \bm{A}^{(l-1)}\bm{W}^{(l)\top} + \bm{1}_B\bm{b}^{(l)\top}
-  \in \mathbb{R}^{B\times n_l},
-  \qquad
-  \bm{A}^{(l)} = \sigma(\bm{Z}^{(l)}) \in \mathbb{R}^{B\times n_l},
-\]
-donde $\bm{A}^{(0)} = \bm{X} \in \mathbb{R}^{B\times n_0}$ es la matriz de entradas.
-
-Las ecuaciones de backpropagation se extienden directamente:
+Para un mini-lote $\mathcal{B}$ de tamaño $B$, el forward pass produce
+matrices $\bm{A}^{(l)} \in \mathbb{R}^{B \times n_l}$. Las ecuaciones BP
+se extienden naturalmente:
 \begin{align}
-  \bm{\Delta}^{(L)}
-  &= \nabla_{\bm{A}^{(L)}}\mathcal{L}_{\mathcal{B}} \odot \sigma'^{(L)}(\bm{Z}^{(L)}),
-  \tag{BP1-B}\\
-  \bm{\Delta}^{(l)}
-  &= \bigl(\bm{\Delta}^{(l+1)}\bm{W}^{(l+1)}\bigr)
-  \odot \sigma'^{(l)}(\bm{Z}^{(l)}), \quad l = L-1,\ldots,1,
-  \tag{BP2-B}\\
+  \bm{\Delta}^{(L)} &= \nabla_{\bm{A}^{(L)}}\mathcal{L}_{\mathcal{B}}
+  \odot \sigma'^{(L)}(\bm{Z}^{(L)}) \tag{BP1-B}\\
+  \bm{\Delta}^{(l)} &= (\bm{\Delta}^{(l+1)}\bm{W}^{(l+1)})
+  \odot \sigma'^{(l)}(\bm{Z}^{(l)}) \tag{BP2-B}\\
   \frac{\partial\mathcal{L}_{\mathcal{B}}}{\partial\bm{W}^{(l)}}
-  &= \frac{1}{B}\bm{\Delta}^{(l)\top}\bm{A}^{(l-1)},
-  \tag{BP3-B}\\
+  &= \frac{1}{B}\bm{\Delta}^{(l)\top}\bm{A}^{(l-1)} \tag{BP3-B}\\
   \frac{\partial\mathcal{L}_{\mathcal{B}}}{\partial\bm{b}^{(l)}}
-  &= \frac{1}{B}\bm{\Delta}^{(l)\top}\bm{1}_B.
-  \tag{BP4-B}
+  &= \frac{1}{B}\bm{\Delta}^{(l)\top}\bm{1}_B \tag{BP4-B}
 \end{align}
+El costo dominante es $O(Bn_ln_{l-1})$ por capa: el mismo que el forward.
 
-La operación dominante en BP3-B es el producto matricial
-$\bm{\Delta}^{(l)\top}\bm{A}^{(l-1)} \in \mathbb{R}^{n_l\times n_{l-1}}$,
-de costo $O(B n_l n_{l-1})$: el mismo que la capa forward correspondiente. El
-backward pass sobre un batch es un segundo barrido sobre el grafo, de costo
-comparable al forward pass.
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Reglas de backpropagation para operaciones estándar}
 \label{sec:tabla_bp}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{3}
 
-En la práctica, las redes no se limitan a capas afines y activaciones elemento
-a elemento. Esta sección compila las reglas de backpropagation para las operaciones
-más frecuentes en arquitecturas modernas.
+\subsection{Softmax y entropía cruzada}
+\label{subsec:bp_softmax}
 
-\subsection{Activaciones}
-\label{subsec:bp_activaciones}
+Para $\hat{p}_j = e^{z_j}/\sum_k e^{z_k}$ (softmax) seguida de
+$\ell = -\sum_j y_j\log\hat{p}_j$ (entropía cruzada), el gradiente
+combinado se simplifica a:
+\begin{equation}
+  \partial\mathcal{L}/\partial\bm{z}^{(L)} = \hat{\bm{p}} - \bm{y}.
+  \label{eq:bp_softmax_ce}
+\end{equation}
+La derivación directa evita formar la jacobiana del softmax ($O(C^2)$ con
+$C$ clases) y es numéricamente estable.
 
-Para $\bm{a} = \sigma(\bm{z})$ con $\bar{\bm{a}}$ dado:
+\subsection{Batch normalization}
+\label{subsec:bp_bn}
 
-\begin{center}
-\begin{tabular}{lll}
-\toprule
-\textbf{Activación} & $\sigma(z)$ & $\bar{z} = \bar{a}\,\sigma'(z)$ \\
-\midrule
-ReLU & $\max(0,z)$ & $\bar{a}\,\mathbf{1}[z>0]$ \\
-Sigmoide & $1/(1+e^{-z})$ & $\bar{a}\,\sigma(z)(1-\sigma(z))$ \\
-Tanh & $\tanh(z)$ & $\bar{a}\,(1-\tanh^2(z))$ \\
-GELU & $z\Phi(z)$ & $\bar{a}\,(\Phi(z)+z\phi(z))$, $\phi$ densidad normal \\
-Softplus & $\log(1+e^z)$ & $\bar{a}\,\sigma(z)$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\subsection{Funciones de pérdida}
-\label{subsec:bp_perdidas}
-
-\medskip
-\noindent\textbf{Pérdida MSE.}
-$\mathcal{L} = \frac{1}{2B}\|\bm{A}^{(L)}-\bm{Y}\|_F^2$.
-\[
-  \nabla_{\bm{A}^{(L)}}\mathcal{L} = \frac{1}{B}(\bm{A}^{(L)}-\bm{Y}).
-\]
-
-\medskip
-\noindent\textbf{Pérdida de entropía cruzada con softmax.}
-Para clasificación multiclase con $K$ clases, la capa de salida aplica softmax:
-$\hat{p}_k = e^{z_k}/\sum_{j=1}^K e^{z_j}$, y la pérdida es:
-$\mathcal{L} = -\sum_k y_k\log\hat{p}_k$ (donde $y_k = \mathbf{1}[\text{clase}=k]$).
-El gradiente combinado softmax + cross-entropy tiene la forma elegante:
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{z}^{(L)}} = \hat{\bm{p}} - \bm{y}.
-\]
-Esta simplificación (la jacobiana del softmax combinada con el gradiente de la
-entropía cruzada colapsa a la diferencia predicción-etiqueta) es la razón por la
-que softmax y cross-entropy se implementan juntos en los frameworks.
-
-\subsection{Normalización por lote (\textit{batch normalization})}
-\label{subsec:bp_batchnorm}
-
-La normalización por lote (Ioffe y Szegedy, 2015) normaliza la pre-activación
-dentro del batch:
-\[
-  \hat{z}_j^{(i)} = \frac{z_j^{(i)} - \mu_j}{\sqrt{s_j^2+\varepsilon}},
-  \qquad
-  \mu_j = \frac{1}{B}\sum_i z_j^{(i)},
-  \quad
-  s_j^2 = \frac{1}{B}\sum_i (z_j^{(i)}-\mu_j)^2.
-\]
-La salida es $a_j^{(i)} = \gamma_j\hat{z}_j^{(i)} + \beta_j$ con parámetros
-aprendibles $(\gamma_j, \beta_j)$. El gradiente es más complejo porque $\mu_j$
-y $s_j^2$ dependen de todos los elementos del batch: la jacobiana no es diagonal.
-La derivación completa se deja como Ejercicio Resuelto~\ref{ej:bp_batchnorm}; el
-resultado es:
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{z}_j}
+Para la normalización por lotes $\hat{z}_j^{(i)} = (z_j^{(i)} -
+\mu_j)/\sqrt{s_j^2+\varepsilon}$ seguida de la transformación afín
+$\tilde{z}_j^{(i)} = \gamma_j\hat{z}_j^{(i)} + \beta_j$, el gradiente
+respecto a $\bm{z}$ involucra las estadísticas del batch ($\mu_j$,
+$s_j^2$) y no es diagonal:
+\begin{equation}
+  \frac{\partial\mathcal{L}}{\partial z_j^{(i)}}
   = \frac{\gamma_j}{B\sqrt{s_j^2+\varepsilon}}
-  \left[B\bar{\hat{z}}_j - \sum_i\bar{\hat{z}}_j^{(i)}
-  - \hat{z}_j\sum_i\bar{\hat{z}}_j^{(i)}\hat{z}_j^{(i)}\right],
-\]
-donde $\bar{\hat{z}}_j^{(i)} = \partial\mathcal{L}/\partial\hat{z}_j^{(i)}$.
+  \left[B\bar{\hat{z}}_j^{(i)} - \sum_k\bar{\hat{z}}_j^{(k)}
+  - \hat{z}_j^{(i)}\sum_k\bar{\hat{z}}_j^{(k)}\hat{z}_j^{(k)}\right].
+  \label{eq:bp_bn}
+\end{equation}
+El Ejercicio Resuelto~\ref{ej:bp_batchnorm} deriva esta expresión.
 
-\subsection{Suma y concatenación}
-\label{subsec:bp_suma}
+\subsection{Conexiones de salto y concatenación}
+\label{subsec:bp_skip}
 
-\medskip
-\noindent\textbf{Suma de dos ramas.}
-Para $\bm{y} = \bm{x}_1 + \bm{x}_2$, el gradiente se distribuye:
-$\bar{\bm{x}}_1 = \bar{\bm{y}}$ y $\bar{\bm{x}}_2 = \bar{\bm{y}}$.
-Esto es la regla de backpropagation para conexiones de salto (\textit{skip connections})
-de las ResNets: el gradiente fluye directamente sin modificación a través de la
-conexión de salto.
+Para la suma de dos ramas $\bm{y} = \bm{x}_1 + \bm{x}_2$:
+$\bar{\bm{x}}_1 = \bar{\bm{y}}$, $\bar{\bm{x}}_2 = \bar{\bm{y}}$.
+El gradiente se distribuye sin modificación a ambas ramas. Esta es la
+razón por la que las conexiones de salto (ResNet) mitigan el problema del
+gradiente que se desvanece: el gradiente tiene un camino directo que no
+pasa por las activaciones $\sigma'$.
 
-\medskip
-\noindent\textbf{Concatenación.}
-Para $\bm{y} = [\bm{x}_1;\bm{x}_2]$ (concatenación a lo largo de la dimensión
-de características), el gradiente se divide: $\bar{\bm{x}}_1$ son las primeras
-componentes de $\bar{\bm{y}}$ y $\bar{\bm{x}}_2$ son las segundas. No hay
-mezcla de gradientes entre las dos ramas.
+Para la concatenación $\bm{y} = [\bm{x}_1;\bm{x}_2]$: el gradiente se
+divide según las componentes.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Implementación y consideraciones prácticas}
-\label{sec:impl_practica}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Implementación y gradient checkpointing}
+\label{sec:implementacion}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \dificultad{2}{2}
 
 \subsection{Backpropagation en frameworks modernos}
-\label{subsec:autodiff_fw}
+\label{subsec:frameworks}
 
-En la práctica, el programador no implementa las ecuaciones BP1--BP4 manualmente.
-Los frameworks registran el grafo computacional durante el forward pass y calculan
-el backward pass automáticamente. Entender la derivación del Capítulo~6 es, sin
-embargo, imprescindible para: diagnosticar problemas de entrenamiento (gradientes
-nulos, explosión), implementar operaciones personalizadas, y comprender qué calcula
-el framework cuando el resultado es inesperado.
+En la práctica, las ecuaciones BP1–BP4 no se implementan manualmente. Los
+frameworks (PyTorch, JAX) construyen el grafo computacional durante el
+forward pass y ejecutan el backward automáticamente. Entender las
+ecuaciones es imprescindible para diagnosticar problemas (gradientes nulos
+o explosivos), implementar operaciones personalizadas, y comprender qué
+calcula el framework.
 
 \begin{verbatim}
-# PyTorch: el backward pass se invoca con .backward()
+# PyTorch: backward automático
 import torch, torch.nn as nn
 
 modelo = nn.Sequential(
-    nn.Linear(3, 64), nn.ReLU(),
-    nn.Linear(64, 64), nn.ReLU(),
-    nn.Linear(64, 1)
+    nn.Linear(1, 32), nn.ReLU(),
+    nn.Linear(32, 1)
 )
-x = torch.randn(32, 3, requires_grad=False)
-y = torch.randn(32, 1)
+x = torch.randn(25, 1)
+y = torch.sin(2 * 3.14159 * x) + 0.15 * torch.randn(25, 1)
 
-pred = modelo(x)                       # Forward pass
-loss = nn.MSELoss()(pred, y)           # Pérdida escalar
-loss.backward()                        # Backward pass (BP1-BP4)
+pred = modelo(x)                       # Forward
+loss = nn.MSELoss()(pred, y)           # Pérdida
+loss.backward()                        # BP1-BP4 automático
 
-# Acceder a los gradientes:
 for nombre, param in modelo.named_parameters():
-    print(nombre, param.grad.shape)    # dL/dW^(l), dL/db^(l)
+    print(nombre, param.grad.shape)    # dL/dW, dL/db
 \end{verbatim}
 
-La llamada \texttt{loss.backward()} ejecuta el Algoritmo~\ref{alg:backprop}
-de forma automática sobre el grafo construido por \texttt{modelo(x)}. Los
-gradientes se acumulan en \texttt{param.grad}: están listos para ser usados por
-el optimizador en el siguiente paso.
-
 \begin{verbatim}
-# JAX: diferenciación funcional con jax.grad
+# JAX: diferenciación funcional
 import jax, jax.numpy as jnp
 
 def perdida(params, x, y):
     a = x
     for W, b in params[:-1]:
-        a = jnp.tanh(a @ W.T + b)     # Capas ocultas
+        a = jax.nn.relu(a @ W.T + b)
     W, b = params[-1]
-    pred = a @ W.T + b                 # Capa de salida
-    return jnp.mean((pred - y) ** 2)  # MSE
+    return jnp.mean((a @ W.T + b - y) ** 2)
 
-# grad_fn calcula dL/dparams en un solo paso
-grad_fn = jax.grad(perdida, argnums=0)
-grads = grad_fn(params, x, y)         # Aplica BP1-BP4 automáticamente
+grad_fn = jax.grad(perdida)            # Transforma la función
+grads = grad_fn(params, x, y)          # Aplica BP1-BP4
 \end{verbatim}
 
-En JAX, \texttt{jax.grad} transforma la función \texttt{perdida} en su gradiente
-respecto al primer argumento (\texttt{params}). La transformación es estática:
-JAX analiza el grafo de la función y compila la función gradiente, que puede
-ejecutarse repetidamente con distintos datos.
+En ambos ejemplos, la red es el MLP $(1, 32, 1)$ del oscilador del
+Capítulo~\ref{ch:cap4}: los datos son $\sin(2\pi t)$ con ruido.
 
-\subsection{Gradient checkpointing: memoria contra cómputo}
+\subsection{Gradient checkpointing}
 \label{subsec:checkpointing}
 
-El backward pass del Algoritmo~\ref{alg:backprop} requiere las activaciones
-$\{\bm{z}^{(l)}, \bm{a}^{(l)}\}$ del forward pass. Para un MLP con $L = 100$
-capas, anchura $m = 1024$ y batch $B = 512$ en precisión de 32 bits:
-\[
-  \text{Memoria de activaciones}
-  = 2 \times L \times m \times B \times 4\,\text{bytes}
-  = 2 \times 100 \times 1024 \times 512 \times 4
-  \approx 419\,\text{MB}.
-\]
-Para modelos de lenguaje con $L = 96$, $m = 12288$ (GPT-4 escala), batch $B = 2048$:
-$\sim 100\,\text{GB}$, inmanejable en una GPU estándar.
+El backward pass requiere las activaciones
+$\{\bm{z}^{(l)}, \bm{a}^{(l)}\}$ del forward. Para un modelo con
+$L = 100$ capas, anchura $m = 1024$ y batch $B = 512$ en 32 bits:
+$\text{memoria} = 2LmB \times 4\,\text{bytes} \approx 419\,\text{MB}$.
+Para modelos de lenguaje ($L = 96$, $m = 12288$, $B = 2048$):
+$\sim 100\,\text{GB}$.
 
-\textbf{Gradient checkpointing} resuelve este problema almacenando solo
-$\sqrt{L}$ activaciones en puntos de control igualmente espaciados y recomputando
-el resto durante el backward pass. El costo adicional es un factor $\sim \sqrt{L}$
-en operaciones, pero la memoria se reduce de $O(Lm B)$ a $O(\sqrt{L} m B)$.
+El \textbf{gradient checkpointing} almacena solo $\sqrt{L}$ activaciones
+en puntos igualmente espaciados y recomputa las intermedias durante el
+backward. La memoria se reduce de $O(LmB)$ a $O(\sqrt{L}\,mB)$ a costa
+de $\sim 2\times$ cómputo adicional. Es el intercambio estándar
+memoria/cómputo en modelos grandes.
 
-Para el ejemplo anterior: $O(\sqrt{96}\times 12288\times 2048\times 4)
-\approx 10\,\text{GB}$: manejable. El costo extra es una segunda pasada sobre
-las $\sqrt{L}$ secciones del modelo, es decir, $\sim 2\times$ el forward pass.
-Es un intercambio aceptable: memoria cuadraticamente reducida a costa de cómputo
-linealmente aumentado.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El oscilador como laboratorio: backpropagation manual}
+\label{sec:oscilador6}
+% ─────────────────────────────────────────────────────────────────────────────
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Resumen del Capítulo 6}
+\dificultad{2}{2}
+
+Retomamos el MLP $(1, 32, 1)$ con ReLU entrenado sobre los datos del
+oscilador. Para visualizar qué calcula backpropagation, reducimos la
+arquitectura a $(1, 3, 1)$ (tres neuronas ocultas) y ejecutamos el
+algoritmo con valores numéricos.
+
+\textbf{Parámetros:}
+$\bm{W}^{(1)} = (2, -1, 0.5)^\top$,
+$\bm{b}^{(1)} = (-1, 0.5, -0.3)^\top$,
+$\bm{W}^{(2)} = (1, -1, 2)$, $b^{(2)} = 0$.
+Entrada: $x = 0.25$ (un instante del oscilador).
+Dato: $y = \sin(2\pi \times 0.25) = 1$.
+
+\textbf{Forward pass:}
+$\bm{z}^{(1)} = \bm{W}^{(1)}x + \bm{b}^{(1)}
+= (2(0.25)-1,\; -0.25+0.5,\; 0.125-0.3)^\top = (-0.5, 0.25, -0.175)^\top$.
+$\bm{a}^{(1)} = \text{ReLU}(\bm{z}^{(1)}) = (0, 0.25, 0)^\top$.
+$z^{(2)} = \bm{W}^{(2)}\bm{a}^{(1)} + b^{(2)} = 0 - 0.25 + 0 = -0.25$.
+$\hat{y} = -0.25$. Pérdida: $\mathcal{L} = (-0.25 - 1)^2 = 1.5625$.
+
+\textbf{Backward pass (BP1–BP4):}
+
+BP1: $\delta^{(2)} = 2(\hat{y}-y) = 2(-0.25-1) = -2.5$ (para MSE con
+capa de salida lineal).
+
+BP2: $\bm{\delta}^{(1)} = (\bm{W}^{(2)\top}\delta^{(2)}) \odot
+\text{ReLU}'(\bm{z}^{(1)}) = (-2.5, 2.5, -5)^\top \odot (0, 1, 0)^\top
+= (0, 2.5, 0)^\top$.
+Las neuronas 1 y 3 tenían preactivación negativa (inactivas): su
+gradiente es cero. Solo la neurona 2 propaga gradiente.
+
+BP3: $\partial\mathcal{L}/\partial\bm{W}^{(2)} =
+\delta^{(2)}{\bm{a}^{(1)}}^\top = -2.5 \times (0, 0.25, 0)
+= (0, -0.625, 0)$.
+$\partial\mathcal{L}/\partial\bm{W}^{(1)} =
+\bm{\delta}^{(1)} x = (0, 2.5, 0)^\top \times 0.25
+= (0, 0.625, 0)^\top$.
+
+BP4: $\partial\mathcal{L}/\partial b^{(2)} = -2.5$.
+$\partial\mathcal{L}/\partial\bm{b}^{(1)} = (0, 2.5, 0)^\top$.
+
+Solo los parámetros de la neurona activa (neurona 2) reciben
+actualización. Las neuronas inactivas tienen gradiente cero: el SGD no
+las mueve. Esta observación tiene una consecuencia para el entrenamiento:
+si una neurona ReLU se inactiva para \emph{todas} las muestras del
+dataset (``neurona muerta''), nunca se recupera. La inicialización de He
+(Capítulo~\ref{ch:cap5}) minimiza este riesgo.
+
+El Ejercicio Computacional~\ref{ejcomp:oscilador6} verifica estos cálculos
+contra diferencias finitas y extiende el análisis a la red $(1, 32, 1)$
+completa.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 6 y transición}
 \label{sec:resumen6}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-Este capítulo respondió la pregunta que el Capítulo~\ref{ch:cap5} dejó abierta: cómo calcular
-$\nabla_{\bm{\theta}}\mathcal{L}$ eficientemente para un MLP de $L$ capas y
-$p \sim 10^9$ parámetros.
+Este capítulo respondió la pregunta que el Capítulo~\ref{ch:cap5} dejó
+abierta: cómo calcular $\nabla_{\bm{\theta}}\mathcal{L}$ eficientemente.
 
-La respuesta tiene dos niveles. A nivel algorítmico: backpropagation es el modo
-reverso de diferenciación automática aplicado al grafo computacional del
-Capítulo~\ref{ch:cap4}. Las cuatro ecuaciones BP1--BP4 propagan el gradiente de salida a
-entrada a través de dos tipos de operaciones elementales (activaciones y capas
-afines), acumulando los gradientes de los parámetros. El costo total es $O(1)$
-forward passes adicionales, independiente de $p$.
+A nivel algorítmico, backpropagation es el modo reverso de la
+diferenciación automática sobre el grafo computacional. Las ecuaciones
+BP1–BP4 propagan el gradiente desde la salida hacia la entrada,
+acumulando los gradientes de los parámetros en cada capa. El costo es
+$\sim 3\times$ un forward pass, independiente de $p$.
 
-A nivel estructural: backpropagation es el método adjunto. Los errores
+A nivel estructural, backpropagation es el método adjunto aplicado al
+sistema dinámico discreto definido por el MLP. Los errores
 $\bm{\delta}^{(l)}$ son los multiplicadores de Lagrange del problema de
-optimización con restricciones definidas por el forward pass, y satisfacen la
-ecuación adjunta discreta del principio de Pontryagin. El MLP es un sistema de
-control óptimo discreto con las capas como instantes temporales y los parámetros
-como controles. La profundidad no es solo un hiperparámetro arquitectónico: es el
-horizonte temporal del sistema dinámico.
+control óptimo con las capas como instantes temporales. El principio de
+Pontryagin es la versión continua; las Neural ODEs del
+Capítulo~\ref{ch:cap9} harán esta conexión explícita.
 
-Esta conexión no es un artefacto académico. En el Capítulo~\ref{ch:cap12}, los modelos de
-difusión tendrán exactamente la misma estructura: un forward process (ruido
-progresivo, análogo a las capas del MLP) y un backward process (eliminación
-progresiva del ruido, análogo al backward pass). El algoritmo de entrenamiento
-de esos modelos es, de nuevo, el método adjunto aplicado a una dinámica estocástica.
+Los Capítulos~\ref{ch:cap4}, \ref{ch:cap5} y \ref{ch:cap6} cierran el
+ciclo fundamental: el objeto (MLP), el optimizador (SGD/Adam) y el
+gradiente (backpropagation). El Capítulo~\ref{ch:cap7} cambia de
+perspectiva: en lugar de preguntar ``¿cuál es el mejor $\bm{\theta}^*$?''
+(estimación puntual), pregunta ``¿cuál es la distribución
+$p(\bm{\theta}|\mathcal{D})$?'' (inferencia bayesiana). La respuesta
+revelará que la pérdida MSE es el logaritmo de una verosimilitud
+gaussiana, la regularización $\ell_2$ del Capítulo~\ref{ch:cap2} es un
+prior gaussiano, y la distribución de Gibbs del
+Capítulo~\ref{ch:cap5} es la distribución de máxima entropía. Cada pieza
+que se construyó pragmáticamente tiene una justificación probabilística
+precisa.
 
-Los Capítulos 4, 5 y 6 cierran el ciclo fundamental: objeto (MLP), optimizador
-(SGD/Adam) y gradiente (backpropagation). El Capítulo~\ref{ch:cap8} usa esta maquinaria para
-estudiar el MLP completo en la práctica: cómo evitar el sobreajuste, cómo
-normalizar las activaciones y qué ocurre cuando el modelo es sobredeterminado.
-
-%───────────────────────────────────────────────────────────────────────────────
-\label{sec:estrella6}
-\begin{estrella}{El método adjunto en el sustituto neutrónico}
-
-\textbf{El problema de la cinética inversa diferenciable.}
-El sustituto MLP del reactor de investigación (Capítulos~\ref{ch:cap4}
-y~\ref{ch:cap5}) aproxima el flujo $f_{\mathrm{MLP}}(\bm{u}) \approx \bm{\Phi}(\bm{u})$.
-En física de reactores hay un problema aún más exigente: la \textbf{cinética inversa}
-diferenciable, en la que se busca el vector de parámetros operacionales $\bm{u}^*$
-que produce una distribución de flujo objetivo con sensibilidades exactas. Calcular
-el jacobiano $\partial\bm{\Phi}/\partial\bm{u}$ (cómo cambia el flujo ante
-perturbaciones en las barras de control) era históricamente el cuello de botella:
-un código de Monte Carlo requería una simulación completa por cada parámetro
-perturbado, con $p \sim 50$ parámetros eso es 50 simulaciones de horas cada una.
-
-\textbf{El método adjunto sobre el sustituto.}
-Con el sustituto diferenciable, el jacobiano $\partial f_{\mathrm{MLP}}/\partial\bm{u}$
-se obtiene en un solo backward pass sobre el grafo del MLP: exactamente el algoritmo
-de este capítulo, con $\bm{u}$ jugando el rol de los parámetros $\bm{\theta}$ y el
-flujo objetivo como pérdida. El costo es comparable al forward pass. Para $K = 500$
-nodos de flujo y $p = 50$ parámetros operacionales, el jacobiano completo
-$\partial\bm{\Phi}/\partial\bm{u} \in \mathbb{R}^{500\times50}$ se obtiene en
-$O(p)$ backward passes (modo forward de AD) o en $O(K)$ backward passes (modo
-reverso): con $K \gg p$, el modo forward es más eficiente aquí ($50 \ll 500$).
-Esta es la situación donde el modo forward gana sobre el reverso: exactamente la
-discusión de la Sección~\ref{subsec:autodiff_modos}, en que el modo óptimo depende
-del cociente $m/p$ de la función.
-
-\textbf{Análisis de sensibilidad de seguridad.}
-En ingeniería de reactores, las sensibilidades
-$\partial\keff/\partial\sigma_x$ (cómo cambia la reactividad ante perturbaciones
-en las secciones eficaces nucleares) son fundamentales para el análisis de
-incertidumbre. Con el sustituto diferenciable y el método adjunto, estas
-sensibilidades se obtienen analíticamente y pueden propagarse hacia adelante
-para calcular incertidumbres en el flujo y la potencia. El código de análisis
-de sensibilidad TSUNAMI (SCALE) implementa exactamente el método adjunto
-sobre el operador de transporte neutrónico: es el mismo algoritmo que el
-backward pass, pero sobre la ecuación de transporte de Boltzmann en lugar de
-sobre el grafo computacional del MLP.
-
-\textbf{Conexión con el capítulo.}
-BP2 ($\bm{\delta}^{(l)} = \bm{W}^{(l+1)\top}\bm{\delta}^{(l+1)} \odot \sigma'(\bm{z}^{(l)})$)
-es la ecuación adjunta discreta del sistema dinámico definido por el forward pass.
-En el sustituto neutrónico, esta ecuación propaga las sensibilidades del flujo
-en los nodos de salida hacia atrás a través de las capas del MLP hasta los
-parámetros de entrada $\bm{u}$: cada capa aplica la transpuesta $\bm{W}^{(l)\top}$
-(el operador adjunto de la transformación forward) ponderada por las derivadas de
-la activación. Es textualmente el método adjunto de Pontryagin aplicado al sistema
-dinámico discreto definido por el MLP.
-\end{estrella}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section*{Ejercicios computacionales}
-\addcontentsline{toc}{section}{Ejercicios computacionales}
-%───────────────────────────────────────────────────────────────────────────────
-
-\begin{ejerciciocomp}{Implementación completa de backpropagation desde cero}
-\textbf{Objetivo:} implementar el Algoritmo~\ref{alg:backprop} desde cero en NumPy
-y verificarlo contra diferencias finitas, construyendo la intuición de qué calcula
-cada ecuación BP1--BP4.
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Implementar \texttt{forward(params, x)} que devuelva la salida y almacene
-        las activaciones intermedias $\{(\bm{z}^{(l)}, \bm{a}^{(l)})\}$.
-  \item Implementar \texttt{backward(cache, y)} que tome las activaciones del
-        forward y devuelva el diccionario de gradientes
-        $\{\partial\mathcal{L}/\partial\bm{W}^{(l)}, \partial\mathcal{L}/\partial\bm{b}^{(l)}\}$.
-  \item Para la arquitectura $(2, 3, 1)$ del Ejercicio Resuelto~\ref{ej:bp_manual},
-        verificar que su implementación reproduce los gradientes calculados manualmente.
-  \item Para una red aleatoria $(10, 32, 32, 5)$ con ReLU, calcular gradientes
-        por backpropagation y por diferencias finitas centradas ($h = 10^{-5}$).
-        Reportar el error relativo máximo sobre los parámetros.
-\end{enumerate}
-
-\medskip\noindent\textbf{Verificación:} el error relativo máximo debe ser
-$\lesssim 10^{-7}$; valores mayores indican un error en la implementación.
-\end{ejerciciocomp}
-
-\begin{ejerciciocomp}{Visualización del flujo de gradientes en profundidad}
-\textbf{Objetivo:} medir empíricamente cómo varía la norma del gradiente en
-función de la capa, y verificar que la inicialización de He resuelve el problema
-del gradiente que se desvanece para ReLU.
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Construir MLPs de profundidades $L = 5, 10, 20$ con anchura $m = 64$
-        y activación sigmoide, inicialización $\mathcal{N}(0, 1/m)$.
-  \item Para una entrada aleatoria y pérdida MSE aleatoria, calcular el backward
-        pass y registrar $\|\partial\mathcal{L}/\partial\bm{W}^{(l)}\|_F$ para
-        cada capa $l = 1, \ldots, L$.
-  \item Graficar $\log\|\partial\mathcal{L}/\partial\bm{W}^{(l)}\|_F$ en función
-        de $l$ para las tres profundidades. ¿Es la pendiente consistente con la
-        predicción $O(M^{L-l})$ de la Sección~\ref{subsec:vanishing}?
-  \item Repetir con activación ReLU e inicialización de He. ¿Desaparece la
-        atenuación exponencial?
-\end{enumerate}
-\end{ejerciciocomp}
-
-%───────────────────────────────────────────────────────────────────────────────
-\begin{notasbib}
-El algoritmo de backpropagation fue redescubierto independientemente varias veces.
-Las referencias más influyentes son Werbos (1974, tesis doctoral), que lo derivó
-en el contexto del control óptimo, y Rumelhart, Hinton y Williams
-(1986)~\cite{rumelhart1986learning}, que lo popularizaron en la comunidad de
-redes neuronales demostrando su eficacia para aprender representaciones internas.
-La conexión con el método adjunto y el principio de Pontryagin es bien conocida
-en la comunidad de control óptimo; la referencia estándar es Pontryagin et al.\
-(1962) y su formulación moderna puede encontrarse en Bryson y Ho (1975).
-
-La diferenciación automática como disciplina matemática fue formalizada por
-Griewank y Walther (2008)~\cite{griewank2008evaluating}. Los dos modos (forward y
-reverso) y sus complejidades relativas están tratados en detalle en ese texto. La
-demostración de que el modo reverso calcula el gradiente en tiempo proporcional al
-costo del forward pass es el teorema fundamental de la AD.
-
-La normalización por lotes (batch normalization) fue introducida por Ioffe y
-Szegedy (2015)~\cite{ioffe2015batch}, que mostraron que normalizar las activaciones
-dentro del mini-lote acelera el entrenamiento y reduce la sensibilidad a la
-inicialización. La derivación del gradiente de batch normalization es un ejercicio
-estándar de las implementaciones de frameworks; la versión compacta presentada
-en este capítulo sigue la derivación de Karpathy (2016).
-
-El gradient checkpointing como técnica para reducir la memoria de activaciones fue
-propuesto por Chen et al.\ (2016)~\cite{chen2016training} con la cota de memoria
-$O(\sqrt{L})$ demostrada en ese artículo. La técnica es estándar en el entrenamiento
-de modelos de lenguaje de gran escala.
-
-La conexión entre backpropagation y el método adjunto en sismología fue establecida
-por Tarantola (1984)~\cite{tarantola1984inversion} en el contexto de la inversión
-de forma de onda completa, antes de que la comunidad de ML la reconociera
-explícitamente. La identificación formal de backpropagation como método adjunto
-sobre un grafo computacional es el tema central del influyente artículo de
-Griewank (1989) y fue rediscutida en el contexto de las Neural ODEs por Chen et al.\
-(2018)~\cite{chen2018neural}.
-\end{notasbib}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios resueltos}
 \addcontentsline{toc}{section}{Ejercicios resueltos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
 \label{ej:bp_manual}
-\textbf{(Backpropagation manual en el MLP del Capítulo 4).}
+\textbf{(Backpropagation manual en el MLP del oscilador).}
 
-Retomar el MLP del Ejercicio Resuelto~\ref{ej:forward_manual}: arquitectura
-$(2,3,1)$, activación ReLU, parámetros dados. Con $\bm{x}=(1,2)^\top$, $y=1.5$
-y pérdida MSE, calcular los gradientes $\partial\mathcal{L}/\partial\bm{W}^{(1)}$,
-$\partial\mathcal{L}/\partial\bm{b}^{(1)}$, $\partial\mathcal{L}/\partial\bm{W}^{(2)}$,
-$\partial\mathcal{L}/\partial b^{(2)}$.
+Verificar los cálculos de la Sección~\ref{sec:oscilador6} para el MLP
+$(1, 3, 1)$ con los parámetros dados, entrada $x = 0.5$ y dato
+$y = \sin(2\pi \times 0.5) = 0$.
 
 \medskip\noindent\textit{Solución.}
-Del Ejercicio Resuelto~\ref{ej:forward_manual}: $\bm{z}^{(1)} = (-1,3,-2)^\top$,
-$\bm{a}^{(1)} = (0,3,0)^\top$, $z^{(2)} = 3$, $a^{(2)} = 3$.
-Pérdida MSE: $\mathcal{L} = (3-1.5)^2 = 2.25$.
+$\bm{z}^{(1)} = (2(0.5)-1, -0.5+0.5, 0.25-0.3)^\top = (0, 0, -0.05)^\top$.
+$\bm{a}^{(1)} = \text{ReLU}(\bm{z}^{(1)}) = (0, 0, 0)^\top$.
+$z^{(2)} = 0$. $\hat{y} = 0$. $\mathcal{L} = (0-0)^2 = 0$.
 
-\textbf{BP1:} $\delta^{(2)} = \partial\mathcal{L}/\partial z^{(2)} = 2(3-1.5) = 3$.
+BP1: $\delta^{(2)} = 2(0-0) = 0$.
 
-\textbf{BP3-BP4 capa 2:}
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{W}^{(2)}}
-  = \delta^{(2)}\bm{a}^{(1)\top} = 3(0,3,0) = (0,9,0),
-\]
-\[
-  \frac{\partial\mathcal{L}}{\partial b^{(2)}} = 3.
-\]
-
-\textbf{BP2:}
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{a}^{(1)}}
-  = \bm{W}^{(2)\top}\delta^{(2)} = 3(1,1,-1)^\top = (3,3,-3)^\top.
-\]
-\[
-  \bm{\delta}^{(1)} = \frac{\partial\mathcal{L}}{\partial\bm{a}^{(1)}} \odot
-  \mathrm{ReLU}'(\bm{z}^{(1)})
-  = (3,3,-3)^\top \odot (0,1,0)^\top = (0,3,0)^\top.
-\]
-(La primera y tercera neurona estaban inactivas: gradiente cero.)
-
-\textbf{BP3-BP4 capa 1:}
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{W}^{(1)}}
-  = \bm{\delta}^{(1)}\bm{x}^\top
-  = \begin{pmatrix}0\\3\\0\end{pmatrix}(1,2)
-  = \begin{pmatrix}0&0\\3&6\\0&0\end{pmatrix}.
-\]
-\[
-  \frac{\partial\mathcal{L}}{\partial\bm{b}^{(1)}} = \bm{\delta}^{(1)} = (0,3,0)^\top.
-\]
-Solo la segunda neurona de la capa oculta (activa) recibe actualización. $\square$
+Todos los gradientes son cero: la pérdida es exactamente cero para
+este dato (por coincidencia: $\sin(\pi) = 0$ y la red predice $0$).
+No se produce ninguna actualización. $\square$
 \end{ejercicio}
 
 \begin{ejercicio}
 \label{ej:bp_batchnorm}
 \textbf{(Backpropagation a través de batch normalization).}
 
-Derivar la regla de backpropagation para la normalización por lote escalar
-(una sola característica por simplicidad): dado $z^{(i)}$ para $i=1,\ldots,B$,
-la operación es $\hat{z}^{(i)} = (z^{(i)}-\mu)/\sqrt{s^2+\varepsilon}$ con
-$\mu = \frac{1}{B}\sum_i z^{(i)}$ y $s^2 = \frac{1}{B}\sum_i(z^{(i)}-\mu)^2$.
-Dado $\bar{\hat{z}}^{(i)} = \partial\mathcal{L}/\partial\hat{z}^{(i)}$, calcular
-$\partial\mathcal{L}/\partial z^{(i)}$.
+Derivar la ecuación~\eqref{eq:bp_bn} para el gradiente de la
+pérdida respecto a las preactivaciones $z_j^{(i)}$ a través de la
+capa de batch normalization.
 
 \medskip\noindent\textit{Solución.}
-Se aplica la regla de la cadena teniendo en cuenta que $\mu$ y $s^2$ dependen de
-todos los $z^{(i)}$. Denotando $\sigma = \sqrt{s^2+\varepsilon}$:
-\[
-  \frac{\partial\mathcal{L}}{\partial z^{(k)}}
-  = \sum_i \bar{\hat{z}}^{(i)} \frac{\partial\hat{z}^{(i)}}{\partial z^{(k)}}.
-\]
-Se calculan las tres contribuciones de $z^{(k)}$ a $\hat{z}^{(i)}$:
+Sea $\hat{z}_j^{(i)} = (z_j^{(i)}-\mu_j)/\sigma_j$ con
+$\mu_j = \frac{1}{B}\sum_k z_j^{(k)}$ y
+$\sigma_j = \sqrt{s_j^2+\varepsilon}$.
+
+El gradiente $\partial\mathcal{L}/\partial z_j^{(i)}$ tiene tres
+contribuciones (por la dependencia de $\hat{z}_j^{(i)}$, $\mu_j$ y
+$s_j^2$ en $z_j^{(i)}$):
 \begin{align*}
-  \frac{\partial\hat{z}^{(i)}}{\partial z^{(k)}}
-  &= \frac{\partial}{\partial z^{(k)}}
-    \left[\frac{z^{(i)}-\mu}{\sigma}\right] \\
-  &= \frac{1}{\sigma}\frac{\partial(z^{(i)}-\mu)}{\partial z^{(k)}}
-   - \frac{z^{(i)}-\mu}{\sigma^2}\frac{\partial\sigma}{\partial z^{(k)}}.
+  \frac{\partial\mathcal{L}}{\partial z_j^{(i)}}
+  &= \frac{\partial\mathcal{L}}{\partial\hat{z}_j^{(i)}}
+  \frac{1}{\sigma_j}
+  + \frac{\partial\mathcal{L}}{\partial\mu_j}\frac{1}{B}
+  + \frac{\partial\mathcal{L}}{\partial s_j^2}
+  \frac{2(z_j^{(i)}-\mu_j)}{B}.
 \end{align*}
-Los tres términos son: $\partial\mu/\partial z^{(k)} = 1/B$,
-$\partial(z^{(i)}-\mu)/\partial z^{(k)} = \delta_{ik} - 1/B$, y
-$\partial\sigma/\partial z^{(k)} = (z^{(k)}-\mu)/(B\sigma)$. Sumando:
-\[
-  \frac{\partial\mathcal{L}}{\partial z^{(k)}}
-  = \frac{1}{B\sigma}\left[B\bar{\hat{z}}^{(k)}
-  - \sum_i\bar{\hat{z}}^{(i)}
-  - \hat{z}^{(k)}\sum_i\bar{\hat{z}}^{(i)}\hat{z}^{(i)}\right].
-\]
-Los tres términos tienen interpretación clara: el primero es la contribución
-directa de $z^{(k)}$ a $\hat{z}^{(k)}$; el segundo es la corrección por el efecto
-de $z^{(k)}$ sobre la media; el tercero es la corrección por el efecto sobre la
-varianza. $\square$
+Con $\bar{\hat{z}}_j^{(i)} = \gamma_j
+\partial\mathcal{L}/\partial\tilde{z}_j^{(i)}$ y calculando las
+derivadas respecto a $\mu_j$ y $s_j^2$, se llega
+a~\eqref{eq:bp_bn}. $\square$
 \end{ejercicio}
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios propuestos}
 \addcontentsline{toc}{section}{Ejercicios propuestos}
-%───────────────────────────────────────────────────────────────────────────────
-
-\begin{ejercicio}
-\textbf{(Modo forward vs.\ modo reverso).}
-Sea $f:\mathbb{R}^3 \to \mathbb{R}^2$, $f(\bm{x}) = (\sin(x_1x_2), x_2^2+x_3)$.
-\begin{enumerate}[label=(\alph*)]
-  \item Calcule el jacobiano $\bm{J}_f(\bm{x})$ en el punto $(1,\pi/2,0)$.
-  \item Para calcular $\bm{J}_f\bm{v}$ con $\bm{v}=(1,0,0)^\top$ (modo forward),
-        ¿cuántas operaciones elementales se necesitan además de evaluar $f$?
-  \item Para calcular $\bm{J}_f^\top\bm{u}$ con $\bm{u}=(1,0)^\top$ (modo reverso),
-        ¿cuántas operaciones adicionales se necesitan?
-  \item Si se necesita el jacobiano completo, ¿cuántas pasadas en modo forward
-        y cuántas en modo reverso se necesitan? ¿Cuál es más eficiente?
-\end{enumerate}
-\end{ejercicio}
-
-\begin{ejercicio}
-\textbf{(La ecuación adjunta para una red recurrente simple).}
-Una red recurrente de una capa (\textit{Elman network}) tiene la dinámica:
-$\bm{h}^{(t)} = \tanh(\bm{W}_h\bm{h}^{(t-1)}+\bm{W}_x\bm{x}^{(t)}+\bm{b})$
-para $t = 1,\ldots,T$, con $\bm{h}^{(0)} = \bm{0}$ y pérdida
-$\mathcal{L} = \ell(\bm{h}^{(T)},\bm{y})$.
-\begin{enumerate}[label=(\alph*)]
-  \item Escriba el lagrangiano aumentado de este sistema con los multiplicadores
-        $\bm{\lambda}^{(t)}$.
-  \item Derive la ecuación adjunta para $\bm{\lambda}^{(t)}$ a partir de la
-        condición de estacionariedad respecto a $\bm{h}^{(t)}$.
-  \item Identifique la condición terminal $\bm{\lambda}^{(T)}$.
-  \item Calcule $\partial\mathcal{L}/\partial\bm{W}_h$ a partir de
-        $\bm{\lambda}^{(t)}$. ¿Reconoce este resultado en la literatura de RNNs?
-\end{enumerate}
-\end{ejercicio}
-
-\begin{ejercicio}
-\textbf{(Backpropagation para la pérdida cross-entropy con softmax).}
-Sea la capa de salida $z_k^{(L)} = (\bm{W}^{(L)}\bm{a}^{(L-1)})_k$ y la función
-$\hat{p}_k = e^{z_k}/\sum_j e^{z_j}$ (softmax) con pérdida
-$\mathcal{L} = -\sum_k y_k\log\hat{p}_k$.
-\begin{enumerate}[label=(\alph*)]
-  \item Calcule $\partial\hat{p}_k/\partial z_j$ para $k=j$ y $k\neq j$
-        (la jacobiana del softmax es densa pero tiene estructura especial).
-  \item Calcule $\partial\mathcal{L}/\partial z_j = \sum_k (\partial\mathcal{L}/
-        \partial\hat{p}_k)(\partial\hat{p}_k/\partial z_j)$.
-  \item Simplifique para mostrar que $\partial\mathcal{L}/\partial\bm{z}^{(L)}
-        = \hat{\bm{p}} - \bm{y}$.
-  \item Compare el costo de calcular $\partial\mathcal{L}/\partial\bm{z}^{(L)}$
-        directamente (parte c) vs.\ calcular primero $\partial\mathcal{L}/
-        \partial\hat{\bm{p}}$ y luego aplicar la jacobiana del softmax
-        (parte b). ¿Por qué los frameworks implementan la versión combinada?
-\end{enumerate}
-\end{ejercicio}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
 \textbf{(Verificación del gradiente por diferencias finitas).}
-Una técnica estándar para verificar una implementación de backpropagation es
-comparar con diferencias finitas.
 \begin{enumerate}[label=(\alph*)]
-  \item Implemente el forward pass y el backward pass manual del Algoritmo~\ref{alg:backprop}
-        para el MLP $(2,3,1)$ con ReLU.
-  \item Para un conjunto aleatorio de parámetros y una entrada aleatoria,
-        calcule $\partial\mathcal{L}/\partial\theta_j$ por diferencias finitas
-        centradas para cinco parámetros elegidos al azar.
-  \item Compare con los valores obtenidos por backpropagation. El error relativo
-        debe ser $O(h^2) \approx 10^{-8}$ para $h = 10^{-4}$.
-  \item ¿Qué error relativo se obtiene con $h = 10^{-1}$? ¿Y con $h = 10^{-12}$?
-        Explique el comportamiento en ambos extremos.
+  \item Implementar forward y backward manual del
+        Algoritmo~\ref{alg:backprop} para el MLP $(1, 3, 1)$ con ReLU.
+  \item Para parámetros y entrada del oscilador ($x = 0.25$, $y = 1$),
+        calcular $\partial\mathcal{L}/\partial\theta_j$ por diferencias
+        finitas centradas ($h = 10^{-5}$) para 5 parámetros.
+  \item Comparar con BP. Error relativo esperado: $O(h^2) \sim 10^{-10}$.
+  \item ¿Qué ocurre con $h = 10^{-1}$ (truncación) y $h = 10^{-12}$
+        (cancelación catastrófica)?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
-\textbf{(Conexiones de salto y backpropagation).}
-Una red residual de dos bloques tiene la estructura:
-$\bm{a}^{(2)} = \bm{a}^{(0)} + F(\bm{a}^{(0)};\bm{W}^{(1)})$,
-$\bm{a}^{(4)} = \bm{a}^{(2)} + F(\bm{a}^{(2)};\bm{W}^{(2)})$,
-donde $F(\bm{a};\bm{W}) = \mathrm{ReLU}(\bm{W}\bm{a})$.
+\textbf{(Softmax + entropía cruzada).}
 \begin{enumerate}[label=(\alph*)]
-  \item Dibuje el grafo computacional de esta red identificando todos los nodos.
-  \item Aplique el modo reverso para calcular $\partial\mathcal{L}/\partial\bm{a}^{(0)}$.
-        ¿Cuántos caminos distintos conectan $\mathcal{L}$ con $\bm{a}^{(0)}$?
-  \item Muestre que el gradiente incluye el término identidad:
-        $\partial\mathcal{L}/\partial\bm{a}^{(0)} = \partial\mathcal{L}/\partial\bm{a}^{(4)}
-        + (\ldots)$. ¿Qué implica esto para el problema del gradiente que se desvanece?
-  \item Compare con la red sin conexiones de salto de la misma profundidad.
+  \item Calcular el jacobiano del softmax:
+        $\partial\hat{p}_j/\partial z_k = \hat{p}_j(\delta_{jk}-\hat{p}_k)$.
+  \item Combinar con $\partial\ell/\partial\hat{p}_j = -y_j/\hat{p}_j$
+        para obtener~\eqref{eq:bp_softmax_ce}.
+  \item ¿Por qué los frameworks implementan la versión combinada en lugar
+        de aplicar el jacobiano del softmax por separado?
 \end{enumerate}
 \end{ejercicio}
+
+\begin{ejercicio}
+\textbf{(Conexiones de salto y el gradiente).}
+Red residual: $\bm{a}^{(2)} = \bm{a}^{(0)} + F(\bm{a}^{(0)};\bm{W}^{(1)})$,
+$\bm{a}^{(4)} = \bm{a}^{(2)} + F(\bm{a}^{(2)};\bm{W}^{(2)})$, con
+$F(\bm{a};\bm{W}) = \text{ReLU}(\bm{W}\bm{a})$.
+\begin{enumerate}[label=(\alph*)]
+  \item Dibujar el grafo computacional.
+  \item Calcular $\partial\mathcal{L}/\partial\bm{a}^{(0)}$ por el modo
+        reverso. ¿Cuántos caminos conectan $\mathcal{L}$ con $\bm{a}^{(0)}$?
+  \item Mostrar que el gradiente incluye un término identidad.
+        ¿Qué implica para el gradiente que se desvanece?
+\end{enumerate}
+\end{ejercicio}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{El oscilador: backpropagation desde cero vs.\ PyTorch}
+\label{ejcomp:oscilador6}
+\textbf{Objetivo:} implementar el Algoritmo~\ref{alg:backprop} desde cero
+en NumPy para el MLP del oscilador y verificar contra PyTorch/JAX y contra
+diferencias finitas.
+
+\medskip\noindent\textbf{Datos:}
+MLP $(1, 32, 1)$ con ReLU, inicialización de He, $N = 25$ puntos del
+oscilador $\sin(2\pi t) + \varepsilon_i$, $\sigma = 0.15$.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Implementar \texttt{forward(params, x)} que devuelva la salida y
+        almacene $\{(\bm{z}^{(l)}, \bm{a}^{(l)})\}$.
+  \item Implementar \texttt{backward(cache, y)} que aplique BP1–BP4 y
+        devuelva los gradientes.
+  \item Para una muestra $(t_1, y_1) = (0.25, \sin(\pi/2)+\varepsilon_1)$:
+        comparar los gradientes de la implementación manual con
+        \texttt{loss.backward()} de PyTorch. Error relativo esperado:
+        $< 10^{-6}$.
+  \item Comparar con diferencias finitas centradas ($h = 10^{-5}$) para
+        10 parámetros elegidos al azar. Error esperado: $< 10^{-7}$.
+  \item Ejecutar 500 iteraciones de SGD ($\eta = 10^{-3}$, $B = 4$) usando
+        la implementación manual. Verificar que
+        $\mathcal{L}_{\text{train}}$ decrece.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+Error relativo BP vs.\ PyTorch: $< 10^{-6}$ (diferencias solo por orden
+de operaciones flotantes).
+Error relativo BP vs.\ diferencias finitas: $< 10^{-7}$ (errores mayores
+indican un bug).
+Después de 500 iteraciones: $\mathcal{L}_{\text{train}} < 0.1$.
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{Flujo de gradientes en profundidad}
+\label{ejcomp:vanishing}
+\textbf{Objetivo:} medir empíricamente el gradiente que se desvanece y
+verificar que la inicialización de He lo resuelve para ReLU.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item MLPs de profundidad $L = 5, 10, 20$, anchura $m = 64$, activación
+        sigmoide, inicialización $\mathcal{N}(0, 1/m)$.
+  \item Para entrada y pérdida aleatorias, registrar
+        $\|\partial\mathcal{L}/\partial\bm{W}^{(l)}\|_F$ por capa.
+  \item Graficar
+        $\log\|\partial\mathcal{L}/\partial\bm{W}^{(l)}\|_F$ vs.\ $l$.
+        ¿La pendiente es consistente con atenuación exponencial?
+  \item Repetir con ReLU + He. ¿Desaparece la atenuación?
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+Sigmoide: pendiente $\approx -0.15$ por capa (factor $\sim 0.86$ por capa,
+consistente con $\max|\sigma'| = 0.25$ y $m\sigma_w^2 = 1$).
+ReLU + He: pendiente $\approx 0$ (gradiente estable).
+\end{ejerciciocomp}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+El algoritmo de backpropagation fue redescubierto independientemente varias
+veces. Las referencias más influyentes son Werbos
+(1974)~\cite{werbos1974beyond}, que lo derivó en el contexto del control
+óptimo en su tesis doctoral, y Rumelhart, Hinton y Williams
+(1986)~\cite{rumelhart1986learning}, que lo popularizaron demostrando su
+eficacia para aprender representaciones internas. La conexión con el
+principio de Pontryagin~\cite{pontryagin1962mathematical} es bien conocida
+en la comunidad de control; la formulación moderna del método adjunto
+continuo puede encontrarse en Bryson y Ho
+(1975)~\cite{bryson1975applied}.
+
+La diferenciación automática como disciplina fue formalizada por Griewank
+y Walther (2008)~\cite{griewank2008evaluating}. Los dos modos y sus
+complejidades relativas están tratados en detalle en ese texto.
+
+La conexión entre backpropagation y el método adjunto en sismología fue
+establecida por Tarantola (1984)~\cite{tarantola1984inversion} en la
+inversión de forma de onda completa. El uso del operador adjunto en
+problemas inversos de espectroscopía y óptica es estándar; véase
+Hansen (1998)~\cite{hansen1998rank} para una perspectiva de problemas
+inversos y Vogel (2002)~\cite{vogel2002computational} para métodos
+adjuntos en problemas inversos computacionales.
+
+El gradient checkpointing fue propuesto por Chen et al.\
+(2016)~\cite{chen2016training} con la cota $O(\sqrt{L})$. La rediscusión
+en el contexto de Neural ODEs por Chen et al.\
+(2018)~\cite{chen2018neural} cerró el círculo: el método adjunto continuo
+de Pontryagin aplicado al MLP como ODE discreta.
+
+La batch normalization: Ioffe y Szegedy
+(2015)~\cite{ioffe2015batch}.
+\end{notasbib}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ESTRELLA POLAR — Sección independiente
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{estrella}{El método adjunto en el sustituto neutrónico}
+\label{sec:estrella6}
+
+\textbf{El problema de la cinética inversa diferenciable.}
+El sustituto MLP del reactor (Capítulos~\ref{ch:cap4}--\ref{ch:cap5})
+aproxima $f_{\text{MLP}}(\bm{u}) \approx \bm{\Phi}(\bm{u})$. En
+análisis de seguridad se necesita el jacobiano
+$\partial\bm{\Phi}/\partial\bm{u} \in \mathbb{R}^{K \times n}$ (cómo
+cambia el flujo ante perturbaciones de los parámetros operacionales). Con
+un código de Monte Carlo, calcular este jacobiano requeriría $n$
+simulaciones adicionales (una por parámetro perturbado).
+
+\textbf{El backward pass como solución.}
+Con el sustituto diferenciable, el jacobiano se obtiene directamente.
+Para $K = 500$ nodos de flujo y $n = 5$ parámetros operacionales, el modo
+forward de AD es la elección correcta: $n = 5$ pasadas forward dan las 5
+columnas del jacobiano, vs.\ $K = 500$ pasadas reverso para las filas. Es
+la situación donde $n \ll K$ y el modo forward gana.
+
+\textbf{Análisis de sensibilidad de seguridad.}
+Las sensibilidades $\partial k_{\text{eff}}/\partial\sigma_x$ (cómo cambia
+la reactividad ante perturbaciones en secciones eficaces) se obtienen
+analíticamente via el método adjunto sobre el sustituto. El código TSUNAMI
+(SCALE) implementa exactamente el mismo método sobre el operador de
+transporte de Boltzmann: es el backward pass sobre la ecuación de difusión
+neutrónica en lugar del grafo computacional del MLP.
+
+\textbf{Conexión con el capítulo.}
+BP2 es la ecuación adjunta discreta del forward pass. En el sustituto
+neutrónico, propaga las sensibilidades del flujo desde los nodos de salida
+hasta los parámetros de entrada: cada capa aplica $\bm{W}^{(l)\top}$ (el
+operador adjunto de la transformación forward) ponderada por $\sigma'$.
+Es textualmente el principio de Pontryagin sobre el sistema dinámico
+discreto del MLP.
+\end{estrella}
 
 \printbibliography[heading=subbibliography]
