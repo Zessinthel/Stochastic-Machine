@@ -308,6 +308,44 @@ varianza no sesgado (BLUE, teorema de Gauss-Markov) cuando el ruido es
 gaussiano e independiente; el Capítulo~\ref{ch:cap7} lo derivará desde la
 perspectiva bayesiana.
 
+
+\begin{algorithm}[H]
+\caption{Ajuste por mínimos cuadrados vía SVD}
+\label{alg:mc_svd}
+\KwIn{Datos $\{(\bm{x}_i, y_i)\}_{i=1}^N$, funciones base
+      $\phi_1, \ldots, \phi_p$}
+\KwOut{Coeficientes $\bm{\theta}^*$, número de condicionamiento
+      $\kappa$}
+ 
+\tcp{--- Construir la matriz de diseño ---}
+\For{$i \leftarrow 1$ \KwTo $N$}{
+  \For{$j \leftarrow 1$ \KwTo $p$}{
+    $\Phi_{ij} \leftarrow \phi_j(\bm{x}_i)$\;
+  }
+}
+ 
+\tcp{--- Descomposición en valores singulares ---}
+$\bm{U}, \bm{\Sigma}, \bm{W}^\top \leftarrow \mathrm{SVD}(\bm{\Phi})$
+\tcp*{$\bm{\Phi} = \bm{U}\bm{\Sigma}\bm{W}^\top$}
+$\kappa \leftarrow \sigma_1 / \sigma_r$
+\tcp*{$r = \mathrm{rango}(\bm{\Phi})$}
+ 
+\tcp{--- Solución por pseudoinversa ---}
+\For{$i \leftarrow 1$ \KwTo $r$}{
+  $c_i \leftarrow (\bm{u}_i^\top\bm{y}) / \sigma_i$
+  \tcp*{proyección / valor singular}
+}
+$\bm{\theta}^* \leftarrow \sum_{i=1}^r c_i\,\bm{w}_i$\;
+ 
+\Return $\bm{\theta}^*$, $\kappa$\;
+\end{algorithm}
+ 
+El algoritmo tiene costo $O(Np^2)$ (dominado por la SVD) y es
+numéricamente estable: no forma explícitamente la matriz de Gram
+$\bm{\Phi}^\top\bm{\Phi}$, cuyo condicionamiento es $\kappa^2$. En la
+práctica, la función \texttt{numpy.linalg.lstsq} implementa exactamente
+este procedimiento.
+
 \subsection{Interpolación y el fenómeno de Runge}
 \label{subsec:interpolacion}
 

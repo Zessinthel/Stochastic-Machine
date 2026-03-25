@@ -190,6 +190,32 @@ pasos de Euler y la red profunda es la discretización de un sistema
 dinámico continuo. Esta conexión se desarrolla completamente en el
 Capítulo~\ref{ch:cap9}.
 
+\begin{algorithm}[H]
+\caption{Forward pass del MLP}
+\label{alg:forward}
+\KwIn{Entrada $\bm{x}$, parámetros
+      $\{\bm{W}^{(l)}, \bm{b}^{(l)}\}_{l=1}^L$}
+\KwOut{Salida $\hat{y} = f(\bm{x};\bm{\theta})$, cache de
+      activaciones $\{\bm{z}^{(l)}, \bm{a}^{(l)}\}_{l=1}^L$}
+ 
+$\bm{a}^{(0)} \leftarrow \bm{x}$\;
+\For{$l \leftarrow 1$ \KwTo $L$}{
+  $\bm{z}^{(l)} \leftarrow \bm{W}^{(l)}\bm{a}^{(l-1)}
+  + \bm{b}^{(l)}$
+  \tcp*{transformación afín}
+  $\bm{a}^{(l)} \leftarrow \sigma^{(l)}(\bm{z}^{(l)})$
+  \tcp*{activación no lineal}
+}
+\Return $\bm{a}^{(L)}$,
+  $\{\bm{z}^{(l)}, \bm{a}^{(l)}\}_{l=1}^L$\;
+\end{algorithm}
+ 
+El forward pass almacena todas las activaciones intermedias
+$\{\bm{z}^{(l)}, \bm{a}^{(l)}\}$: el Capítulo~\ref{ch:cap6} mostrará que
+el backward pass las necesita para calcular los gradientes. El costo es
+$O(\sum_l n_l n_{l-1})$ operaciones flotantes. La última capa es lineal
+(sin activación) para problemas de regresión: $\sigma^{(L)} = \text{id}$.
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{El teorema de aproximación universal}
 \label{sec:universal}

@@ -370,6 +370,50 @@ $\lambda^*$, que balancea ambos extremos. Esta técnica es estándar en
 problemas inversos en geofísica, óptica y tomografía.
 \end{observacion}
 
+\begin{algorithm}[H]
+\caption{Ajuste regularizado de Tikhonov con selección de $\lambda$
+         por curva L}
+\label{alg:tikhonov}
+\KwIn{Datos $(\bm{\Phi}, \bm{y})$, conjunto de candidatos
+      $\{\lambda_1, \ldots, \lambda_M\}$}
+\KwOut{Hiperparámetro óptimo $\lambda^*$, solución
+      $\hat{\bm{\theta}}_{\lambda^*}$}
+ 
+\tcp{--- SVD de la matriz de diseño ---}
+$\bm{U}, \bm{\Sigma}, \bm{W}^\top \leftarrow \mathrm{SVD}(\bm{\Phi})$\;
+ 
+\tcp{--- Evaluar cada candidato ---}
+\For{$m \leftarrow 1$ \KwTo $M$}{
+  \tcp{Factores de filtro}
+  \For{$i \leftarrow 1$ \KwTo $r$}{
+    $f_i \leftarrow \sigma_i^2 / (\sigma_i^2 + N\lambda_m)$\;
+  }
+  \tcp{Solución filtrada}
+  $\hat{\bm{\theta}}_m \leftarrow \sum_{i=1}^r
+  f_i\,(\bm{u}_i^\top\bm{y}/\sigma_i)\,\bm{w}_i$\;
+  \tcp{Norma de la solución y residuo}
+  $\rho_m \leftarrow \|\bm{\Phi}\hat{\bm{\theta}}_m - \bm{y}\|_2$
+  \tcp*{residuo}
+  $\eta_m \leftarrow \|\hat{\bm{\theta}}_m\|_2$
+  \tcp*{norma de la solución}
+}
+ 
+\tcp{--- Selección por curva L: máxima curvatura ---}
+$\lambda^* \leftarrow \argmax_{\lambda_m}\;
+\kappa_{\text{curva}}(\log\rho_m, \log\eta_m)$
+\tcp*{curvatura discreta}
+$\hat{\bm{\theta}}_{\lambda^*} \leftarrow$ solución correspondiente\;
+ 
+\Return $\lambda^*$, $\hat{\bm{\theta}}_{\lambda^*}$\;
+\end{algorithm}
+ 
+La curvatura discreta de la curva L en el punto $m$ se estima como la
+curvatura del círculo que pasa por los puntos $(m{-}1, m, m{+}1)$ en el
+plano $(\log\rho, \log\eta)$. El codo de la L es el punto de máxima
+curvatura: separa el régimen dominado por la varianza ($\lambda$ pequeño,
+$\eta$ grande) del dominado por el sesgo ($\lambda$ grande, $\rho$ grande).
+
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{El oscilador como laboratorio: regularización del ajuste ruidoso}
 \label{sec:oscilador2}

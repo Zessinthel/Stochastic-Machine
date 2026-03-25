@@ -341,6 +341,42 @@ favorece las regiones de menor curvatura). Ambos efectos son cruciales
 para entender por qué el entrenamiento de redes neuronales funciona en
 la práctica.
 
+\begin{algorithm}[H]
+\caption{Descenso de gradiente con criterio de convergencia}
+\label{alg:gd}
+\KwIn{Pérdida $\mathcal{L}$, gradiente $\nabla\mathcal{L}$,
+      tasa $\eta$, inicial $\bm{\theta}^{(0)}$, tolerancia
+      $\varepsilon$, máximo $K$}
+\KwOut{$\bm{\theta}^*$, historial $\{\mathcal{L}^{(k)}\}$}
+ 
+$k \leftarrow 0$\;
+\Repeat{$\|\nabla\mathcal{L}(\bm{\theta}^{(k)})\|_2 < \varepsilon$
+        \textbf{or} $k \geq K$}{
+  \tcp{Evaluar pérdida y gradiente}
+  $\mathcal{L}^{(k)} \leftarrow \mathcal{L}(\bm{\theta}^{(k)})$\;
+  $\bm{g}^{(k)} \leftarrow \nabla\mathcal{L}(\bm{\theta}^{(k)})$\;
+ 
+  \tcp{Paso de Euler para el flujo de gradiente}
+  $\bm{\theta}^{(k+1)} \leftarrow \bm{\theta}^{(k)}
+  - \eta\,\bm{g}^{(k)}$\;
+ 
+  $k \leftarrow k + 1$\;
+}
+ 
+$\bm{\theta}^* \leftarrow \bm{\theta}^{(k)}$\;
+\Return $\bm{\theta}^*$, $\{\mathcal{L}^{(0)}, \ldots,
+        \mathcal{L}^{(k)}\}$\;
+\end{algorithm}
+ 
+El algoritmo es literalmente el integrador de Euler aplicado a la ODE
+$\dot{\bm{\theta}} = -\nabla\mathcal{L}(\bm{\theta})$. La condición de
+parada $\|\nabla\mathcal{L}\| < \varepsilon$ detecta puntos críticos
+(mínimos, máximos o saddlepoints); no distingue entre ellos. El historial
+$\{\mathcal{L}^{(k)}\}$ debe ser monótonamente decreciente si
+$\eta < 2/\mu_{\max}$ (condición de estabilidad de Euler).
+La tasa de convergencia depende del condicionamiento $\kappa$ del hessiano
+(Proposición~\ref{prop:conv_cuad}).
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{El oscilador como laboratorio: paisaje convexo vs. no convexo}
 \label{sec:oscilador3}

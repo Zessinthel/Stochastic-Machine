@@ -629,6 +629,66 @@ cuasi-Newton diagonal con costo $O(p)$ en lugar de $O(p^2)$. Adam es el
 optimizador estándar para la mayoría de las aplicaciones de aprendizaje
 profundo.
 
+\begin{algorithm}[H]
+\caption{Entrenamiento con Adam: bucle mínimo}
+\label{alg:adam_loop}
+\KwIn{Datos $\mathcal{D} = \{(\bm{x}_i, y_i)\}_{i=1}^N$,
+      MLP $f(\cdot;\bm{\theta})$, hiperparámetros
+      $\eta, \beta_1, \beta_2, \varepsilon, B$, épocas $E$}
+\KwOut{Parámetros entrenados $\bm{\theta}$}
+ 
+\tcp{--- Inicialización (He para ReLU, Xavier para tanh) ---}
+$\bm{\theta} \leftarrow \mathrm{HeInit}$\;
+$\bm{m} \leftarrow \bm{0}$,\;
+$\bm{v} \leftarrow \bm{0}$,\;
+$k \leftarrow 0$\;
+ 
+\For{$e \leftarrow 1$ \KwTo $E$}{
+  Permutar $\mathcal{D}$ aleatoriamente\;
+  \ForEach{mini-lote $\mathcal{B} \subset \mathcal{D}$
+           de tamaño $B$}{
+    $k \leftarrow k + 1$\;
+ 
+    \tcp{Forward pass (Algoritmo~\ref{alg:forward})}
+    $\hat{\bm{y}}_{\mathcal{B}}, \mathrm{cache} \leftarrow
+    \mathrm{forward}(\bm{\theta}, \bm{X}_{\mathcal{B}})$\;
+ 
+    \tcp{Pérdida}
+    $\mathcal{L} \leftarrow \frac{1}{B}\sum_{i \in \mathcal{B}}
+    \ell(\hat{y}_i, y_i)$\;
+ 
+    \tcp{Backward pass (Algoritmo~\ref{alg:backprop}, Cap.~\ref{ch:cap6})}
+    $\bm{g} \leftarrow \mathrm{backward}(\mathrm{cache},
+    \bm{y}_{\mathcal{B}})$\;
+ 
+    \tcp{Actualización Adam}
+    $\bm{m} \leftarrow \beta_1\bm{m} + (1-\beta_1)\bm{g}$\;
+    $\bm{v} \leftarrow \beta_2\bm{v} + (1-\beta_2)\bm{g}^{\odot 2}$\;
+    $\hat{\bm{m}} \leftarrow \bm{m}/(1-\beta_1^k)$
+    \tcp*{corrección de sesgo}
+    $\hat{\bm{v}} \leftarrow \bm{v}/(1-\beta_2^k)$\;
+    $\bm{\theta} \leftarrow \bm{\theta}
+    - \eta\,\hat{\bm{m}}/(\sqrt{\hat{\bm{v}}}+\varepsilon)$\;
+  }
+}
+ 
+\Return $\bm{\theta}$\;
+\end{algorithm}
+ 
+Este es el bucle de entrenamiento \emph{mínimo}: no incluye validación,
+early stopping ni calendarios de tasa de aprendizaje. Esos elementos se
+añaden en el Capítulo~\ref{ch:cap8} (Algoritmo~\ref{alg:ciclo}). El
+backward pass se refiere al Algoritmo~\ref{alg:backprop} del
+Capítulo~\ref{ch:cap6}; si el lector usa un framework (PyTorch, JAX), la
+llamada es \texttt{loss.backward()} y el framework ejecuta BP1--BP4
+automáticamente.
+ 
+Los hiperparámetros estándar son $\beta_1 = 0.9$, $\beta_2 = 0.999$,
+$\varepsilon = 10^{-8}$, $B \in [32, 512]$, $\eta \in [10^{-4}, 10^{-3}]$.
+La corrección de sesgo en las líneas de $\hat{\bm{m}}$ y $\hat{\bm{v}}$
+compensa la inicialización en cero de $\bm{m}$ y $\bm{v}$: sin ella,
+las primeras iteraciones subestiman los momentos.
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Calendarios de tasa de aprendizaje}
 \label{sec:lr_schedule}

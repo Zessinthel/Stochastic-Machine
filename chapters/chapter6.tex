@@ -228,12 +228,18 @@ $\delta_j^{(L)} = \sum_k (\partial\ell/\partial a_k^{(L)})
 Para la capa de salida lineal (regresión):
 $\sigma'^{(L)} = 1$ y $\bm{\delta}^{(L)} = \nabla_{\bm{a}^{(L)}}\ell$.
 
-\textbf{BP2:} $\delta_j^{(l)} = \partial\mathcal{L}/\partial z_j^{(l)} =
-\sum_k (\partial\mathcal{L}/\partial z_k^{(l+1)})
-(\partial z_k^{(l+1)}/\partial a_j^{(l)})
-(\partial a_j^{(l)}/\partial z_j^{(l)}) =
-\sum_k \delta_k^{(l+1)} W_{kj}^{(l+1)} \sigma'^{(l)}(z_j^{(l)}) =
-({\bm{W}^{(l+1)}}^\top\bm{\delta}^{(l+1)})_j \cdot \sigma'^{(l)}(z_j^{(l)})$.
+\textbf{BP2:} Por la regla de la cadena:
+\begin{align*}
+  \delta_j^{(l)}
+  &= \frac{\partial\mathcal{L}}{\partial z_j^{(l)}}
+  = \sum_k \frac{\partial\mathcal{L}}{\partial z_k^{(l+1)}}
+  \frac{\partial z_k^{(l+1)}}{\partial a_j^{(l)}}
+  \frac{\partial a_j^{(l)}}{\partial z_j^{(l)}} \\
+  &= \sum_k \delta_k^{(l+1)}\, W_{kj}^{(l+1)}\,
+  \sigma'^{(l)}(z_j^{(l)})
+  = \bigl({\bm{W}^{(l+1)}}^\top\bm{\delta}^{(l+1)}\bigr)_j
+  \cdot \sigma'^{(l)}(z_j^{(l)}).
+\end{align*}
 
 \textbf{BP3–BP4:} consecuencia de la
 Proposición~\ref{prop:bp_afin} con $\bar{\bm{z}} = \bm{\delta}^{(l)}$,

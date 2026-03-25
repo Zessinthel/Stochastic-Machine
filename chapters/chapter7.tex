@@ -1,1328 +1,900 @@
-%═══════════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════════════════
+% CAPÍTULO 7 — PROBABILIDAD, INFERENCIA Y EL FUNDAMENTO ESTADÍSTICO
+%              DEL APRENDIZAJE
+% ═══════════════════════════════════════════════════════════════════════════════
+% Cambios principales respecto a la versión anterior:
+%   1. Apertura conectada con Caps. 5–6: "todo era inferencia disfrazada".
+%   2. Oscilador: MLE = MSE del Cap. 1, posterior bayesiano con bandas de
+%      incertidumbre, MC Dropout para extrapolación.
+%   3. Proposición formal: Gibbs del Cap. 5 = máxima entropía de Jaynes.
+%   4. Cotas VC comprimidas (~1 página, no ~2).
+%   5. Tres algoritmos: MLE/MAP, VAE (reparametrización), MC Dropout.
+%   6. Transición al Cap. 8: "las cotas VC fallan; el Cap. 8 explica por qué".
+%   7. Notación Γ consistente con Cap. 5.
+%   8. Contenido fuerte preservado: ELBO = Helmholtz, truco de reparametrización,
+%      Fisher ↔ Adam, ejercicios KL, dropout como variacional.
+%   9. Estrella Polar independiente al final.
+% ═══════════════════════════════════════════════════════════════════════════════
+
 \chapter{Probabilidad, inferencia y el fundamento estadístico del aprendizaje}
 \label{ch:cap7}
-%═══════════════════════════════════════════════════════════════════════════════
 
-Los seis capítulos anteriores construyeron la maquinaria técnica del aprendizaje
-supervisado: la familia paramétrica, la pérdida, el optimizador, el gradiente.
-Pero esa maquinaria operó con un lenguaje implícito. Se minimizó la pérdida MSE
-sin preguntar por qué esa función y no otra. Se añadió regularización $\ell_2$
-sin justificar su forma. Se interpretó la tasa de aprendizaje como temperatura
-sin precisar de qué distribución.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El lenguaje oculto de los capítulos anteriores}
+\label{sec:apertura7}
+% ─────────────────────────────────────────────────────────────────────────────
 
-Este capítulo hace explícito ese lenguaje: el lenguaje de la probabilidad y la
-inferencia estadística. El resultado más importante del capítulo no es un teorema
-nuevo sino una re-lectura: la pérdida MSE es el logaritmo negativo de una
-verosimilitud gaussiana, la regularización $\ell_2$ es un prior gaussiano sobre
-los parámetros, la distribución de Gibbs del Capítulo~\ref{ch:cap5} es la distribución de
-máxima entropía bajo una restricción de energía media. Cada pieza que se construyó
-pragmáticamente tiene una justificación probabilística precisa.
-
-Este reencuadre no es cosmético. Abre tres puertas que los capítulos siguientes
-atravesarán: la cuantificación de incertidumbre (qué tan seguros estamos de las
-predicciones del modelo), la inferencia variacional (cómo aproximar distribuciones
-intratables), y el análisis de generalización (qué garantías formales existen
-sobre el comportamiento del modelo en datos nuevos). Las tres son imprescindibles
-para los modelos generativos del Capítulo~\ref{ch:cap12}.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{El aprendizaje automático como inferencia estadística}
-\label{sec:aprendizaje_inferencia}
 \dificultad{1}{1}
-%───────────────────────────────────────────────────────────────────────────────
+
+Los seis capítulos anteriores construyeron la maquinaria completa del
+aprendizaje supervisado: la familia paramétrica (Cap.~\ref{ch:cap1}), la
+regularización (Cap.~\ref{ch:cap2}), la geometría del paisaje
+(Cap.~\ref{ch:cap3}), la red neuronal (Cap.~\ref{ch:cap4}), el
+optimizador estocástico (Cap.~\ref{ch:cap5}) y el gradiente eficiente
+(Cap.~\ref{ch:cap6}). Pero esa maquinaria operó con un lenguaje implícito.
+Se minimizó la pérdida MSE sin preguntar por qué esa función y no otra. Se
+añadió regularización $\ell_2$ sin justificar su forma. Se interpretó la
+tasa de aprendizaje como temperatura sin precisar de qué distribución. Se
+dijo que la distribución estacionaria del SGD es la de Gibbs sin explicar
+por qué Gibbs y no otra.
+
+Este capítulo hace explícito ese lenguaje: el lenguaje de la probabilidad
+y la inferencia estadística. El resultado más importante no es un teorema
+nuevo sino una \emph{re-lectura}: la pérdida MSE es el logaritmo negativo
+de una verosimilitud gaussiana. La regularización $\ell_2$ es un prior
+gaussiano sobre los parámetros. La distribución de Gibbs del
+Capítulo~\ref{ch:cap5} es la distribución de máxima entropía bajo una
+restricción de energía media. Cada pieza que se construyó pragmáticamente
+tiene una justificación probabilística precisa.
+
+Este reencuadre abre tres puertas que los capítulos siguientes atravesarán:
+la cuantificación de incertidumbre (qué tan seguros estamos de las
+predicciones), la inferencia variacional (cómo aproximar distribuciones
+intratables), y la teoría de generalización (qué garantías formales
+existen). Las tres son imprescindibles para los modelos generativos del
+Capítulo~\ref{ch:cap12}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El aprendizaje como inferencia estadística}
+\label{sec:aprendizaje_inferencia}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\dificultad{1}{1}
 
 \subsection{El modelo generativo de los datos}
 \label{subsec:modelo_generativo}
 
-Los datos $\mathcal{D} = \{(\bm{x}_i, y_i)\}_{i=1}^N$ no son fijos y
-deterministas: son realizaciones de un proceso aleatorio. La hipótesis
-fundamental del aprendizaje supervisado es la siguiente.
+Los datos $\mathcal{D} = \{(\bm{x}_i, y_i)\}_{i=1}^N$ no son fijos:
+son realizaciones de un proceso aleatorio.
 
 \begin{definicion}{Hipótesis de los datos i.i.d.}
 \label{hip:iid}
-Existe una distribución $p_{\text{data}}(\bm{x}, y)$ desconocida tal que cada
-par $(\bm{x}_i, y_i)$ es una realización independiente e idénticamente
-distribuida (i.i.d.) de $p_{\text{data}}$.
+Existe una distribución $p_{\text{data}}(\bm{x},y)$ desconocida tal que
+cada par $(\bm{x}_i, y_i)$ es una realización independiente e
+idénticamente distribuida de $p_{\text{data}}$.
 \end{definicion}
 
-Esta hipótesis tiene una consecuencia inmediata: la función que se busca aproximar
-no es una función arbitraria sino la \textbf{esperanza condicional}:
-\[
+La función que se busca aproximar es la \textbf{esperanza condicional}:
+\begin{equation}
   f^*(\bm{x}) = \mathbb{E}_{p_{\text{data}}}[y|\bm{x}]
   = \int y\,p_{\text{data}}(y|\bm{x})\,dy.
-\]
-$f^*$ es el predictor óptimo en el sentido del error cuadrático medio poblacional:
-$f^* = \argmin_f \mathbb{E}_{p_{\text{data}}}[(f(\bm{x})-y)^2]$ (demostración
-en el Ejercicio Resuelto~\ref{ej:predictor_optimo}).
+  \label{eq:esperanza_cond}
+\end{equation}
+En el ejemplo del oscilador: $f^*(t) = \sin(2\pi t)$ y el ruido
+$\varepsilon_i$ es la diferencia entre la medición $y_i$ y la función
+verdadera. La hipótesis i.i.d.\ dice que cada medición es una
+realización independiente del mismo proceso de medición.
 
-\subsection{Tres fuentes de incertidumbre}
+\subsection{Tres tipos de incertidumbre}
 \label{subsec:tres_incertidumbres}
 
-En cualquier problema de aprendizaje coexisten tres tipos de incertidumbre con
-naturalezas distintas.
+La predicción de un modelo tiene tres fuentes de incertidumbre que todo
+físico experimental reconoce:
 
-\medskip
-\noindent\textbf{Incertidumbre aleatoria} (o irreducible). Es la variabilidad
-intrínseca del proceso generativo: incluso conociendo $f^*$ exactamente, la
-predicción $f^*(\bm{x})$ difiere de $y$ por el ruido residual $\varepsilon =
-y - f^*(\bm{x})$. Esta incertidumbre no puede reducirse con más datos ni con
-modelos más complejos; es una propiedad del fenómeno físico en sí. En colisiones
-de partículas, la fluctuación estadística de las lluvias de partículas es
-incertidumbre aleatoria.
+\textbf{Incertidumbre aleatoria} (irreducible): el ruido intrínseco de
+la medición. En el oscilador, $\sigma = 0.15$. No desaparece con más
+datos ni con un modelo mejor.
 
-\medskip
-\noindent\textbf{Incertidumbre epistémica} (o reducible). Es la incertidumbre
-sobre $\bm{\theta}$ debida a que los datos son finitos. Con $N \to \infty$,
-la incertidumbre epistémica tiende a cero. Esta es la incertidumbre que la
-inferencia bayesiana cuantifica mediante el posterior $p(\bm{\theta}|\mathcal{D})$,
-y que el MC Dropout de la Sección~\ref{subsec:mc_dropout} estima sin inferencia
-bayesiana completa.
+\textbf{Incertidumbre epistémica} (reducible): la ignorancia sobre los
+parámetros correctos del modelo. Con $N = 25$ puntos, los pesos del MLP
+no están completamente determinados. Esta incertidumbre decrece con más
+datos.
 
-\medskip
-\noindent\textbf{Incertidumbre de modelo}. Es la incertidumbre debida a que la
-familia paramétrica $\{f(\cdot;\bm{\theta})\}$ puede no contener $f^*$. Incluso
-con $N \to \infty$, si la clase de funciones es demasiado restrictiva, el mejor
-elemento de la familia difiere de $f^*$ por el sesgo del modelo. El Capítulo~\ref{ch:cap2}
-analizó esta incertidumbre bajo el nombre de sesgo.
+\textbf{Incertidumbre de modelo} (estructural): el sesgo del modelo.
+Si la familia paramétrica no puede representar $f^*$, hay un error
+sistemático que no desaparece ni con datos infinitos. Es el sesgo de la
+descomposición del Capítulo~\ref{ch:cap2}.
 
-\begin{observacion}{La ecuación de error total}
-Las tres incertidumbres contribuyen al error cuadrático medio esperado:
-\[
-  \mathbb{E}[(f(\bm{x};\hat{\bm{\theta}}) - y)^2]
-  = \underbrace{\mathrm{Var}[\varepsilon]}_{\text{aleatoria}}
-  + \underbrace{\mathrm{Sesgo}^2[f]}_{\text{de modelo}}
-  + \underbrace{\mathrm{Var}[f(\bm{x};\hat{\bm{\theta}})]}_{\text{epistémica}}.
-\]
-Esta es exactamente la descomposición sesgo-varianza del Capítulo~\ref{ch:cap2} con una
-interpretación probabilística precisa: el término de varianza es la incertidumbre
-epistémica sobre los parámetros propagada a las predicciones.
-\end{observacion}
+El marco bayesiano permite separar y cuantificar las tres.
 
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Máxima verosimilitud: el puente entre pérdida y probabilidad}
 \label{sec:mle}
+% ─────────────────────────────────────────────────────────────────────────────
+
 \dificultad{2}{2}
-%───────────────────────────────────────────────────────────────────────────────
 
 \subsection{La función de verosimilitud}
 \label{subsec:verosimilitud}
 
-\begin{definicion}{Verosimilitud y log-verosimilitud}
+\begin{definicion}{Verosimilitud y MLE}
 \label{def:verosimilitud}
-Dado el modelo probabilístico $p(y|\bm{x};\bm{\theta})$, la
-\textbf{verosimilitud} de los datos $\mathcal{D}$ bajo los parámetros $\bm{\theta}$
-es:
-\[
-  \mathcal{L}_{\text{lik}}(\bm{\theta};\mathcal{D})
-  = \prod_{i=1}^N p(y_i|\bm{x}_i;\bm{\theta}).
-\]
-La \textbf{log-verosimilitud} es:
-\[
-  \ell(\bm{\theta};\mathcal{D}) = \sum_{i=1}^N \log p(y_i|\bm{x}_i;\bm{\theta}).
-\]
-El \textbf{estimador de máxima verosimilitud} (MLE) es:
-\[
-  \hat{\bm{\theta}}_{\text{MLE}}
-  = \argmax_{\bm{\theta}}\ell(\bm{\theta};\mathcal{D})
-  = \argmin_{\bm{\theta}}\left(-\ell(\bm{\theta};\mathcal{D})\right).
-\]
+La \textbf{log-verosimilitud} de los datos bajo los parámetros
+$\bm{\theta}$ es:
+\begin{equation}
+  \ell(\bm{\theta};\mathcal{D})
+  = \sum_{i=1}^N \log p(y_i|\bm{x}_i;\bm{\theta}).
+  \label{eq:loglik}
+\end{equation}
+El \textbf{estimador de máxima verosimilitud} (MLE) es
+$\hat{\bm{\theta}}_{\text{MLE}} = \argmax_{\bm{\theta}}
+\ell(\bm{\theta};\mathcal{D})$.
 \end{definicion}
-
-La product sobre las muestras refleja la Hipótesis~\ref{hip:iid}: la densidad
-conjunta de muestras independientes es el producto de las densidades marginales.
-El logaritmo convierte el producto en suma, facilitando el análisis y la
-optimización.
 
 \subsection{MSE como MLE bajo ruido gaussiano}
 \label{subsec:mse_mle}
 
-\begin{proposicion}{MSE como MLE}
+\begin{proposicion}{MSE = MLE gaussiano}
 \label{prop:mse_mle}
-Si el modelo probabilístico es $p(y|\bm{x};\bm{\theta}) =
-\mathcal{N}(f(\bm{x};\bm{\theta}),\sigma^2)$ con $\sigma^2$ fijo, entonces:
-\[
+Si $p(y|\bm{x};\bm{\theta}) = \mathcal{N}(f(\bm{x};\bm{\theta}),
+\sigma^2)$ con $\sigma^2$ fijo:
+\begin{equation}
   \hat{\bm{\theta}}_{\text{MLE}}
-  = \argmin_{\bm{\theta}} \frac{1}{N}\sum_{i=1}^N (f(\bm{x}_i;\bm{\theta})-y_i)^2
-  = \argmin_{\bm{\theta}} \mathcal{L}_{\text{MSE}}(\bm{\theta}).
-\]
-El MLE bajo ruido gaussiano aditivo e independiente es equivalente a la
-minimización de la pérdida MSE.
+  = \argmin_{\bm{\theta}}\mathcal{L}_{\text{MSE}}(\bm{\theta}).
+  \label{eq:mse_mle}
+\end{equation}
 \end{proposicion}
 
 \begin{proof}
-Con $p(y_i|\bm{x}_i;\bm{\theta}) = \frac{1}{\sqrt{2\pi\sigma^2}}
-\exp\!\left(-\frac{(y_i-f(\bm{x}_i;\bm{\theta}))^2}{2\sigma^2}\right)$, la
-log-verosimilitud es:
-\[
-  \ell(\bm{\theta}) = -\frac{N}{2}\log(2\pi\sigma^2)
-  - \frac{1}{2\sigma^2}\sum_{i=1}^N (y_i-f(\bm{x}_i;\bm{\theta}))^2.
-\]
-Maximizar $\ell$ respecto a $\bm{\theta}$ es equivalente a minimizar
-$\sum_i(y_i-f(\bm{x}_i;\bm{\theta}))^2 = N\mathcal{L}_{\text{MSE}}$.
-$\square$
+$\ell(\bm{\theta}) = -\frac{N}{2}\log(2\pi\sigma^2) -
+\frac{1}{2\sigma^2}\sum_i(y_i-f(\bm{x}_i;\bm{\theta}))^2$.
+Maximizar $\ell$ respecto a $\bm{\theta}$ es minimizar
+$\sum_i(y_i-f_i)^2 = N\mathcal{L}_{\text{MSE}}$. $\square$
 \end{proof}
 
-\begin{observacion}{El principio de mínimos cuadrados de Gauss}
-La Proposición~\ref{prop:mse_mle} es la justificación probabilística del método
-de mínimos cuadrados, que Gauss derivó en 1809 para la estimación de órbitas
-planetarias. Su argumento fue exactamente este: si los errores de medición son
-gaussianos e independientes, el estimador que maximiza la probabilidad de los
-datos observados es el que minimiza la suma de cuadrados. Lo que Gauss demostró
-para modelos lineales en astronomía aplica, con los mismos supuestos sobre el
-ruido, a cualquier familia paramétrica incluido el MLP.
-\end{observacion}
-
-\begin{fisicaconexion}{Verosimilitud y ajuste de curvas en física experimental}
-El MLE bajo ruido gaussiano es la base del ajuste de curvas en física experimental.
-Cuando se ajusta una señal a un modelo teórico $f(x;\bm{\theta})$ minimizando
-$\chi^2 = \sum_i (y_i - f(x_i;\bm{\theta}))^2/\sigma_i^2$, se está calculando
-exactamente el MLE bajo modelo gaussiano con varianzas conocidas $\sigma_i^2$.
-El \textbf{estadístico $\chi^2$ reducido} $\chi^2_\nu = \chi^2/(N-p)$, con $\nu = N-p$
-grados de libertad, es una prueba de bondad del ajuste: $\chi^2_\nu \approx 1$
-indica que el modelo es compatible con los datos dado el nivel de ruido; $\chi^2_\nu \gg 1$
-indica modelo incorrecto o ruido subestimado. Para distribuciones de Poisson
-(conteos de fotones, decaimientos radiactivos, colisiones de partículas), la
-log-verosimilitud es $\ell(\bm{\theta}) = \sum_i [n_i\log\lambda_i(\bm{\theta})
-- \lambda_i(\bm{\theta})]$ donde $\lambda_i = f(x_i;\bm{\theta})$ es la tasa
-esperada: en el límite de altas tasas converge al $\chi^2$ gaussiano, pero para
-conteos bajos (condición habitual en física de altas energías) la pérdida
-correcta es la log-verosimilitud de Poisson, no el MSE.
-\end{fisicaconexion}
+Este resultado cierra un arco que empezó en el Capítulo~\ref{ch:cap1}:
+la pérdida MSE que se usó para ajustar el oscilador no fue una elección
+arbitraria. Fue el estimador de máxima verosimilitud bajo la hipótesis
+(correcta) de ruido gaussiano. Si el ruido fuera laplaciano, la pérdida
+correcta sería MAE; si fuera de Poisson, sería la log-verosimilitud de
+Poisson. La elección de la pérdida codifica la hipótesis sobre el ruido.
 
 \subsection{Entropía cruzada como MLE para clasificación}
 \label{subsec:ce_mle}
 
-\begin{proposicion}{Entropía cruzada como MLE}
-\label{prop:ce_mle}
-Para clasificación multiclase con $K$ clases, si $p(y|\bm{x};\bm{\theta}) =
-\mathrm{Categorical}(\hat{\bm{p}}(\bm{x};\bm{\theta}))$ donde
-$\hat{p}_k = \mathrm{softmax}(f(\bm{x};\bm{\theta}))_k$, entonces:
-\[
-  \hat{\bm{\theta}}_{\text{MLE}}
-  = \argmin_{\bm{\theta}} \frac{1}{N}\sum_{i=1}^N
-  \left(-\sum_{k=1}^K y_{ik}\log\hat{p}_k(\bm{x}_i;\bm{\theta})\right),
-\]
-donde $y_{ik} = \mathbf{1}[\text{clase de }i = k]$ es la codificación one-hot.
-La pérdida de entropía cruzada es el MLE bajo modelo categórico.
-\end{proposicion}
+Para clasificación con $C$ clases, el modelo produce probabilidades
+$\hat{p}_j(\bm{x};\bm{\theta}) = \text{softmax}(\bm{z})_j$ y la
+distribución es categórica: $p(y=j|\bm{x};\bm{\theta}) = \hat{p}_j$.
+La log-verosimilitud negativa es la \textbf{entropía cruzada}:
+\begin{equation}
+  \mathcal{L}_{\text{CE}} = -\frac{1}{N}\sum_{i=1}^N
+  \log\hat{p}_{y_i}(\bm{x}_i;\bm{\theta}).
+  \label{eq:ce}
+\end{equation}
+Minimizar la entropía cruzada es equivalente a minimizar la divergencia
+KL entre la distribución empírica de los datos y la distribución del
+modelo: $\mathcal{L}_{\text{CE}} = H(p_{\text{data}},\hat{p}) =
+H(p_{\text{data}}) + D_{\text{KL}}(p_{\text{data}}\|\hat{p})$.
 
-\begin{proof}
-La log-verosimilitud de una muestra con clase $c_i$ bajo distribución categórica es
-$\log p(y_i|\bm{x}_i;\bm{\theta}) = \log\hat{p}_{c_i}(\bm{x}_i;\bm{\theta})
-= \sum_k y_{ik}\log\hat{p}_k(\bm{x}_i;\bm{\theta})$. Sumando sobre las $N$
-muestras y cambiando de signo (maximizar $\ell$ = minimizar $-\ell$) se obtiene
-la pérdida de entropía cruzada. $\square$
-\end{proof}
+\subsection{Algoritmo: MLE y MAP para el MLP}
+\label{subsec:alg_mle}
 
-\subsection{La información de Fisher y la geometría del espacio de parámetros}
-\label{subsec:fisher}
+\begin{algorithm}[H]
+\caption{Entrenamiento por MLE y MAP}
+\label{alg:mle_map}
+\KwIn{Datos $\mathcal{D}$, MLP $f(\cdot;\bm{\theta})$, modelo de
+      ruido $p(y|\bm{x};\bm{\theta})$, prior $p(\bm{\theta})$
+      (MAP) o ninguno (MLE), $\eta$, $B$, épocas $E$}
+\KwOut{$\hat{\bm{\theta}}$}
 
-El MLE no solo da un estimador puntual: lleva consigo una métrica natural sobre
-el espacio de parámetros que cuantifica cuánta información sobre $\bm{\theta}$
-contiene una observación.
+Inicializar $\bm{\theta}$ (He/Xavier)\;
+\For{$e \leftarrow 1$ \KwTo $E$}{
+  \ForEach{mini-lote $\mathcal{B}$}{
+    \tcp{Log-verosimilitud del mini-lote}
+    $\ell_{\mathcal{B}} \leftarrow \frac{1}{B}\sum_{i \in \mathcal{B}}
+    \log p(y_i|\bm{x}_i;\bm{\theta})$\;
+    \tcp{Pérdida: negativo de log-verosimilitud + log-prior}
+    $\mathcal{L} \leftarrow -\ell_{\mathcal{B}}$\;
+    \lIf{MAP}{$\mathcal{L} \leftarrow \mathcal{L}
+    - \frac{1}{N}\log p(\bm{\theta})$
+    \tcp*{$+\lambda\|\bm{\theta}\|_2^2$ para prior gaussiano}}
+    \tcp{Backward + actualización (Alg.~\ref{alg:backprop}, \ref{alg:adam_loop})}
+    $\bm{\theta} \leftarrow \bm{\theta}
+    - \eta\,\nabla_{\bm{\theta}}\mathcal{L}$\;
+  }
+}
+\Return $\bm{\theta}$\;
+\end{algorithm}
 
-\begin{definicion}{Información de Fisher}
-\label{def:fisher}
-La \textbf{información de Fisher} del modelo $p(y|\bm{x};\bm{\theta})$ es la
-matriz:
-\[
-  \bm{I}(\bm{\theta}) = \mathbb{E}_{p(y|\bm{x};\bm{\theta})}\!\left[
-  \nabla_{\bm{\theta}}\log p(y|\bm{x};\bm{\theta})\,
-  \nabla_{\bm{\theta}}\log p(y|\bm{x};\bm{\theta})^\top
-  \right] \in \mathbb{R}^{p\times p}.
-\]
-\end{definicion}
+Para MLE con ruido gaussiano y $\sigma$ fijo, la línea de la pérdida se
+reduce a $\mathcal{L} = \mathcal{L}_{\text{MSE}}$. Para MAP con prior
+$\mathcal{N}(\bm{0},\tau^2\bm{I})$, se añade $\lambda\|\bm{\theta}\|_2^2$
+con $\lambda = \sigma^2/(N\tau^2)$: exactamente la regularización de
+Tikhonov del Capítulo~\ref{ch:cap2}.
 
-La información de Fisher tiene varias interpretaciones equivalentes:
-
-\begin{proposicion}{Propiedades de la información de Fisher}
-\label{prop:fisher}
-Para modelos regulares (en los que se puede intercambiar integral y derivada):
-\begin{enumerate}
-  \item $\bm{I}(\bm{\theta}) = -\mathbb{E}[\nabla^2_{\bm{\theta}}\log
-        p(y|\bm{x};\bm{\theta})]$: es el negativo del hessiano esperado de la
-        log-verosimilitud (hessiano de la log-verosimilitud negativa).
-  \item La cota de Cramér-Rao: para cualquier estimador insesgado
-        $\hat{\bm{\theta}}$ de $\bm{\theta}$,
-        $\mathrm{Cov}(\hat{\bm{\theta}}) \succeq \bm{I}(\bm{\theta})^{-1}$
-        (la covarianza del estimador es al menos la inversa de la información
-        de Fisher en el sentido de matrices semidefinidas positivas).
-  \item El MLE es asintóticamente eficiente: $\sqrt{N}(\hat{\bm{\theta}}_{\text{MLE}}
-        - \bm{\theta}^*) \to \mathcal{N}(\bm{0}, \bm{I}(\bm{\theta}^*)^{-1})$
-        en distribución.
-\end{enumerate}
-\end{proposicion}
-
-La cota de Cramér-Rao establece que $\bm{I}(\bm{\theta})^{-1}$ es la varianza
-mínima alcanzable para cualquier estimador insesgado: la información de Fisher
-mide la capacidad máxima del modelo para aprender $\bm{\theta}$ de los datos.
-
-\medskip
-\noindent\textbf{La información de Fisher como métrica riemanniana.}
-La propiedad~1 establece que $\bm{I}(\bm{\theta})$ es el hessiano esperado de la
-pérdida. Esto convierte $\bm{I}(\bm{\theta})$ en una métrica natural sobre el
-espacio de parámetros: la \textbf{métrica de Fisher-Rao}. En el espacio dotado
-de esta métrica, la distancia entre dos distribuciones cercanas
-$p(\cdot;\bm{\theta})$ y $p(\cdot;\bm{\theta}+d\bm{\theta})$ es:
-\[
-  ds^2 = d\bm{\theta}^\top \bm{I}(\bm{\theta})\,d\bm{\theta}.
-\]
-Esta métrica captura la discrepancia estadística entre distribuciones: un paso
-en la dirección de mayor información requiere menos distancia paramétrica para
-producir el mismo cambio en la distribución.
-
-\medskip
-\noindent\textbf{El gradiente natural.}
-El descenso de gradiente ordinario minimiza $\mathcal{L}$ respecto a la métrica
-euclidiana en $\mathbb{R}^p$: $\bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} -
-\eta\nabla\mathcal{L}$. El \textbf{descenso de gradiente natural} (Amari, 1998)
-minimiza respecto a la métrica de Fisher:
-\[
-  \bm{\theta}^{(k+1)} = \bm{\theta}^{(k)} - \eta\,\bm{I}(\bm{\theta}^{(k)})^{-1}
-  \nabla\mathcal{L}(\bm{\theta}^{(k)}).
-\]
-El precondicionador $\bm{I}^{-1}$ transforma el gradiente para que el paso sea
-invariante bajo reparametrizaciones del modelo. Es el análogo del método de
-Newton (que usa $\bm{H}^{-1}$) pero con la curvatura estadística en lugar de la
-curvatura de la pérdida.
-
-\begin{observacion}{Adam como gradiente natural diagonal}
-El optimizador Adam del Capítulo~\ref{ch:cap5} usa el denominador $\sqrt{\hat{v}_j}$ para
-cada parámetro, donde $\hat{v}_j \approx \mathbb{E}[(\partial\mathcal{L}/
-\partial\theta_j)^2]$. Comparando con la definición de información de Fisher:
-$I_{jj}(\bm{\theta}) = \mathbb{E}[(\partial\log p/\partial\theta_j)^2]$.
-Para pérdidas de la forma $\mathcal{L} = -\frac{1}{N}\sum_i\log p(y_i|\bm{x}_i;
-\bm{\theta})$, $\hat{v}_j \approx I_{jj}/N$. El denominador de Adam es
-aproximadamente $\sqrt{I_{jj}/N}$: Adam es una aproximación diagonal al gradiente
-natural. La justificación probabilística de Adam es que precondicionas el gradiente
-con la información de Fisher diagonal, haciéndolo invariante a cambios de escala
-en los parámetros.
-\end{observacion}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section{El marco bayesiano}
 \label{sec:bayesiano}
+% ─────────────────────────────────────────────────────────────────────────────
+
 \dificultad{2}{2}
-%───────────────────────────────────────────────────────────────────────────────
 
 \subsection{El teorema de Bayes para el aprendizaje}
-\label{subsec:bayes_aprendizaje}
+\label{subsec:bayes}
 
-El marco bayesiano trata $\bm{\theta}$ como una variable aleatoria y actualiza
-la creencia sobre $\bm{\theta}$ a la luz de los datos mediante el teorema de Bayes:
 \begin{equation}
-  \label{eq:bayes}
   \underbrace{p(\bm{\theta}|\mathcal{D})}_{\text{posterior}}
-  = \frac{\overbrace{p(\mathcal{D}|\bm{\theta})}^{\text{verosimilitud}}\;
-    \overbrace{p(\bm{\theta})}^{\text{prior}}}
-    {\underbrace{p(\mathcal{D})}_{\text{evidencia}}},
+  = \frac{\overbrace{p(\mathcal{D}|\bm{\theta})}^{\text{verosimilitud}}
+  \;\overbrace{p(\bm{\theta})}^{\text{prior}}}
+  {\underbrace{p(\mathcal{D})}_{\text{evidencia}}},
+  \label{eq:bayes}
 \end{equation}
-donde $p(\mathcal{D}) = \int p(\mathcal{D}|\bm{\theta})p(\bm{\theta})\,d\bm{\theta}$
-es la constante de normalización.
-
-El \textbf{prior} $p(\bm{\theta})$ codifica el conocimiento sobre los parámetros
-antes de observar datos. El \textbf{posterior} $p(\bm{\theta}|\mathcal{D})$
-actualiza ese conocimiento incorporando la información en $\mathcal{D}$.
+donde $p(\mathcal{D}) = \int p(\mathcal{D}|\bm{\theta})
+p(\bm{\theta})\,d\bm{\theta}$.
 
 \subsection{MAP como MLE con regularización}
 \label{subsec:map}
 
-\begin{proposicion}{MAP y regularización $\ell_2$}
+\begin{proposicion}{MAP = Tikhonov}
 \label{prop:map_l2}
-El estimador de máximo a posteriori (MAP):
-\[
-  \hat{\bm{\theta}}_{\text{MAP}} = \argmax_{\bm{\theta}}p(\bm{\theta}|\mathcal{D})
-  = \argmax_{\bm{\theta}}\bigl[\ell(\bm{\theta}) + \log p(\bm{\theta})\bigr]
-\]
-con prior gaussiano $p(\bm{\theta}) = \mathcal{N}(\bm{0},\tau^2\bm{I})$
-es equivalente a la minimización de la pérdida MSE con regularización $\ell_2$:
-\[
+El estimador MAP con prior gaussiano
+$p(\bm{\theta}) = \mathcal{N}(\bm{0},\tau^2\bm{I})$ y verosimilitud
+gaussiana ($\sigma^2$ fijo) es:
+\begin{equation}
   \hat{\bm{\theta}}_{\text{MAP}}
   = \argmin_{\bm{\theta}}\left[\mathcal{L}_{\text{MSE}}(\bm{\theta})
   + \frac{\sigma^2}{N\tau^2}\|\bm{\theta}\|_2^2\right],
-\]
+  \label{eq:map}
+\end{equation}
 con $\lambda = \sigma^2/(N\tau^2)$.
 \end{proposicion}
 
 \begin{proof}
-$\log p(\bm{\theta}) = -\frac{p}{2}\log(2\pi\tau^2) - \frac{1}{2\tau^2}
-\|\bm{\theta}\|_2^2$. El término constante no afecta el argmax.
-Combinando con la log-verosimilitud gaussiana de la
-Proposición~\ref{prop:mse_mle}:
-\[
-  \argmax_{\bm{\theta}}\bigl[\ell(\bm{\theta})+\log p(\bm{\theta})\bigr]
-  = \argmin_{\bm{\theta}}\left[\frac{1}{2\sigma^2}\sum_i(y_i-f_i)^2
-  + \frac{1}{2\tau^2}\|\bm{\theta}\|_2^2\right].
-\]
-Dividiendo por $N/(2\sigma^2)$ se obtiene el resultado con $\lambda =
-\sigma^2/(N\tau^2)$. $\square$
+$\log p(\bm{\theta}) = -\frac{p}{2}\log(2\pi\tau^2) -
+\frac{1}{2\tau^2}\|\bm{\theta}\|_2^2$. Combinando con la
+log-verosimilitud y eliminando constantes:
+$\argmax[\ell + \log p] = \argmin[\frac{1}{2\sigma^2}\sum_i(y_i-f_i)^2
++ \frac{1}{2\tau^2}\|\bm{\theta}\|_2^2]$. Dividiendo por
+$N/(2\sigma^2)$. $\square$
 \end{proof}
 
-El círculo se cierra: la regularización de Tikhonov del Capítulo~\ref{ch:cap2}, la
-penalización $\ell_2$ de los Capítulos~2 y~3, y el estimador MAP bajo prior
-gaussiano son el mismo objeto visto desde tres perspectivas distintas. El
-coeficiente de regularización $\lambda$ es el cociente entre la varianza del ruido
-y la varianza del prior: expresa cuánto peso se le da a los datos vs.\ al
-conocimiento previo.
-
-\subsection{La predicción bayesiana completa}
-\label{subsec:prediccion_bayesiana}
-
-El MLE y el MAP dan estimadores puntuales de $\bm{\theta}$. El enfoque bayesiano
-completo integra sobre todos los parámetros ponderados por el posterior:
-\begin{equation}
-  \label{eq:pred_bayesiana}
-  p(y^*|\bm{x}^*, \mathcal{D})
-  = \int p(y^*|\bm{x}^*,\bm{\theta})\,p(\bm{\theta}|\mathcal{D})\,d\bm{\theta}.
-\end{equation}
-La predicción bayesiana completa entrega una distribución sobre $y^*$, no solo
-un valor: cuantifica automáticamente la incertidumbre epistémica sobre la
-predicción.
-
-Para el MLP con $p \sim 10^6$ parámetros, la integral~\eqref{eq:pred_bayesiana}
-es intractable: no existe forma analítica y el muestreo de Monte Carlo puro en
-$\mathbb{R}^{10^6}$ es computacionalmente imposible. Esto motiva la inferencia
-variacional de la Sección~\ref{sec:vi}.
+El arco se cierra: la regularización de Tikhonov (Cap.~\ref{ch:cap2}),
+la penalización $\ell_2$ (Cap.~\ref{ch:cap3}), el resorte auxiliar de
+rigidez $\lambda$ (Cap.~\ref{ch:cap1}), y el estimador MAP bajo prior
+gaussiano son el mismo objeto. El coeficiente $\lambda$ es el cociente
+entre la varianza del ruido y la varianza del prior: cuánto peso se le
+da a los datos vs.\ al conocimiento previo.
 
 \subsection{Priors y el principio de máxima entropía}
 \label{subsec:maxent}
 
-La elección del prior no es arbitraria. El \textbf{principio de máxima entropía}
-(Jaynes, 1957) establece que el prior correcto bajo una restricción dada es la
-distribución que maximiza la entropía sujeta a esa restricción: es la distribución
-"menos informativa" compatible con el conocimiento disponible.
-
 \begin{proposicion}{Distribuciones de máxima entropía}
 \label{prop:maxent}
 \begin{enumerate}
-  \item Bajo la restricción $\mathbb{E}[\|\bm{\theta}\|_2^2] \leq C$ (norma
-        cuadrática acotada), la distribución de máxima entropía es el prior
-        gaussiano $\mathcal{N}(\bm{0},\sigma^2\bm{I})$.
-  \item Bajo la restricción $\mathbb{E}[\mathcal{L}(\bm{\theta})] = U$ (energía
-        media fija), la distribución de máxima entropía es la distribución de
-        Gibbs $p^*(\bm{\theta}) \propto e^{-\mathcal{L}(\bm{\theta})/T}$.
+  \item Bajo $\mathbb{E}[\|\bm{\theta}\|_2^2] \leq C$:
+        $p^* = \mathcal{N}(\bm{0},\sigma^2\bm{I})$ (prior gaussiano).
+  \item Bajo $\mathbb{E}[\mathcal{L}(\bm{\theta})] = U$:
+        $p^*(\bm{\theta}) \propto e^{-\mathcal{L}(\bm{\theta})/T}$
+        (distribución de Gibbs).
 \end{enumerate}
 \end{proposicion}
 
-La proposición~2 conecta directamente con el Capítulo~\ref{ch:cap5}: la distribución
-estacionaria del SGD, $p^* \propto e^{-2\mathcal{L}/(\eta c)}$, es la
-distribución de máxima entropía bajo la restricción de que la pérdida esperada
-sea igual al valor que fija el ruido del mini-lote. La temperatura $T = \eta c/2$
-es el multiplicador de Lagrange de esa restricción. Sin necesidad de mecánica
-estadística formal, el principio de máxima entropía justifica por qué el SGD
-converge a esa distribución y por qué la temperatura tiene el significado que se
-describió.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Entropía, divergencia KL e información}
-\label{sec:entropia_kl}
-\dificultad{2}{2}
-%───────────────────────────────────────────────────────────────────────────────
-
-\subsection{Entropía de Shannon}
-\label{subsec:entropia_shannon}
-
-\begin{definicion}{Entropía de Shannon}
-\label{def:entropia}
-La \textbf{entropía} de una distribución discreta $p = (p_1,\ldots,p_K)$ es:
-\[
-  H(p) = -\sum_{k=1}^K p_k\log p_k \geq 0,
-\]
-con la convención $0\log 0 = 0$. Para una distribución continua con densidad
-$p(\bm{x})$, la \textbf{entropía diferencial} es:
-\[
-  h(p) = -\int p(\bm{x})\log p(\bm{x})\,d\bm{x}.
-\]
-\end{definicion}
-
-La entropía mide la \textbf{incertidumbre} de la distribución. Sus propiedades
-fundamentales:
-\begin{enumerate}
-  \item $H(p) \geq 0$, con igualdad si y solo si $p$ es un punto masa (certeza
-        completa).
-  \item $H(p) \leq \log K$, con igualdad para la distribución uniforme
-        (máxima incertidumbre).
-  \item Aditividad: para variables independientes $X, Y$,
-        $H(X,Y) = H(X) + H(Y)$.
-  \item Interpretación de teoría de la información: $H(p)$ es el número mínimo
-        de bits necesarios en promedio para codificar un mensaje de la
-        distribución $p$ (teorema de Shannon, 1948).
-\end{enumerate}
-
-\begin{fisicaconexion}{Entropía de Boltzmann y entropía de Shannon}
-La entropía de Shannon $H(p) = -\sum_k p_k \log p_k$ y la entropía estadística
-de Boltzmann $S = -k_B\sum_i p_i\ln p_i$ son el mismo objeto: la diferencia es
-únicamente la constante $k_B$ (constante de Boltzmann) y la base del logaritmo.
-Boltzmann derivó $S$ en 1877 como medida del número de microestados compatibles
-con un macroestado; Shannon la redescubrió en 1948 como medida de la información.
-La \textbf{entropía máxima} de la mecánica estadística ---que la distribución de
-equilibrio es la que maximiza $S$ bajo la restricción de energía media fija---
-es exactamente la Proposición~\ref{prop:maxent}: la distribución de Gibbs como
-distribución de máxima entropía. La temperatura termodinámica $T$ es el
-multiplicador de Lagrange de esa restricción, que en el SGD se identifica con
-$\eta c/2$ (Capítulo~\ref{ch:cap5}). La \textbf{tercera ley de la termodinámica}
-($S \to 0$ cuando $T \to 0$) tiene su análogo en el aprendizaje: cuando $\eta \to 0$
-la distribución estacionaria del SGD se concentra en los mínimos de
-$\mathcal{L}$, y la entropía de esa distribución tiende a cero.
-\end{fisicaconexion}
-
-\subsection{Divergencia de Kullback-Leibler}
-\label{subsec:kl}
-
-\begin{definicion}{Divergencia de Kullback-Leibler}
-\label{def:kl}
-La \textbf{divergencia KL} de $q$ a $p$ es:
-\[
-  D_{\text{KL}}(p\|q)
-  = \int p(\bm{x})\log\frac{p(\bm{x})}{q(\bm{x})}\,d\bm{x}
-  = \mathbb{E}_p\!\left[\log\frac{p(\bm{x})}{q(\bm{x})}\right].
-\]
-\end{definicion}
-
-\begin{proposicion}{No negatividad de la KL}
-\label{prop:kl_nn}
-$D_{\text{KL}}(p\|q) \geq 0$ para todo par de distribuciones $p,q$, con igualdad
-si y solo si $p = q$ casi en todo punto.
-\end{proposicion}
-
 \begin{proof}
-$-\log$ es estrictamente convexa. Por la desigualdad de Jensen:
-\[
-  D_{\text{KL}}(p\|q)
-  = \mathbb{E}_p\!\left[-\log\frac{q}{p}\right]
-  \geq -\log\mathbb{E}_p\!\left[\frac{q}{p}\right]
-  = -\log\int q(\bm{x})\,d\bm{x} = -\log 1 = 0.
-\]
-La igualdad se da cuando $\frac{q}{p}$ es constante, es decir $q = p$.
-$\square$
+Se maximiza la entropía de Shannon $H[p] = -\int p\log p\,d\bm{\theta}$
+con multiplicadores de Lagrange para la normalización y la restricción.
+Para (2): $\mathfrak{L}[p] = -\int p\log p - \alpha(\int p - 1) -
+\beta(\int p\mathcal{L} - U)$. La condición
+$\delta\mathfrak{L}/\delta p = 0$ da
+$p^* \propto e^{-\beta\mathcal{L}}$ con $\beta = 1/T$ determinado
+por $U$. $\square$
 \end{proof}
 
-\begin{observacion}{La KL no es una distancia}
-$D_{\text{KL}}(p\|q) 
-eq D_{\text{KL}}(q\|p)$ en general: la KL es asimétrica.
-Tampoco satisface la desigualdad triangular. No es una distancia en sentido
-métrico. Sin embargo, la desigualdad de Pinsker vincula la KL con la distancia de
-variación total $\mathrm{TV}(p,q) = \frac{1}{2}\int|p-q|\,d\bm{x}$:
-$\mathrm{TV}(p,q)^2 \leq \frac{1}{2}D_{\text{KL}}(p\|q)$.
-\end{observacion}
-
-\subsection{Las dos direcciones de la KL y sus consecuencias}
-\label{subsec:kl_direcciones}
-
-La asimetría de la KL tiene consecuencias prácticas profundas.
-
-\medskip
-\noindent\textbf{KL forward $D_{\text{KL}}(p\|q)$.} Penaliza regiones donde $p$
-tiene masa pero $q$ no: si $p(\bm{x}) > 0$ y $q(\bm{x}) \approx 0$, el término
-$p\log(p/q) \to \infty$. Minimizar $D_{\text{KL}}(p\|q)$ respecto a $q$ fuerza
-a $q$ a cubrir todo el soporte de $p$. En inferencia variacional (Sección~\ref{sec:vi}),
-se minimiza la KL reversa $D_{\text{KL}}(q\|p)$ (más manejable), no la forward.
-
-\medskip
-\noindent\textbf{KL reversa $D_{\text{KL}}(q\|p)$.} Penaliza regiones donde
-$q$ tiene masa pero $p$ no: fuerza a $q$ a concentrarse en los modos de $p$.
-Para distribuciones multimodales, minimizar $D_{\text{KL}}(q\|p)$ con $q$
-unimodal produce una $q$ que cubre solo uno de los modos.
-
-\subsection{Entropía cruzada y su relación con la KL}
-\label{subsec:ce_kl}
-
-\begin{proposicion}{Descomposición de la entropía cruzada}
-\label{prop:ce_descomp}
-La entropía cruzada entre $p$ y $q$ satisface:
-\[
-  H(p,q) = -\int p(\bm{x})\log q(\bm{x})\,d\bm{x}
-  = H(p) + D_{\text{KL}}(p\|q).
-\]
+\begin{proposicion}{La distribución de Gibbs del SGD es de máxima entropía}
+\label{prop:gibbs_maxent}
+La distribución estacionaria del SGD
+(Proposición~\ref{prop:gibbs_sgd} del Capítulo~\ref{ch:cap5}),
+$p^*(\bm{\theta}) \propto
+\exp(-\mathcal{L}(\bm{\theta})/T_{\text{eff}})$ con
+$T_{\text{eff}} = \eta\gamma/2$, es la distribución de máxima
+entropía sujeta a la restricción de que la pérdida media sea
+$\langle\mathcal{L}\rangle = U$ para algún $U$ determinado por la
+temperatura $T_{\text{eff}}$.
 \end{proposicion}
 
-\begin{proof}
-$H(p,q) = -\int p\log q = -\int p\log p + \int p\log(p/q)
-= H(p) + D_{\text{KL}}(p\|q)$. $\square$
-\end{proof}
+Este resultado cierra el arco Cap.~\ref{ch:cap5} → Cap.~\ref{ch:cap7}:
+la distribución de Gibbs no es un accidente del SGD sino la consecuencia
+inevitable del principio de máxima entropía bajo restricción de energía.
+El SGD converge a la distribución que es ``menos informativa'' (máxima
+entropía) compatible con la pérdida media que la temperatura permite.
+Reducir la temperatura (learning rate decay) restringe la distribución a
+pérdidas menores, concentrando la masa en los mínimos.
 
-La Proposición~\ref{prop:ce_descomp} da la interpretación precisa de la pérdida
-de entropía cruzada: minimizar $H(p_{\text{data}}, p_{\bm{\theta}})$ respecto a
-$\bm{\theta}$ equivale a minimizar $D_{\text{KL}}(p_{\text{data}}\|p_{\bm{\theta}})$
-(la entropía de los datos $H(p_{\text{data}})$ no depende de $\bm{\theta}$).
-Entrenar con pérdida de entropía cruzada es minimizar la divergencia KL entre
-la distribución del modelo y la distribución de los datos: el entrenamiento busca
-que el modelo sea estadísticamente indistinguible de los datos.
-
-\subsection{Información mutua}
-\label{subsec:info_mutua}
-
-\begin{definicion}{Información mutua}
-\label{def:info_mutua}
-La \textbf{información mutua} entre variables aleatorias $X$ e $Y$ es:
-\[
-  I(X;Y) = D_{\text{KL}}\bigl(p(x,y)\|p(x)p(y)\bigr)
-  = H(X) - H(X|Y) = H(Y) - H(Y|X).
-\]
-\end{definicion}
-
-$I(X;Y) \geq 0$, con igualdad si y solo si $X$ e $Y$ son independientes.
-Mide cuánta información sobre $X$ contiene $Y$: cuánto se reduce la incertidumbre
-sobre $X$ al conocer $Y$.
-
-En redes neuronales, la información mutua $I(\bm{a}^{(l)};\bm{y})$ entre la
-activación de la capa $l$ y la etiqueta cuantifica cuánta información relevante
-ha extraído esa capa. El principio del \textbf{cuello de botella de información}
-(\textit{information bottleneck}, Tishby et al., 2000) propone que el aprendizaje
-consiste en comprimir la representación intermedia para retener la información
-relevante sobre $\bm{y}$ y descartar la irrelevante sobre $\bm{x}$: maximizar
-$I(\bm{a}^{(l)};\bm{y})$ mientras se minimiza $I(\bm{a}^{(l)};\bm{x})$.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Inferencia variacional}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Inferencia variacional y la ELBO}
 \label{sec:vi}
-\dificultad{3}{2}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-\subsection{El problema de la integración sobre el posterior}
-\label{subsec:prob_integracion}
+\dificultad{3}{3}
 
-La predicción bayesiana~\eqref{eq:pred_bayesiana} requiere integrar sobre el
-posterior. Para el MLP con $p \sim 10^6$, el posterior $p(\bm{\theta}|\mathcal{D})$
-vive en $\mathbb{R}^{10^6}$ y no tiene forma analítica. La integración de Monte
-Carlo directa requiere muestras del posterior, lo que a su vez requiere MCMC en
-alta dimensión: inviable para el entrenamiento iterativo.
+Para un MLP con $p \sim 10^6$ parámetros, la integral
+bayesiana~\eqref{eq:bayes} es intratable. La inferencia variacional la
+aproxima reemplazando el posterior exacto por una distribución
+$q_{\bm{\phi}}(\bm{\theta})$ de una familia manejable (por ejemplo,
+gaussiana diagonal).
 
-La \textbf{inferencia variacional} convierte el problema de integración en un
-problema de optimización: en lugar de muestrear del posterior, se busca la
-distribución más cercana en una familia tractable.
-
-\subsection{La ELBO: evidencia como cota inferior}
-\label{subsec:elbo}
-
-\begin{definicion}{La ELBO}
+\begin{definicion}{ELBO}
 \label{def:elbo}
-Dada una familia variacional $\mathcal{Q} = \{q_{\bm{\phi}}(\bm{\theta})\}$,
-la \textbf{cota inferior de la evidencia} (ELBO, \textit{Evidence Lower BOund})
+La \textbf{cota inferior de la evidencia} (\textit{Evidence Lower Bound})
 es:
-\[
-  \mathrm{ELBO}(q_{\bm{\phi}})
-  = \mathbb{E}_{q_{\bm{\phi}}}\bigl[\log p(\mathcal{D}|\bm{\theta})\bigr]
-  - D_{\text{KL}}\bigl(q_{\bm{\phi}}(\bm{\theta})\|p(\bm{\theta})\bigr).
-\]
+\begin{equation}
+  \text{ELBO}(q_{\bm{\phi}})
+  = \mathbb{E}_{q_{\bm{\phi}}}[\log p(\mathcal{D}|\bm{\theta})]
+  - D_{\text{KL}}(q_{\bm{\phi}}\|p(\bm{\theta})).
+  \label{eq:elbo}
+\end{equation}
 \end{definicion}
 
-\begin{teorema}{Descomposición de la evidencia}
-\label{thm:elbo_descomp}
-Para cualquier $q_{\bm{\phi}}$:
-\[
-  \log p(\mathcal{D}) = \mathrm{ELBO}(q_{\bm{\phi}})
-  + D_{\text{KL}}\bigl(q_{\bm{\phi}}\|p(\bm{\theta}|\mathcal{D})\bigr).
-\]
-Como $D_{\text{KL}} \geq 0$, la ELBO es una cota inferior de $\log p(\mathcal{D})$.
-Maximizar la ELBO respecto a $\bm{\phi}$ minimiza $D_{\text{KL}}(q_{\bm{\phi}}\|
-p(\bm{\theta}|\mathcal{D}))$.
+\begin{teorema}{Desigualdad de la evidencia}
+\label{thm:elbo}
+$\log p(\mathcal{D}) = \text{ELBO}(q_{\bm{\phi}}) +
+D_{\text{KL}}(q_{\bm{\phi}}\|p(\bm{\theta}|\mathcal{D})) \geq
+\text{ELBO}(q_{\bm{\phi}})$.
 \end{teorema}
 
 \begin{proof}
 \begin{align*}
-  \mathrm{ELBO}(q_{\bm{\phi}})
-  &= \mathbb{E}_{q_{\bm{\phi}}}[\log p(\mathcal{D}|\bm{\theta})]
-    - D_{\text{KL}}(q_{\bm{\phi}}\|p(\bm{\theta})) \\
-  &= \mathbb{E}_{q_{\bm{\phi}}}\!\left[\log p(\mathcal{D}|\bm{\theta})
-    + \log p(\bm{\theta}) - \log q_{\bm{\phi}}(\bm{\theta})\right] \\
-  &= \mathbb{E}_{q_{\bm{\phi}}}\!\left[\log\frac{p(\bm{\theta}|\mathcal{D})
-    p(\mathcal{D})}{q_{\bm{\phi}}(\bm{\theta})}\right] \\
+  \text{ELBO}
+  &= \mathbb{E}_{q}\!\left[\log\frac{p(\mathcal{D}|\bm{\theta})
+  p(\bm{\theta})}{q(\bm{\theta})}\right]
+  = \mathbb{E}_{q}\!\left[\log\frac{p(\bm{\theta}|\mathcal{D})
+  p(\mathcal{D})}{q(\bm{\theta})}\right] \\
   &= \log p(\mathcal{D})
-    - D_{\text{KL}}(q_{\bm{\phi}}\|p(\bm{\theta}|\mathcal{D})).
+  - D_{\text{KL}}(q\|p(\cdot|\mathcal{D})).
+  \qquad\square
 \end{align*}
-Reordenando: $\log p(\mathcal{D}) = \mathrm{ELBO} + D_{\text{KL}}(q_{\bm{\phi}}\|
-p(\cdot|\mathcal{D}))$. $\square$
 \end{proof}
 
-La ELBO tiene una interpretación dual que el físico reconocerá:
-\[
-  \mathrm{ELBO}
-  = \underbrace{\mathbb{E}_{q_{\bm{\phi}}}[\log p(\mathcal{D}|\bm{\theta})]}_{\text{reconstrucción (verosimilitud esperada)}}
-  - \underbrace{D_{\text{KL}}(q_{\bm{\phi}}\|p(\bm{\theta}))}_{\text{regularización (complejidad del modelo)}}.
-\]
-El primer término mide qué tan bien el modelo (bajo la distribución variacional
-$q$) explica los datos. El segundo penaliza cuánto se aparta $q$ del prior:
-es un término de regularización bayesiana. La ELBO equilibra ajuste y complejidad.
+La ELBO tiene una interpretación dual:
+\begin{equation}
+  \text{ELBO}
+  = \underbrace{\mathbb{E}_{q}[\log p(\mathcal{D}|\bm{\theta})]}_{\text{reconstrucción}}
+  - \underbrace{D_{\text{KL}}(q\|p(\bm{\theta}))}_{\text{regularización}}.
+  \label{eq:elbo_dual}
+\end{equation}
 
 \begin{fisicaconexion}{La ELBO como energía libre de Helmholtz}
-La ELBO tiene una interpretación termodinámica exacta. Escribiendo
-$-\mathrm{ELBO} = \mathbb{E}_q[-\log p(\mathcal{D}|\bm{\theta})] + D_\mathrm{KL}(q\|p)$,
-se identifican los dos términos con la \textbf{energía libre de Helmholtz}
-$F = U - TS$:
-\[
-  -\mathrm{ELBO} = \underbrace{\mathbb{E}_q[-\log p(\mathcal{D}|\bm{\theta})]}_{\text{energía media } U}
-  - \underbrace{H(q)}_{\text{entropía de la distribución variacional } TS}.
-\]
-La energía media $U = \mathbb{E}_q[-\log p(\mathcal{D}|\bm{\theta})]$ mide el
-ajuste a los datos; la entropía $H(q)$ mide cuánto ``ocupa'' la distribución
-variacional el espacio de parámetros. Maximizar la ELBO es minimizar $F = U - TS$:
-exactamente el principio de mínima energía libre que rige el equilibrio
-termodinámico. Cuanto mayor la temperatura (mayor entropía), más dispersa es
-$q$ sobre el espacio de parámetros (menos sobreajuste); cuanto menor, más
-concentrada en el MAP (mayor ajuste a los datos). El término de regularización
-$D_\mathrm{KL}(q\|p)$ mide la divergencia del prior, análogo a la energía libre
-de exceso respecto al estado de referencia. Esta analogía no es accidental: la
-inferencia variacional y la física estadística son formalismos duales del mismo
-principio de optimización bajo incertidumbre.
+\label{fc:elbo_helmholtz}
+$-\text{ELBO} = \underbrace{\mathbb{E}_q[-\log p(\mathcal{D}|
+\bm{\theta})]}_{\text{energía media } U} -
+\underbrace{H(q)}_{\text{entropía } TS}$. Maximizar la ELBO es
+minimizar la energía libre $F = U - TS$: el principio de mínima
+energía libre que rige el equilibrio termodinámico. Cuanto mayor la
+``temperatura'' (mayor entropía de $q$), más dispersa es la distribución
+variacional (menos sobreajuste); cuanto menor, más concentrada en el MAP
+(mayor ajuste a datos). El término
+$D_{\text{KL}}(q\|p)$ es la energía libre de exceso respecto al prior.
+La inferencia variacional y la física estadística son formalismos duales
+del mismo principio de optimización bajo incertidumbre.
 \end{fisicaconexion}
 
 \subsection{El truco de reparametrización}
 \label{subsec:reparam}
 
-Para maximizar la ELBO con descenso de gradiente se necesita:
-\[
-  \nabla_{\bm{\phi}}\mathbb{E}_{q_{\bm{\phi}}(\bm{\theta})}[f(\bm{\theta})].
-\]
-El problema es que la esperanza depende de $\bm{\phi}$ a través de la distribución
-de muestreo, y el gradiente no puede pasarse dentro de la esperanza directamente
-cuando el dominio de integración depende de $\bm{\phi}$.
-
 \begin{definicion}{Truco de reparametrización}
 \label{def:reparam}
-Si existe una función diferenciable $g_{\bm{\phi}}$ y una distribución base
-$p(\bm{\varepsilon})$ independiente de $\bm{\phi}$ tales que
-$\bm{\theta} = g_{\bm{\phi}}(\bm{\varepsilon})$ con
-$\bm{\varepsilon} \sim p(\bm{\varepsilon})$ tiene la misma distribución que
-$q_{\bm{\phi}}$, entonces:
-\[
+Si $\bm{\theta} = g_{\bm{\phi}}(\bm{\varepsilon})$ con
+$\bm{\varepsilon} \sim p(\bm{\varepsilon})$ independiente de
+$\bm{\phi}$ tiene distribución $q_{\bm{\phi}}$:
+\begin{equation}
   \nabla_{\bm{\phi}}\mathbb{E}_{q_{\bm{\phi}}}[f(\bm{\theta})]
-  = \mathbb{E}_{p(\bm{\varepsilon})}\!\left[
-    \nabla_{\bm{\phi}} f(g_{\bm{\phi}}(\bm{\varepsilon}))
-  \right].
-\]
+  = \mathbb{E}_{p(\bm{\varepsilon})}
+  [\nabla_{\bm{\phi}}f(g_{\bm{\phi}}(\bm{\varepsilon}))].
+  \label{eq:reparam}
+\end{equation}
 \end{definicion}
 
-Para la familia gaussiana diagonal $q_{\bm{\phi}} = \mathcal{N}(\bm{\mu},
-\mathrm{diag}(\bm{\sigma}^2))$ con $\bm{\phi} = (\bm{\mu},\log\bm{\sigma})$,
-la reparametrización es:
-\[
-  \bm{\theta} = \bm{\mu} + \bm{\sigma}\odot\bm{\varepsilon},
-  \qquad \bm{\varepsilon} \sim \mathcal{N}(\bm{0},\bm{I}).
-\]
-El gradiente de la ELBO respecto a $\bm{\phi}$ se convierte en:
-\[
-  \nabla_{\bm{\phi}}\,\mathrm{ELBO}
-  \approx \frac{1}{K}\sum_{k=1}^K \nabla_{\bm{\phi}}
-  \left[\log p(\mathcal{D}|g_{\bm{\phi}}(\bm{\varepsilon}^{(k)}))
-  - \log\frac{q_{\bm{\phi}}(g_{\bm{\phi}}(\bm{\varepsilon}^{(k)}))}{p(g_{\bm{\phi}}(\bm{\varepsilon}^{(k)}))}\right],
-\]
-estimado con $K$ muestras $\bm{\varepsilon}^{(k)} \sim \mathcal{N}(\bm{0},\bm{I})$.
-Con $K=1$ esto es el estimador SGVB (\textit{Stochastic Gradient Variational Bayes})
-de Kingma y Welling (2013): un solo forward pass por iteración, compatible con
-el ciclo de entrenamiento estándar del Capítulo~\ref{ch:cap5}.
+Para $q_{\bm{\phi}} = \mathcal{N}(\bm{\mu},\text{diag}(\bm{\sigma}^2))$
+con $\bm{\phi} = (\bm{\mu},\log\bm{\sigma})$:
+$\bm{\theta} = \bm{\mu} + \bm{\sigma}\odot\bm{\varepsilon}$ con
+$\bm{\varepsilon} \sim \mathcal{N}(\bm{0},\bm{I})$. El gradiente de la
+ELBO se estima con una sola muestra ($K = 1$): compatible con el bucle
+de entrenamiento estándar.
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Redes neuronales bayesianas y cuantificación de incertidumbre}
+\subsection{Algoritmo: el VAE}
+\label{subsec:alg_vae}
+
+\begin{algorithm}[H]
+\caption{Variational Autoencoder (VAE): entrenamiento}
+\label{alg:vae}
+\KwIn{Datos $\{\bm{x}_i\}_{i=1}^N$, encoder
+      $q_{\bm{\phi}}(\bm{z}|\bm{x})$, decoder
+      $p_{\bm{\psi}}(\bm{x}|\bm{z})$, prior
+      $p(\bm{z}) = \mathcal{N}(\bm{0},\bm{I})$, $\eta$, $B$, épocas $E$}
+\KwOut{Parámetros $(\bm{\phi}, \bm{\psi})$}
+
+Inicializar $\bm{\phi}$, $\bm{\psi}$\;
+\For{$e \leftarrow 1$ \KwTo $E$}{
+  \ForEach{mini-lote $\mathcal{B}$}{
+    \ForEach{$\bm{x}_i \in \mathcal{B}$}{
+      \tcp{Encoder: producir parámetros variacionales}
+      $\bm{\mu}_i, \log\bm{\sigma}_i \leftarrow
+      \text{encoder}_{\bm{\phi}}(\bm{x}_i)$\;
+      \tcp{Reparametrización: muestrear sin cortar el gradiente}
+      $\bm{\varepsilon}_i \sim \mathcal{N}(\bm{0},\bm{I})$\;
+      $\bm{z}_i \leftarrow \bm{\mu}_i
+      + \bm{\sigma}_i \odot \bm{\varepsilon}_i$\;
+      \tcp{Decoder: reconstruir}
+      $\hat{\bm{x}}_i \leftarrow
+      \text{decoder}_{\bm{\psi}}(\bm{z}_i)$\;
+    }
+    \tcp{ELBO = reconstrucción $-$ KL}
+    $\mathcal{L}_{\text{rec}} \leftarrow -\frac{1}{B}\sum_i
+    \log p_{\bm{\psi}}(\bm{x}_i|\bm{z}_i)$\;
+    $\mathcal{L}_{\text{KL}} \leftarrow \frac{1}{B}\sum_i
+    D_{\text{KL}}(q_{\bm{\phi}}(\bm{z}|\bm{x}_i)\|p(\bm{z}))$\;
+    $\mathcal{L} \leftarrow \mathcal{L}_{\text{rec}}
+    + \mathcal{L}_{\text{KL}}$\;
+    \tcp{Backward + Adam}
+    $(\bm{\phi},\bm{\psi}) \leftarrow (\bm{\phi},\bm{\psi})
+    - \eta\,\nabla_{(\bm{\phi},\bm{\psi})}\mathcal{L}$\;
+  }
+}
+\Return $(\bm{\phi}, \bm{\psi})$\;
+\end{algorithm}
+
+Para encoder y decoder gaussianos con prior
+$\mathcal{N}(\bm{0},\bm{I})$, la KL tiene forma cerrada
+(Ejercicio~\ref{ej:kl_gaussianas}):
+$D_{\text{KL}} = \frac{1}{2}\sum_j(\sigma_j^2 + \mu_j^2 - 1 -
+\log\sigma_j^2)$. El VAE es el primer modelo generativo del libro: el
+Capítulo~\ref{ch:cap12} lo extenderá a los modelos de difusión, donde
+el ``encoder'' es el forward process estocástico y el ``decoder'' es el
+reverse SDE.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Redes bayesianas y cuantificación de incertidumbre}
 \label{sec:bnn}
+% ─────────────────────────────────────────────────────────────────────────────
+
 \dificultad{3}{2}
-%───────────────────────────────────────────────────────────────────────────────
 
-\subsection{La red neuronal bayesiana}
-\label{subsec:bnn}
+\subsection{La predicción bayesiana}
+\label{subsec:pred_bayesiana}
 
-\begin{definicion}{Red neuronal bayesiana}
-\label{def:bnn}
-Una \textbf{red neuronal bayesiana} (BNN) es un MLP donde los parámetros
-$\bm{\theta}$ se tratan como variables aleatorias con prior $p(\bm{\theta})$.
-La predicción es la distribución predictiva posterior:
-\[
+La predicción bayesiana completa integra sobre el posterior:
+\begin{equation}
   p(y^*|\bm{x}^*,\mathcal{D})
-  = \int p(y^*|\bm{x}^*,\bm{\theta})\,p(\bm{\theta}|\mathcal{D})\,d\bm{\theta}.
-\]
-\end{definicion}
+  = \int p(y^*|\bm{x}^*,\bm{\theta})\,
+  p(\bm{\theta}|\mathcal{D})\,d\bm{\theta}.
+  \label{eq:pred_bayesiana}
+\end{equation}
+Esto entrega una \emph{distribución} sobre $y^*$, no un valor: cuantifica
+la incertidumbre epistémica propagada a las predicciones.
 
-Con la familia variacional gaussiana diagonal y el truco de reparametrización,
-la ELBO se maximiza con backpropagation estándar. Los parámetros variacionales
-son $\bm{\phi} = (\bm{\mu},\log\bm{\sigma}) \in \mathbb{R}^{2p}$: el doble
-de los parámetros de una red determinista. En lugar de aprender un solo valor
-para cada peso, la BNN aprende la media y el logaritmo de la desviación estándar
-de cada peso.
-
-\subsection{Dropout como inferencia variacional aproximada}
-\label{subsec:dropout_vi}
-
-El resultado de Gal y Ghahramani (2016) establece que el entrenamiento con
-dropout es una forma de inferencia variacional aproximada.
-
-\begin{proposicion}{Dropout como inferencia variacional}
-\label{prop:dropout_vi}
-Considérese una BNN con prior $p(\bm{W}^{(l)}) = \prod_j\mathcal{N}(\bm{w}_j;
-\bm{0},\bm{I}/l^2)$ y familia variacional formada por matrices con columnas
-$q(\bm{w}_j) = p_d\,\delta(\bm{w}_j) + (1-p_d)\,\mathcal{N}(\bm{w}_j;
-\bm{m}_j,\sigma^2\bm{I})$ (mezcla de punto en cero y gaussiana). La ELBO
-de esta BNN, aproximada ignorando términos de varianza, es proporcional a la
-pérdida de entrenamiento con dropout con probabilidad $p_d$ más un término de
-regularización en las medias $\bm{m}_j$:
-\[
-  -\mathrm{ELBO}(q)
-  \propto \mathcal{L}_{\text{dropout}}(\hat{\bm{M}})
-  + \frac{p_d}{2l^2}\sum_{l,j}\|\bm{m}_j^{(l)}\|_2^2
-  + \mathrm{const.}
-\]
-\end{proposicion}
-
-La demostración completa se desarrolla en el Ejercicio Resuelto~\ref{ej:dropout_vi}.
-La consecuencia práctica es el \textbf{MC Dropout}.
-
-\begin{definicion}{MC Dropout para cuantificación de incertidumbre}
-\label{def:mc_dropout}
+\subsection{MC Dropout como aproximación bayesiana}
 \label{subsec:mc_dropout}
-Para una red entrenada con dropout, la distribución predictiva posterior se
-aproxima haciendo $K$ evaluaciones con dropout activo:
-\begin{align*}
-  \mathbb{E}[y^*|\bm{x}^*,\mathcal{D}]
-  &\approx \frac{1}{K}\sum_{k=1}^K f(\bm{x}^*;\hat{\bm{\theta}}_k), \\
-  \mathrm{Var}[y^*|\bm{x}^*,\mathcal{D}]
-  &\approx \sigma^2 + \frac{1}{K}\sum_{k=1}^K
-    \bigl(f(\bm{x}^*;\hat{\bm{\theta}}_k)
-    - \mathbb{E}[y^*]\bigr)^2,
-\end{align*}
-donde $\hat{\bm{\theta}}_k$ es el conjunto de pesos activos en la $k$-ésima
-evaluación con dropout.
-\end{definicion}
 
-El primer término de la varianza ($\sigma^2$) es la incertidumbre aleatoria
-(ruido del modelo); el segundo es la incertidumbre epistémica (variabilidad
-entre las distintas subred). MC Dropout cuantifica ambas sin el costo
-computacional adicional de entrenar una BNN completa: se usa el mismo modelo
-entrenado con dropout, simplemente activando dropout en test.
+Gal y Ghahramani (2016)~\cite{gal2016dropout} demostraron que el dropout
+con probabilidad $p_d$ activo en test es equivalente a una aproximación
+variacional al posterior bayesiano. El algoritmo es simple:
 
-\subsection{Calibración de modelos}
+\begin{algorithm}[H]
+\caption{MC Dropout para cuantificación de incertidumbre}
+\label{alg:mc_dropout}
+\KwIn{MLP entrenado con dropout ($p_d$), entrada $\bm{x}^*$,
+      número de evaluaciones $T$}
+\KwOut{Media $\bar{y}$, varianza $\text{Var}[y]$}
+
+\For{$k \leftarrow 1$ \KwTo $T$}{
+  \tcp{Forward pass con dropout ACTIVO (no desactivar en test)}
+  Muestrear máscara de dropout $\bm{m}^{(k)} \sim
+  \text{Bernoulli}(1-p_d)$\;
+  $\hat{y}^{(k)} \leftarrow f(\bm{x}^*;\bm{\theta},\bm{m}^{(k)})$\;
+}
+$\bar{y} \leftarrow \frac{1}{T}\sum_k \hat{y}^{(k)}$\;
+$\text{Var}[y] \leftarrow \frac{1}{T}\sum_k
+(\hat{y}^{(k)}-\bar{y})^2$\;
+\Return $\bar{y}$, $\text{Var}[y]$\;
+\end{algorithm}
+
+Cada forward pass con una máscara de dropout distinta es una muestra del
+posterior aproximado. La varianza de las predicciones estima la
+incertidumbre epistémica: es grande en regiones del espacio de entrada
+pobremente representadas en los datos de entrenamiento y pequeña en
+regiones bien cubiertas.
+
+\subsection{Calibración}
 \label{subsec:calibracion}
 
-Un modelo bien calibrado satisface: cuando predice probabilidad $\hat{p}$ para
-un evento, ese evento ocurre con frecuencia $\hat{p}$. Formalmente, para
-clasificación binaria:
-\[
-  P(y=1 \mid \hat{p}(\bm{x}) = p) = p, \qquad \forall\, p \in [0,1].
-\]
+Un modelo está \textbf{bien calibrado} si la incertidumbre que predice
+corresponde a la frecuencia real de errores: cuando dice ``95\% de
+confianza'', acierta el 95\% de las veces. El error de calibración
+esperado (ECE) mide la discrepancia:
+\begin{equation}
+  \text{ECE} = \sum_{b=1}^B \frac{|S_b|}{N}
+  |\text{acc}(S_b) - \text{conf}(S_b)|,
+  \label{eq:ece}
+\end{equation}
+donde $S_b$ es el conjunto de predicciones en el $b$-ésimo bin de
+confianza. El \textbf{temperature scaling} (dividir los logits por un
+escalar $T$ optimizado en validación) mejora la calibración sin cambiar
+la precisión.
 
-\begin{definicion}{Error de calibración esperado}
-\label{def:ece}
-El \textbf{error de calibración esperado} (ECE) se calcula dividiendo el rango
-$[0,1]$ en $M$ bins $B_m$ e igualando la confianza media con la precisión media:
-\[
-  \mathrm{ECE} = \sum_{m=1}^M \frac{|B_m|}{N}
-  \left|\mathrm{acc}(B_m) - \mathrm{conf}(B_m)\right|,
-\]
-donde $\mathrm{acc}(B_m)$ es la precisión en el bin y $\mathrm{conf}(B_m)$
-la confianza media.
-\end{definicion}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Teoría de generalización}
+\label{sec:generalizacion_teoria}
+% ─────────────────────────────────────────────────────────────────────────────
 
-Los MLPs entrenados con entropía cruzada tienden a estar \textbf{sobreconfiados}:
-predicen probabilidades cercanas a 0 o 1 con más frecuencia de lo que su precisión
-justifica. La calibración puede corregirse con \textit{temperature scaling}
-(dividir los logits por una constante $T > 1$ antes del softmax) o con la
-regresión de Platt. En física de partículas, donde las predicciones del modelo
-se usan para tomar decisiones sobre la existencia de nueva física, la calibración
-correcta es tan importante como la exactitud media.
-
-%───────────────────────────────────────────────────────────────────────────────
-\section{Cotas de generalización y la teoría del aprendizaje estadístico}
-\label{sec:generalizacion}
 \dificultad{3}{2}
-%───────────────────────────────────────────────────────────────────────────────
 
-\subsection{El error de generalización y la desigualdad de Hoeffding}
-\label{subsec:hoeffding}
-
-El objetivo del aprendizaje es minimizar el \textbf{error poblacional} (o de
-generalización):
-\[
-  E_{\text{pop}}(\bm{\theta}) = \mathbb{E}_{p_{\text{data}}}[\ell(f(\bm{x};\bm{\theta}),y)],
-\]
-que no es observable. Se minimiza en su lugar el \textbf{error empírico}:
-\[
-  E_{\text{train}}(\bm{\theta}) = \frac{1}{N}\sum_{i=1}^N\ell(f(\bm{x}_i;\bm{\theta}),y_i).
-\]
-La brecha entre ambos es el \textbf{error de generalización}:
-$E_{\text{gen}} = E_{\text{pop}} - E_{\text{train}} \geq 0$.
-
-Para un único $\bm{\theta}$ fijo (no elegido en función de los datos), la
-desigualdad de Hoeffding acota esta brecha.
-
-\begin{teorema}{Desigualdad de Hoeffding}
-\label{thm:hoeffding}
-Sean $X_1,\ldots,X_N$ variables aleatorias i.i.d. con $a \leq X_i \leq b$ y
-$\mathbb{E}[X_i] = \mu$. Para todo $t > 0$:
-\[
-  P\!\left(\left|\frac{1}{N}\sum_{i=1}^N X_i - \mu\right| \geq t\right)
-  \leq 2\exp\!\left(-\frac{2N t^2}{(b-a)^2}\right).
-\]
-\end{teorema}
-
-Aplicando Hoeffding a la pérdida (asumida acotada en $[0,1]$ por simplicidad):
-con probabilidad $\geq 1-\delta$ sobre la muestra de entrenamiento:
-\[
-  E_{\text{pop}}(\bm{\theta}) \leq E_{\text{train}}(\bm{\theta})
-  + \sqrt{\frac{\ln(2/\delta)}{2N}}.
-\]
-Esta cota es razonable para un $\bm{\theta}$ fijo, pero el aprendizaje elige
-$\bm{\theta}$ en función de los datos: hay que controlar el máximo sobre todos
-los $\bm{\theta}$ de la familia.
-
-\subsection{Dimensión de Vapnik-Chervonenkis y cotas de capacidad}
+\subsection{La cota VC y sus limitaciones}
 \label{subsec:vc}
 
-\begin{definicion}{VC-dimensión}
-\label{def:vc}
-La \textbf{dimensión de Vapnik-Chervonenkis} (VC-dimensión) de una clase de
-funciones binarias $\mathcal{F}$ es el tamaño máximo de un conjunto de puntos
-que $\mathcal{F}$ puede \textbf{fragmentar} (\textit{shatter}): clasificar de
-todas las $2^d$ formas posibles. Formalmente:
-\[
-  \mathrm{VCdim}(\mathcal{F}) = \max\{d : \exists\,\bm{x}_1,\ldots,\bm{x}_d
-  \text{ s.t. } \mathcal{F} \text{ fragmenta } \{\bm{x}_1,\ldots,\bm{x}_d\}\}.
-\]
+La dimensión VC (Vapnik y Chervonenkis, 1971) cuantifica la capacidad de
+una clase de funciones: el mayor número de puntos que puede clasificar
+correctamente para cualquier configuración de etiquetas. Para un MLP con
+$p$ parámetros, $\text{VCdim} = O(p\log p)$.
+
+\begin{proposicion}{Cota de generalización VC}
+\label{prop:vc}
+Con probabilidad $\geq 1-\delta$:
+\begin{equation}
+  \mathcal{L}_{\text{gen}} \leq \mathcal{L}_{\text{train}}
+  + O\!\left(\sqrt{\frac{\text{VCdim}\cdot\log(2N/\text{VCdim})
+  + \log(4/\delta)}{N}}\right).
+  \label{eq:vc}
+\end{equation}
+\end{proposicion}
+
+La cota~\eqref{eq:vc} predice que el error de generalización crece con
+la capacidad del modelo: un MLP con $p \gg N$ debería sobreajustar
+inevitablemente. La práctica moderna contradice esta predicción: modelos
+con $p = 10^{10}$ y $N = 10^9$ generalizan bien. La cota VC es correcta
+pero floja: ignora la estructura del optimizador (SGD favorece mínimos
+planos), la regularización implícita, y la geometría del paisaje de
+pérdida en alta dimensión.
+
+Las cotas modernas (Bartlett et al., 2017) controlan la norma espectral
+de los pesos en lugar de contar parámetros: escalan como
+$O(\prod_l\|\bm{W}^{(l)}\|_2 / \sqrt{N})$, que puede ser pequeña
+incluso para $p \gg N$ si los pesos son controlados. El
+Capítulo~\ref{ch:cap8} analiza esta situación en detalle mediante el
+fenómeno de \textit{double descent}: la curva de error que primero sube
+(como predice VC), luego baja de nuevo en el régimen sobreparametrizado.
+
+\subsection{La información de Fisher y Adam}
+\label{subsec:fisher_adam}
+
+\begin{definicion}{Información de Fisher}
+\label{def:fisher}
+$\mathcal{I}(\bm{\theta})_{jk} = \mathbb{E}_{p(\mathcal{D}|\bm{\theta})}
+\!\left[\frac{\partial\log p}{\partial\theta_j}
+\frac{\partial\log p}{\partial\theta_k}\right]$.
 \end{definicion}
 
-\begin{teorema}{Cota de generalización por VC (Vapnik-Chervonenkis, 1971)}
-\label{thm:vc_bound}
-Sea $\mathcal{F}$ una clase de clasificadores binarios con $\mathrm{VCdim}
-(\mathcal{F}) = d < \infty$. Con probabilidad $\geq 1-\delta$ sobre la muestra
-de entrenamiento de tamaño $N$:
-\[
-  \sup_{\hat{f}\in\mathcal{F}}\bigl[E_{\text{pop}}(\hat{f})
-  - E_{\text{train}}(\hat{f})\bigr]
-  \leq \sqrt{\frac{8d\ln(2N/d) + 8\ln(4/\delta)}{N}}.
-\]
-\end{teorema}
+La información de Fisher es la curvatura de la log-verosimilitud: mide
+cuánta información los datos aportan sobre cada parámetro. El
+\textbf{gradiente natural} (Amari, 1998) usa $\mathcal{I}^{-1}$ como
+precondicionador:
+$\bm{\theta} \leftarrow \bm{\theta} -
+\eta\mathcal{I}^{-1}\nabla\mathcal{L}$. Adam aproxima la diagonal de
+$\mathcal{I}^{-1}$ con el segundo momento del gradiente: la conexión
+entre Adam y el gradiente natural justifica probabilísticamente por qué
+Adam converge más rápido que SGD.
 
-Para MLPs la VC-dimensión escala como $O(p\log p)$ donde $p$ es el número de
-parámetros (Bartlett, 1998), lo que da una cota de generalización de orden
-$O(\sqrt{p\log p/N})$.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{El oscilador como laboratorio: de la certeza a la incertidumbre}
+\label{sec:oscilador7}
+% ─────────────────────────────────────────────────────────────────────────────
 
-\subsection{Las limitaciones de las cotas de VC y el \textit{double descent}}
-\label{subsec:limitaciones_vc}
+\dificultad{2}{2}
 
-Las cotas de VC son el resultado central de la teoría clásica del aprendizaje,
-pero tienen limitaciones importantes que deben comprenderse para no usarlas mal.
+Los capítulos anteriores ajustaron el oscilador con MLE (= MSE) y
+obtuvieron un valor puntual $\hat{\bm{\theta}}^*$. Ahora la pregunta
+cambia: ¿cuánto confiar en la predicción $\hat{f}(t)$ para valores de $t$
+fuera del rango de entrenamiento $[0, 2]$?
 
-\medskip
-\noindent\textbf{Limitación 1: las cotas son genéricamente flojas.}
-La cota del Teorema~\ref{thm:vc_bound} es del orden $O(\sqrt{p/N})$: crece al
-aumentar $p$. Para un MLP con $p = 10^6$ y $N = 10^4$ daría una cota de
-generalización $\gg 1$, lo que es trivialmente inútil (cualquier error es
-$\leq 1$ para clasificación binaria). En la práctica, esas redes generalizan
-bien. Las cotas de VC no explican por qué.
+\subsection{La predicción puntual y su ceguera}
+\label{subsec:osc_puntual}
 
-\medskip
-\noindent\textbf{Limitación 2: ignoran la estructura del algoritmo.}
-Las cotas de VC controlan el peor caso sobre toda la clase $\mathcal{F}$. No
-capturan el hecho de que el SGD con cierta inicialización y tasa de aprendizaje
-no explora toda la clase: tiene un sesgo implícito hacia soluciones con propiedades
-específicas (mínima norma, mínimos planos). La regularización implícita del
-Capítulo~\ref{ch:cap8} hace que el modelo efectivo tenga una complejidad mucho menor que la
-VC-dimensión nominal.
+El MLP $(1, 32, 1)$ entrenado con Adam sobre los 25 puntos del oscilador
+produce una predicción determinista. En $t = 1.0$ (dentro del dominio), la
+predicción es buena: $\hat{f}(1.0) \approx \sin(2\pi) \approx 0$. En
+$t = 2.5$ (fuera del dominio), la red extrapola con la misma confianza
+aparente —pero el resultado puede ser arbitrario, porque la función ReLU
+es lineal fuera de la región cubierta por los ``codos'' entrenados.
 
-\medskip
-\noindent\textbf{Limitación 3: el \textit{double descent} contradice la predicción clásica.}
-La cota del Teorema~\ref{thm:vc_bound} implica que el error de generalización
-crece monótonamente con $p$ (para $N$ fijo). El fenómeno \textit{double descent}
-(Capítulo~\ref{ch:cap8}) muestra que para $p \gg N$, el error de generalización puede volver
-a decrecer. Las cotas de VC no tienen mecanismo para explicar este comportamiento:
-son intrínsecamente cotas del régimen subparamétrico ($p < N$).
+El problema es que la predicción puntual no distingue entre ``confío
+porque tengo datos'' y ``adivino porque no tengo datos''. La predicción
+bayesiana sí.
 
-\medskip
-\noindent\textbf{La cota de VC como herramienta de comprensión, no de predicción.}
-La VC-dimensión es útil para entender cualitativamente qué familias son más o
-menos complejas, para demostrar que el aprendizaje es posible en principio (el
-teorema fundamental del PAC-learning: si $\mathrm{VCdim}(\mathcal{F}) < \infty$,
-la familia es PAC-aprendible), y para diseñar algoritmos con garantías en el
-régimen de datos abundantes ($N \gg p$). No es una herramienta predictiva en el
-régimen sobredeterminado moderno.
+\subsection{Incertidumbre con MC Dropout sobre el oscilador}
+\label{subsec:osc_dropout}
 
-\begin{observacion}{Cotas modernas: la teoría del margen y la norma}
-La investigación reciente (Bartlett et al., 2020; Neyshabur et al., 2018)
-muestra que las cotas de generalización para redes neuronales deben controlar
-no la VC-dimensión sino la \textbf{norma de los parámetros} (norma espectral
-o norma de Frobenius de los pesos). Estas cotas escalan como $O(\|\bm{W}\|/
-\sqrt{N})$ y pueden ser significativas incluso para $p \gg N$ si los pesos
-son pequeños. Son las cotas correctas para el régimen moderno, pero requieren
-herramientas de teoría de matrices aleatorias para su análisis
-en el límite termodinámico $p,N\to\infty$ con $p/N\to\gamma$ constante.
-\end{observacion}
+Entrenar el mismo MLP $(1, 32, 1)$ con dropout ($p_d = 0.1$) y aplicar el
+Algoritmo~\ref{alg:mc_dropout} con $T = 100$ evaluaciones produce una
+media $\bar{f}(t)$ y una banda de incertidumbre
+$\bar{f}(t) \pm 2\text{std}(t)$. El comportamiento esperado es:
 
-%───────────────────────────────────────────────────────────────────────────────
-\section{Resumen del Capítulo 7}
+Para $t \in [0, 2]$ (dominio de entrenamiento): la banda es estrecha
+($\text{std} \approx \sigma = 0.15$), dominada por la incertidumbre
+aleatoria del ruido de medición.
+
+Para $t > 2$ (extrapolación): la banda se ensancha progresivamente. La
+incertidumbre epistémica crece porque los pesos del MLP no están
+determinados por los datos en esa región. Cada evaluación con una máscara
+de dropout distinta produce una extrapolación diferente; la dispersión
+cuantifica la ignorancia.
+
+El Ejercicio Computacional~\ref{ejcomp:oscilador7} implementa este
+experimento y verifica que el crecimiento de la banda fuera del dominio es
+consistente con la distinción aleatoria/epistémica.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resumen del Capítulo 7 y transición}
 \label{sec:resumen7}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
-Este capítulo proveyó el lenguaje probabilístico que los capítulos anteriores
-usaron de forma implícita y que los capítulos siguientes necesitarán
-explícitamente.
+Este capítulo proveyó el lenguaje probabilístico que los capítulos
+anteriores usaron implícitamente. El hilo central fue la unificación: MSE
+= MLE gaussiano, regularización $\ell_2$ = prior gaussiano bajo MAP,
+distribución de Gibbs del SGD = máxima entropía bajo restricción de
+energía. El MLE, el MAP y la inferencia variacional son tres puntos en un
+continuo que va del estimador puntual a la distribución completa. La ELBO
+es la energía libre de Helmholtz; maximizarla es minimizar $F = U - TS$.
+El truco de reparametrización hace la ELBO diferenciable y compatible con
+backpropagation.
 
-El hilo central fue la unificación: la pérdida MSE es MLE gaussiano, la
-regularización $\ell_2$ es un prior gaussiano bajo MAP, la distribución
-estacionaria del SGD es la distribución de máxima entropía bajo restricción
-de energía. El MLE, el MAP y la inferencia variacional son tres puntos en un
-continuo que va del estimador puntual a la distribución completa sobre los
-parámetros. La entropía cruzada minimiza la KL entre el modelo y los datos;
-la ELBO maximiza una cota inferior de la evidencia; el truco de reparametrización
-hace que ambos sean diferenciables y compatibles con backpropagation.
+Las cotas VC formalizan la intuición del Capítulo~\ref{ch:cap2} sobre el
+compromiso sesgo-varianza, pero fallan en el régimen sobreparametrizado
+moderno: predicen sobreajuste inevitable para $p \gg N$, lo que la práctica
+contradice. El Capítulo~\ref{ch:cap8} resuelve esta contradicción: el
+fenómeno de \textit{double descent} muestra que la curva de error tiene
+\emph{dos} descensos separados por un pico, y la regularización implícita
+del SGD (Cap.~\ref{ch:cap5}) explica por qué el segundo descenso ocurre.
+Las cotas modernas basadas en la norma espectral reemplazan a las VC como
+herramienta teórica correcta.
 
-Las cotas de VC formalizan la intuición del Capítulo~\ref{ch:cap2} sobre el compromiso
-sesgo-varianza, pero tienen limitaciones fundamentales en el régimen sobredeterminado
-moderno. Esas limitaciones señalan hacia dos desarrollos que el libro abordará
-más adelante: la regularización implícita del SGD (Capítulo~\ref{ch:cap8}) y el análisis de
-matrices aleatorias en el límite termodinámico.
-
-Tres conexiones hacia adelante. El Capítulo~\ref{ch:cap8} usará la distinción entre
-incertidumbre epistémica y aleatoria para el MC Dropout, y la ELBO para el
-análisis del fenómeno \textit{double descent} en términos de complejidad efectiva.
-El Capítulo~\ref{ch:cap10} completará el cálculo de Itô con rigor formal y mostrará que la
-SDE de Langevin del SGD es el proceso cuya distribución estacionaria es exactamente
-la distribución de Gibbs derivada aquí como distribución de máxima entropía. El
-Capítulo~\ref{ch:cap12} usará la ELBO y el truco de reparametrización como piedras angulares
-del VAE, y la KL entre distribuciones en tiempos distintos como función de pérdida
-de los modelos de difusión.
-
-%───────────────────────────────────────────────────────────────────────────────
-\label{sec:estrella7}
-\begin{estrella}{Cuantificación de incertidumbre en el sustituto neutrónico}
-
-\textbf{El problema.}
-El sustituto MLP $f_{\mathrm{MLP}}(\bm{u}) \approx \bm{\Phi}(\bm{u})$
-(Capítulos~\ref{ch:cap4}--\ref{ch:cap6}) proporciona predicciones
-deterministas del flujo neutrónico. En el contexto regulatorio de un reactor
-de investigación, una predicción puntual no es suficiente: se necesita una
-estimación de la \textbf{incertidumbre epistémica} sobre la predicción
----cuán seguros estamos del valor predicho dado que el modelo se entrenó con
-datos finitos--- y de la \textbf{incertidumbre aleatoria} ---el ruido
-intrínseco del flujo simulado por Monte Carlo.
-
-\textbf{MC Dropout como estimador de incertidumbre operacional.}
-El procedimiento estándar para cuantificar incertidumbre sin reentrenar el
-modelo es el MC Dropout (Definición~\ref{def:mc_dropout}): se realizan $K$
-evaluaciones del sustituto con dropout activo, produciendo $K$ predicciones
-$\{\bm{\Phi}^{(k)}\}_{k=1}^K$. La media $\bar{\bm{\Phi}} = \frac{1}{K}\sum_k\bm{\Phi}^{(k)}$
-es la predicción puntual; la desviación estándar por componente,
-$\mathrm{std}[\Phi_j] = \sqrt{\frac{1}{K}\sum_k(\Phi_j^{(k)}-\bar{\Phi}_j)^2}$,
-cuantifica la incertidumbre epistémica de forma localizada sobre el núcleo.
-
-\textbf{Propagación de incertidumbre en secciones eficaces.}
-Los parámetros nucleares del código de referencia (secciones eficaces de fisión,
-captura y dispersión) tienen incertidumbres propias de $\sim 1$--$5\%$ derivadas
-de los experimentos de medición nuclear. El marco bayesiano permite propagar
-estas incertidumbres: si las secciones eficaces tienen prior
-$p(\bm{\sigma}_x) = \mathcal{N}(\bar{\bm{\sigma}}_x, \bm{\Sigma}_{\sigma})$
-con covarianza conocida $\bm{\Sigma}_\sigma$ (disponible en bibliotecas nucleares
-como ENDF/B), la incertidumbre en el flujo predicho es:
-\[
-  \mathrm{Var}[\bm{\Phi}] \approx \bm{J}_\sigma\,\bm{\Sigma}_\sigma\,\bm{J}_\sigma^\top,
-  \qquad
-  \bm{J}_\sigma = \frac{\partial f_{\mathrm{MLP}}}{\partial\bm{\sigma}_x},
-\]
-donde el jacobiano $\bm{J}_\sigma$ se obtiene por backpropagation (Capítulo~\ref{ch:cap6})
-a través del sustituto. Esto reproduce, sobre el sustituto diferenciable, el
-análisis de sensibilidad que el código TSUNAMI realiza sobre el transporte
-de Boltzmann.
-
-\textbf{Calibración del sustituto.}
-Un sustituto bien entrenado pero mal calibrado puede predecir flujos con
-confianza excesiva en regiones del espacio de operación pobremente muestreadas.
-El error de calibración esperado (ECE, Definición~\ref{def:ece}) proporciona
-una métrica cuantitativa: el sustituto está bien calibrado si la incertidumbre
-predicha por MC Dropout coincide con el error real contra el código de referencia.
-En la práctica, el temperature scaling ---dividir las salidas del sustituto por
-un escalar $T$ optimizado en un conjunto de validación--- mejora la calibración
-sin cambiar la exactitud media, con un costo computacional despreciable.
-
-\textbf{Conexión con el capítulo.}
-Las tres incertidumbres de la Sección~\ref{subsec:tres_incertidumbres} aparecen
-simultáneamente: la incertidumbre aleatoria es el ruido Monte Carlo de las
-simulaciones de referencia; la epistémica es la incertidumbre del sustituto
-sobre regiones pobremente exploradas del espacio de operación; la de modelo es
-el sesgo sistemático de un MLP de capacidad finita respecto al transporte exacto.
-El marco bayesiano, y en particular MC Dropout, permite separar y cuantificar
-las tres de forma computacionalmente eficiente sobre el sustituto.
-\end{estrella}
-
-%───────────────────────────────────────────────────────────────────────────────
-\section*{Ejercicios computacionales}
-\addcontentsline{toc}{section}{Ejercicios computacionales}
-%───────────────────────────────────────────────────────────────────────────────
-
-\begin{ejerciciocomp}{Ajuste probabilístico: MSE vs.\  log-verosimilitud de Poisson}
-\textbf{Objetivo:} verificar que la pérdida óptima depende del modelo de ruido
-subyacente, y que usar MSE para conteos de Poisson produce estimaciones sesgadas.
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Generar $N = 200$ muestras de un proceso de Poisson:
-        $\lambda(x) = 5\exp(-x^2/2)$ con $x_i \sim \mathcal{U}[-3,3]$ y
-        $y_i \sim \mathrm{Poisson}(\lambda(x_i))$.
-  \item Ajustar un MLP $(1,32,1)$ con activación softplus (para garantizar
-        $\hat{\lambda} > 0$) usando dos pérdidas: MSE y log-verosimilitud de
-        Poisson $\ell = -\sum_i [y_i\log\hat{\lambda}(x_i) - \hat{\lambda}(x_i)]$.
-  \item Para cada ajuste, graficar $\hat{\lambda}(x)$ frente a $\lambda(x)$
-        real. ¿En qué región difieren más? ¿Cuál produce predicciones negativas?
-  \item Calcular el estadístico $\chi^2$ reducido para cada ajuste. ¿Cuál
-        está mejor calibrado?
-\end{enumerate}
-
-\medskip\noindent\textbf{Verificación:} para conteos bajos ($y_i \in \{0,1,2\}$),
-el MLE de Poisson debe ser significativamente mejor que MSE; para conteos altos
-($\bar{y} \gg 1$) las dos pérdidas deben converger.
-\end{ejerciciocomp}
-
-\begin{ejerciciocomp}{MC Dropout para cuantificación de incertidumbre}
-\textbf{Objetivo:} implementar MC Dropout e interpretar la incertidumbre predicha
-en términos de las regiones exploradas vs.\ no exploradas por los datos de
-entrenamiento.
-
-\medskip\noindent\textbf{Algoritmo:}
-\begin{enumerate}
-  \item Entrenar un MLP $(1,64,64,1)$ con dropout ($p_d = 0.1$) y pérdida MSE
-        sobre $N=50$ puntos de entrenamiento con $x \in [-3,3]$ muestreados de
-        $f(x) = \sin(x) + \varepsilon$, $\varepsilon \sim \mathcal{N}(0,0.1^2)$.
-  \item Con dropout activo en test, hacer $K=100$ evaluaciones sobre el rango
-        $x \in [-5,5]$. Calcular la media $\bar{y}(x)$ y el intervalo
-        $[\bar{y}-2\mathrm{std}, \bar{y}+2\mathrm{std}]$.
-  \item Graficar la banda de incertidumbre. ¿Crece la incertidumbre fuera del
-        rango de entrenamiento? ¿Es este comportamiento consistente con la
-        distinción entre incertidumbre aleatoria y epistémica?
-  \item Comparar con un MLP idéntico sin dropout (predicción determinista).
-        ¿Qué información adicional provee MC Dropout?
-\end{enumerate}
-\end{ejerciciocomp}
-
-%───────────────────────────────────────────────────────────────────────────────
-\begin{notasbib}
-La interpretación probabilística del aprendizaje supervisado tiene raíces en la
-estadística matemática clásica. El principio de máxima verosimilitud fue
-formalizado por Fisher (1922)~\cite{fisher1922mathematical}, que demostró
-su consistencia y eficiencia asintótica. La cota de Cramér-Rao fue establecida
-independientemente por Cramér (1946) y Rao (1945), y formalizada en la forma
-de la información de Fisher. El tratamiento moderno puede encontrarse en
-Lehmann y Casella (1998)~\cite{lehmann1998theory}.
-
-El principio de máxima entropía fue formulado por Jaynes (1957)~\cite{jaynes1957information}
-como generalización del principio de equiprobabilidad de Laplace: en ausencia de
-información adicional, el prior correcto es el que maximiza la entropía sujeto
-a las restricciones disponibles. Jaynes argumentó que la mecánica estadística
-de Gibbs-Boltzmann es un caso especial de inferencia bayesiana bajo restricciones
-de energía. Esta perspectiva conecta directamente con la distribución estacionaria
-del SGD del Capítulo~\ref{ch:cap5}.
-
-La conexión entre entropía cruzada y divergencia KL, y la derivación de la
-pérdida de entropía cruzada como MLE bajo modelo categórico, son resultados
-estándar de la teoría de la información (Cover y Thomas, 2006)~\cite{cover2006elements}.
-El cuello de botella de información como principio organizador del aprendizaje
-fue propuesto por Tishby, Pereira y Bialek (2000)~\cite{tishby2000information}.
-
-La inferencia variacional como técnica de aproximación al posterior fue
-desarrollada en la comunidad de estadística bayesiana computacional. El truco
-de reparametrización aplicado a redes neuronales y la derivación del estimador
-SGVB son debidos a Kingma y Welling (2013)~\cite{kingma2013auto}, que lo
-introdujeron en el contexto del autoencóder variacional (VAE). La
-interpretación del dropout como inferencia variacional aproximada fue establecida
-por Gal y Ghahramani (2016)~\cite{gal2016dropout}.
-
-La teoría VC fue desarrollada por Vapnik y Chervonenkis (1971)~\cite{vapnik1971uniform}
-como fundamento matemático del aprendizaje estadístico. El tratamiento moderno
-con análisis del margen y cotas de norma espectral puede encontrarse en Bartlett
-et al.\ (2017)~\cite{bartlett2017spectrally}. Las limitaciones de las cotas
-de VC en el régimen sobredeterminado moderno y el fenómeno \textit{double descent}
-se discuten en Belkin et al.\ (2019)~\cite{belkin2019reconciling} y Bartlett
-et al.\ (2020)~\cite{bartlett2020benign}.
-
-El gradiente natural fue introducido por Amari (1998)~\cite{amari1998natural}
-en el contexto de la geometría de la información, y la conexión entre Adam y el
-gradiente natural diagonal fue señalada por varios autores. El algoritmo K-FAC
-(Kronecker-factored Approximate Curvature), que extiende esta idea a bloques de
-matrices, fue propuesto por Martens y Grosse (2015)~\cite{martens2015optimizing}.
-
-En el contexto de la física de reactores, la propagación de incertidumbre en las
-secciones eficaces y el análisis de sensibilidad mediante el método adjunto son
-implementados en el módulo TSUNAMI del paquete SCALE (Oak Ridge National
-Laboratory). La biblioteca de datos nucleares ENDF/B-VIII.0 proporciona las
-matrices de covarianza $\bm{\Sigma}_\sigma$ que permiten el análisis bayesiano
-de incertidumbre descrito en la sección estrella.
-\end{notasbib}
-
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios resueltos}
 \addcontentsline{toc}{section}{Ejercicios resueltos}
-%───────────────────────────────────────────────────────────────────────────────
-
-\begin{ejercicio}
-\label{ej:predictor_optimo}
-\textbf{(La esperanza condicional como predictor óptimo).}
-
-Demostrar que $f^*(\bm{x}) = \mathbb{E}[y|\bm{x}]$ minimiza el error cuadrático
-medio poblacional $R(f) = \mathbb{E}_{p_{\text{data}}}[(f(\bm{x})-y)^2]$ sobre
-todas las funciones medibles $f$.
-
-\medskip\noindent\textit{Solución.}
-Añadiendo y restando $f^*(\bm{x})$ dentro del cuadrado:
-\begin{align*}
-  R(f) &= \mathbb{E}\bigl[(f(\bm{x})-y)^2\bigr] \\
-  &= \mathbb{E}\bigl[(f(\bm{x})-f^*(\bm{x}))^2\bigr]
-    + 2\,\mathbb{E}\bigl[(f(\bm{x})-f^*(\bm{x}))(f^*(\bm{x})-y)\bigr]
-    + \mathbb{E}\bigl[(f^*(\bm{x})-y)^2\bigr].
-\end{align*}
-El término cruzado es cero: condicionando sobre $\bm{x}$,
-$\mathbb{E}[(f^*(\bm{x})-y)|\bm{x}] = f^*(\bm{x}) - \mathbb{E}[y|\bm{x}] = 0$.
-Por tanto:
-\[
-  R(f) = \underbrace{\mathbb{E}[(f(\bm{x})-f^*(\bm{x}))^2]}_{\geq 0}
-  + \underbrace{\mathbb{E}[(f^*(\bm{x})-y)^2]}_{=\,\mathrm{Var}[y|\bm{x}]}.
-\]
-El primer término es no negativo y se anula si y solo si $f = f^*$. El segundo
-es la varianza del ruido irreducible, independiente de $f$. Luego $f^*$ minimiza
-$R(f)$. $\square$
-\end{ejercicio}
-
-\begin{ejercicio}
-\label{ej:dropout_vi}
-\textbf{(Dropout como inferencia variacional: caso escalar).}
-
-Sea una BNN con un único peso $w$ con prior $p(w) = \mathcal{N}(0,1)$ y familia
-variacional $q_\phi(w) = p_d\,\delta(w) + (1-p_d)\,\mathcal{N}(w;m,\sigma^2)$
-con $p_d = 0.5$ y $\sigma^2 \to 0$. Calcular la KL $D_{\text{KL}}(q_\phi\|p)$
-y mostrar que la ELBO se reduce a la pérdida con dropout más regularización.
-
-\medskip\noindent\textit{Solución.}
-En el límite $\sigma^2 \to 0$, $q_\phi \approx 0.5\,\delta(w) + 0.5\,\delta(w-m)$.
-La KL entre una mezcla de dos puntos y una gaussiana es:
-\begin{align*}
-  D_{\text{KL}}(q_\phi\|p)
-  &= 0.5\,\log\frac{q_\phi(0)}{p(0)}
-   + 0.5\,\log\frac{q_\phi(m)}{p(m)} \\
-  &= 0.5\log\frac{0.5/\sigma}{p(0)}
-   + 0.5\log\frac{0.5/\sigma}{p(m)}.
-\end{align*}
-El término que depende de $m$ es $-0.5\log p(m) = 0.5\log(2\pi) + \frac{m^2}{4}$.
-La ELBO es:
-\[
-  \mathrm{ELBO} = \mathbb{E}_q[\log p(\mathcal{D}|w)] - D_{\text{KL}}
-  \approx 0.5\log p(\mathcal{D}|0) + 0.5\log p(\mathcal{D}|m)
-  - \frac{m^2}{4} + \mathrm{const.}
-\]
-El término $0.5\log p(\mathcal{D}|0) + 0.5\log p(\mathcal{D}|m)$ es la
-log-verosimilitud esperada bajo dropout con $p_d = 0.5$: con probabilidad $0.5$
-el peso es cero (neurona inactiva) y con probabilidad $0.5$ es $m$ (neurona
-activa). El término $-m^2/4$ es regularización $\ell_2$ sobre el peso. $\square$
-\end{ejercicio}
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
 \label{ej:kl_gaussianas}
 \textbf{(Divergencia KL entre gaussianas).}
 
-Calcular $D_{\text{KL}}(\mathcal{N}(\mu_1,\sigma_1^2)\|\mathcal{N}(\mu_2,\sigma_2^2))$
-en forma cerrada.
+Calcular $D_{\text{KL}}(\mathcal{N}(\mu_1,\sigma_1^2)\|
+\mathcal{N}(\mu_2,\sigma_2^2))$.
 
 \medskip\noindent\textit{Solución.}
 \begin{align*}
   D_{\text{KL}}(p\|q)
-  &= \int p(x)\log\frac{p(x)}{q(x)}\,dx \\
-  &= \mathbb{E}_p\!\left[\log p(x) - \log q(x)\right] \\
-  &= \mathbb{E}_p\!\left[
-    -\frac{(x-\mu_1)^2}{2\sigma_1^2} + \frac{(x-\mu_2)^2}{2\sigma_2^2}
-    + \log\frac{\sigma_2}{\sigma_1}
-  \right].
-\end{align*}
-Usando $\mathbb{E}_p[(x-\mu_1)^2] = \sigma_1^2$ y $\mathbb{E}_p[(x-\mu_2)^2]
-= \sigma_1^2 + (\mu_1-\mu_2)^2$:
-\[
-  D_{\text{KL}}(\mathcal{N}(\mu_1,\sigma_1^2)\|\mathcal{N}(\mu_2,\sigma_2^2))
-  = \log\frac{\sigma_2}{\sigma_1}
+  &= \mathbb{E}_p[\log p - \log q] \\
+  &= \log\frac{\sigma_2}{\sigma_1}
   + \frac{\sigma_1^2 + (\mu_1-\mu_2)^2}{2\sigma_2^2} - \frac{1}{2}.
-\]
-Este resultado se usará en el VAE del Capítulo~\ref{ch:cap12}, donde la KL entre el posterior
-variacional $q_\phi(\bm{z}|\bm{x}) = \mathcal{N}(\bm{\mu}_\phi, \mathrm{diag}
-(\bm{\sigma}_\phi^2))$ y el prior $p(\bm{z}) = \mathcal{N}(\bm{0},\bm{I})$
-tiene la misma forma con $\mu_2 = 0$ y $\sigma_2 = 1$. $\square$
+\end{align*}
+Para el VAE con $q = \mathcal{N}(\bm{\mu},\text{diag}(\bm{\sigma}^2))$
+y $p = \mathcal{N}(\bm{0},\bm{I})$:
+$D_{\text{KL}} = \frac{1}{2}\sum_j(\sigma_j^2+\mu_j^2-1-\log\sigma_j^2)$.
+$\square$
 \end{ejercicio}
 
-%───────────────────────────────────────────────────────────────────────────────
+\begin{ejercicio}
+\label{ej:dropout_variacional}
+\textbf{(Dropout como inferencia variacional).}
+
+Sea un modelo lineal $y = w x$ con un solo peso $w$ y dropout con
+$p_d = 0.5$: durante el entrenamiento, $w$ se multiplica por una
+Bernoulli $m \sim \text{Ber}(0.5)$.
+
+\medskip\noindent\textit{(a)} La distribución variacional implícita es
+$q(w) = 0.5\,\delta(w) + 0.5\,\delta(w-m_0)$, donde $m_0$ es el peso
+aprendido. Calcular la ELBO para prior gaussiano $p(w) = \mathcal{N}(0,1)$.
+
+\medskip\noindent\textit{Solución.}
+$\text{ELBO} = 0.5\log p(\mathcal{D}|w=0) + 0.5\log p(\mathcal{D}|w=m_0)
+- D_{\text{KL}}(q\|p)$.
+La KL contiene el término $-0.5\log p(m_0) \approx m_0^2/4$ para $m_0$
+moderado. La ELBO es: log-verosimilitud esperada bajo dropout $-$
+regularización $\ell_2$ con $\lambda \propto 1/4$. $\square$
+\end{ejercicio}
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Ejercicios propuestos}
 \addcontentsline{toc}{section}{Ejercicios propuestos}
-%───────────────────────────────────────────────────────────────────────────────
+% ─────────────────────────────────────────────────────────────────────────────
 
 \begin{ejercicio}
 \textbf{(MLE para distribuciones distintas).}
 \begin{enumerate}[label=(\alph*)]
-  \item Para $p(y|\bm{x};\bm{\theta}) = \mathrm{Laplace}(f(\bm{x};\bm{\theta}),b)$
-        (distribución de Laplace con media $f$ y escala $b$), mostrar que el MLE
-        es el minimizador de la pérdida MAE (\textit{mean absolute error}):
-        $\mathcal{L}_{\text{MAE}} = \frac{1}{N}\sum_i|f(\bm{x}_i;\bm{\theta})-y_i|$.
-  \item Para $p(y|\bm{x};\bm{\theta}) = \mathrm{Poisson}(f(\bm{x};\bm{\theta}))$
-        con $f > 0$, calcular el MLE y la forma resultante de la pérdida.
-  \item ¿Qué distribución generativa corresponde a la pérdida de Huber, que
-        combina MSE para errores pequeños y MAE para errores grandes?
+  \item Mostrar que el MLE para ruido laplaciano es la pérdida MAE.
+  \item Calcular el MLE para ruido de Poisson: ¿cuál es la pérdida?
+  \item ¿Qué distribución generativa corresponde a la pérdida de Huber?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
 \textbf{(Principio de máxima entropía).}
 \begin{enumerate}[label=(\alph*)]
-  \item Usando multiplicadores de Lagrange, derivar que la distribución de
-        máxima entropía sobre $\mathbb{R}$ sujeta a $\mathbb{E}[X] = \mu$ y
-        $\mathbb{E}[X^2] = \mu^2+\sigma^2$ es $\mathcal{N}(\mu,\sigma^2)$.
-  \item Derivar que la distribución de máxima entropía sobre $\mathbb{R}_+$
-        sujeta a $\mathbb{E}[X] = \mu$ es la distribución exponencial
-        $p(x) = \frac{1}{\mu}e^{-x/\mu}$.
-  \item ¿Qué restricción corresponde al prior de Jeffreys para un modelo
-        gaussiano de media desconocida y varianza fija?
+  \item Derivar que la distribución de máxima entropía sobre $\mathbb{R}$
+        con media $\mu$ y varianza $\sigma^2$ fijas es
+        $\mathcal{N}(\mu,\sigma^2)$.
+  \item Derivar que la de máxima entropía sobre $\mathbb{R}_+$ con media
+        $\mu$ fija es la exponencial $p(x) = e^{-x/\mu}/\mu$.
+  \item Mostrar que la distribución de Gibbs
+        $p \propto e^{-\beta\mathcal{L}}$ es la de máxima entropía bajo
+        $\langle\mathcal{L}\rangle = U$.
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
-\textbf{(La ELBO para un modelo gaussiano simple).}
-Sea $p(\bm{z}) = \mathcal{N}(\bm{0},\bm{I})$, $p(\bm{x}|\bm{z}) =
-\mathcal{N}(\bm{W}\bm{z},\sigma^2\bm{I})$ (un modelo lineal gaussiano) y
-$q_\phi(\bm{z}|\bm{x}) = \mathcal{N}(\bm{\mu}_\phi(\bm{x}),
-\bm{\Sigma}_\phi(\bm{x}))$ con $\bm{\Sigma}_\phi = \mathrm{diag}(\bm{s}_\phi^2)$.
+\textbf{(La ELBO para un modelo gaussiano lineal).}
+$p(\bm{z}) = \mathcal{N}(\bm{0},\bm{I})$,
+$p(\bm{x}|\bm{z}) = \mathcal{N}(\bm{W}\bm{z},\sigma^2\bm{I})$,
+$q(\bm{z}|\bm{x}) = \mathcal{N}(\bm{\mu}(\bm{x}),
+\text{diag}(\bm{s}^2(\bm{x})))$.
 \begin{enumerate}[label=(\alph*)]
-  \item Calcular la ELBO en forma cerrada usando el resultado del Ejercicio
-        Resuelto~\ref{ej:kl_gaussianas}.
-  \item Implementar el truco de reparametrización para este modelo y verificar
-        que el gradiente de la ELBO respecto a $\bm{\mu}_\phi$ y $\bm{s}_\phi$
-        puede calcularse con backpropagation.
-  \item ¿Cuál es la distribución variacional óptima $q^*(\bm{z}|\bm{x})$ para
-        este modelo? ¿Coincide con el posterior exacto?
+  \item Calcular la ELBO en forma cerrada.
+  \item ¿Cuál es el posterior exacto? ¿Coincide con el óptimo variacional?
 \end{enumerate}
 \end{ejercicio}
 
 \begin{ejercicio}
-\textbf{(Calibración y temperatura).}
-Sea un clasificador binario con logit $z(\bm{x}) = f(\bm{x};\hat{\bm{\theta}})$
-y predicción $\hat{p}(\bm{x}) = \sigma(z(\bm{x}))$.
+\textbf{(Información de Fisher para el modelo gaussiano).}
+Para $p(y|x;\theta) = \mathcal{N}(\theta x, \sigma^2)$ con un parámetro
+$\theta$:
 \begin{enumerate}[label=(\alph*)]
-  \item En un conjunto de validación de $N=1000$ muestras, calcular el ECE
-        para 10 bins de igual tamaño con las probabilidades predichas y las
-        etiquetas reales (puede usarse un dataset sintético).
-  \item Aplicar temperature scaling: $\hat{p}_T(\bm{x}) = \sigma(z(\bm{x})/T)$
-        y optimizar $T$ para minimizar la pérdida de entropía cruzada en el
-        conjunto de validación.
-  \item ¿Mejora el ECE con la temperatura óptima? ¿Cambia la precisión del
-        clasificador?
-  \item Repetir con MC Dropout ($K=50$ evaluaciones). ¿Es el modelo con
-        dropout mejor calibrado que sin él?
+  \item Calcular $\mathcal{I}(\theta)$.
+  \item Verificar que la cota de Cramér-Rao
+        $\text{Var}[\hat{\theta}] \geq 1/(N\mathcal{I})$ se satura para
+        el MLE.
+  \item Comparar con el denominador de Adam para este modelo.
 \end{enumerate}
 \end{ejercicio}
 
-\begin{ejercicio}
-\textbf{(Información de Fisher para el MLP).}
-Sea un MLP con una capa oculta y pérdida de entropía cruzada.
-\begin{enumerate}[label=(\alph*)]
-  \item Calcular el elemento diagonal $I_{jj}(\bm{\theta}) =
-        \mathbb{E}[(\partial\log p/\partial\theta_j)^2]$ para un peso de la
-        capa de salida.
-  \item Comparar $I_{jj}$ con el segundo momento del gradiente $\hat{v}_j$
-        de Adam después de muchas iteraciones. ¿Son proporcionales?
-  \item El gradiente natural para este modelo sería
-        $\bm{I}^{-1}\nabla\mathcal{L}$. ¿Cuál es el costo computacional de
-        calcular $\bm{I}^{-1}$ exactamente vs.\ la aproximación diagonal de
-        Adam?
-  \item Para la aproximación de Kronecker-factored (K-FAC, Martens y Grosse,
-        2015), $\bm{I} \approx \bm{A} \otimes \bm{B}$ donde $\bm{A}$ y $\bm{B}$
-        son matrices de menor dimensión. ¿Cuánto se reduce el costo de inversión?
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Ejercicios computacionales}
+\addcontentsline{toc}{section}{Ejercicios computacionales}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{ejerciciocomp}{El oscilador: incertidumbre bayesiana por MC Dropout}
+\label{ejcomp:oscilador7}
+\textbf{Objetivo:} cuantificar la incertidumbre del MLP del oscilador y
+verificar que crece fuera del dominio de entrenamiento.
+
+\medskip\noindent\textbf{Datos:}
+$N = 25$ puntos de $\sin(2\pi t)+\varepsilon_i$, $\sigma = 0.15$,
+$t \in [0, 2]$. MLP $(1, 64, 64, 1)$ con ReLU y dropout $p_d = 0.1$.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Entrenar el MLP con Adam ($\eta = 10^{-3}$, 2000 épocas) con
+        dropout activo.
+  \item Con dropout activo en test, evaluar $T = 100$ veces sobre
+        $t \in [-0.5, 3.0]$ (rango extendido).
+  \item Calcular $\bar{f}(t) = \frac{1}{T}\sum_k\hat{f}^{(k)}(t)$ y
+        $\text{std}(t) = \sqrt{\frac{1}{T}\sum_k
+        (\hat{f}^{(k)}(t)-\bar{f}(t))^2}$.
+  \item Graficar $\bar{f}(t) \pm 2\,\text{std}(t)$ junto con
+        $\sin(2\pi t)$ y los datos.
+  \item ¿La banda de incertidumbre es estrecha para $t \in [0,2]$ y se
+        ensancha para $t > 2$ y $t < 0$?
 \end{enumerate}
-\end{ejercicio}
+
+\medskip\noindent\textbf{Verificación:}
+$t = 1.0$: $\text{std} \approx 0.05$--$0.10$ (comparable al ruido).
+$t = 2.5$: $\text{std} > 0.5$ (incertidumbre epistémica dominante).
+$t = 3.0$: $\text{std} > 1.0$ (la red ``no sabe'' qué predecir).
+
+\medskip\noindent\textbf{Extensión:}
+Repetir sin dropout (predicción determinista). Graficar la predicción para
+$t \in [-0.5, 3.0]$. ¿El modelo extrapola con confianza espuria?
+Comparar con la banda de MC Dropout. ¿Cuál da información más útil?
+\end{ejerciciocomp}
+
+\begin{ejerciciocomp}{MSE vs.\ log-verosimilitud de Poisson}
+\label{ejcomp:poisson}
+\textbf{Objetivo:} verificar que la pérdida correcta depende del modelo
+de ruido.
+
+\medskip\noindent\textbf{Algoritmo:}
+\begin{enumerate}
+  \item Generar $N = 200$ muestras:
+        $\lambda(x) = 5\exp(-x^2/2)$, $x_i \sim \mathcal{U}[-3,3]$,
+        $y_i \sim \text{Poisson}(\lambda(x_i))$.
+  \item Ajustar MLP $(1, 32, 1)$ con softplus (para $\hat{\lambda} > 0$)
+        usando MSE y log-verosimilitud de Poisson.
+  \item Comparar $\hat{\lambda}(x)$ vs.\ $\lambda(x)$. ¿Cuál es mejor
+        calibrado para conteos bajos?
+\end{enumerate}
+
+\medskip\noindent\textbf{Verificación:}
+Para $y_i \in \{0,1,2\}$: Poisson MLE significativamente mejor.
+Para $\bar{y} \gg 1$: las dos pérdidas convergen (Poisson $\to$
+gaussiana).
+\end{ejerciciocomp}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{notasbib}
+El principio de máxima verosimilitud fue formalizado por Fisher
+(1922)~\cite{fisher1922mathematical}. La cota de Cramér-Rao y la
+información de Fisher como curvatura de la log-verosimilitud se tratan en
+Lehmann y Casella (1998)~\cite{lehmann1998theory}.
+
+El principio de máxima entropía: Jaynes
+(1957)~\cite{jaynes1957information}. La entropía de Shannon, la
+divergencia KL y sus propiedades: Cover y Thomas
+(2006)~\cite{cover2006elements}. El information bottleneck: Tishby,
+Pereira y Bialek (2000)~\cite{tishby2000information}.
+
+El marco bayesiano para redes neuronales fue desarrollado por MacKay
+(1992)~\cite{mackay1992practical} y Neal
+(1996)~\cite{neal1996bayesian}. La inferencia variacional con el
+truco de reparametrización y el VAE: Kingma y Welling
+(2014)~\cite{kingma2013auto}. MC Dropout como aproximación bayesiana:
+Gal y Ghahramani (2016)~\cite{gal2016dropout}.
+
+La dimensión VC: Vapnik y Chervonenkis
+(1971)~\cite{vapnik1971uniform}. Las cotas basadas en norma espectral:
+Bartlett et al.\ (2017)~\cite{bartlett2017spectrally}. El gradiente
+natural: Amari (1998)~\cite{amari1998natural}. K-FAC como aproximación
+de segundo orden: Martens y Grosse
+(2015)~\cite{martens2015optimizing}.
+
+La conexión entre la ELBO y la energía libre de Helmholtz es estándar
+en la literatura de máquinas de Boltzmann; véase Hinton
+(2006)~\cite{hinton2006fast} para la perspectiva generativa y el
+Apéndice~\ref{ap:info_mecanica} de este libro para la tabla completa de
+correspondencias.
+\end{notasbib}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ESTRELLA POLAR — Sección independiente
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{estrella}{Cuantificación de incertidumbre en el sustituto neutrónico}
+\label{sec:estrella7}
+
+\textbf{El problema.}
+El sustituto MLP $f_{\text{MLP}}(\bm{u}) \approx \bm{\Phi}(\bm{u})$
+(Caps.~\ref{ch:cap4}--\ref{ch:cap6}) proporciona predicciones
+deterministas del flujo neutrónico. En aplicaciones de seguridad nuclear,
+una predicción sin barra de error es insuficiente: se necesita saber
+\emph{cuánto confiar} en el sustituto para cada configuración
+$\bm{u}$.
+
+\textbf{MC Dropout sobre el sustituto.}
+Entrenando el sustituto con dropout ($p_d = 0.05$) y evaluando $T = 100$
+veces con dropout activo, se obtiene una distribución de predicciones
+$\{\hat{\bm{\Phi}}^{(k)}(\bm{u})\}_{k=1}^T$ para cada configuración.
+La varianza $\text{Var}_k[\hat{\Phi}_j^{(k)}]$ en cada nodo $j$
+cuantifica la incertidumbre epistémica del sustituto en ese nodo.
+
+\textbf{Las tres incertidumbres en el reactor.}
+La incertidumbre aleatoria es el ruido Monte Carlo de las simulaciones
+de referencia (MCNP). La epistémica es la incertidumbre del sustituto
+en regiones del espacio de operación pobremente muestreadas. La de
+modelo es el sesgo sistemático del MLP respecto al transporte exacto.
+MC Dropout cuantifica la segunda; la primera se estima comparando
+múltiples simulaciones de referencia; la tercera requiere datos
+adicionales del código exacto.
+
+\textbf{Calibración del sustituto.}
+Un sustituto bien entrenado pero mal calibrado puede predecir flujos con
+confianza excesiva. El ECE (Definición~\ref{subsec:calibracion})
+proporciona la métrica: el sustituto está calibrado si la incertidumbre
+predicha por MC Dropout coincide con el error real contra el código de
+referencia. El temperature scaling mejora la calibración sin cambiar la
+exactitud media.
+
+\textbf{Conexión con el capítulo.}
+El marco bayesiano permite separar y cuantificar las tres incertidumbres
+de forma eficiente sobre el sustituto. La ELBO como energía libre
+variacional proporciona además un criterio para comparar distintas
+arquitecturas de sustituto: la que tiene mayor ELBO (menor energía libre)
+es la que mejor balancea ajuste y complejidad.
+\end{estrella}
 
 
 \printbibliography[heading=subbibliography]
